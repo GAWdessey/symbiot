@@ -970,34 +970,130 @@ body.lq-light #quota .qpill,body.lq-light #quota .qpop{background:rgba(255,255,2
 .licproj{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px}.licproj .chip{display:inline-flex;align-items:center;gap:8px;padding:4px 6px 4px 12px;border:1px solid var(--line);border-radius:999px;font-size:13px}.licproj .chip button{padding:2px 8px;font-size:12px}
 .ssh{margin:0 0 10px;font:600 16px var(--sans);letter-spacing:-.01em;color:var(--bone);display:flex;align-items:baseline;gap:8px}
 .ssh .muted{font-weight:400;font-size:12.5px}
-/* the Vault page (vaultview.mjs): names and what's known about each; a value only after a fresh unlock */
-#panel-vault{max-width:760px;margin:0 auto}
-.vhead{margin:4px 0 16px;font-size:14px;line-height:1.5;color:var(--faint);max-width:60ch}
-.vlock{display:flex;flex-wrap:wrap;align-items:center;gap:10px 12px;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:var(--ink2);margin-bottom:8px}
-.vlock.setp .vls{flex-basis:100%}
-.vlock.open{border-color:var(--green)}
-.vlock .vls{flex:1 1 240px;font-size:14px;line-height:1.45;color:var(--text)}.vlock .vls b{color:var(--bone);font-weight:600}
-.vlock input{flex:0 1 200px;width:200px}
-.vlock button{min-height:40px}
+/* the Vault page (vaultview.mjs): grouped by service, one picked in a detail pane, what needs a look; no value until it's unlocked */
+#panel-vault,#vaultmsg{--vred:#F07B7F;--vdig:#8CC2FF;--vsym:#F2B766}#panel-vault{max-width:1080px;margin:0 auto;--vred:#F07B7F;--vdig:#8CC2FF;--vsym:#F2B766;--vsoft:rgba(255,255,255,.045);--vsel:rgba(255,255,255,.085)}
+body.lq-light #vaultmsg{--vred:#B42318}body.lq-light #panel-vault{--vred:#B42318;--vdig:#1D5FC4;--vsym:#9A5200;--vsoft:rgba(21,26,33,.045);--vsel:rgba(21,26,33,.075)}
 .vsl{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
-.vmsg{font-size:13px;line-height:1.45;margin:0 0 12px;color:var(--faint)}.vmsg:empty{margin:0}.vmsg.err{color:var(--amber)}.vmsg.ok{color:var(--green)}
-.vrow{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 12px;align-items:center;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:var(--ink2);margin-top:8px}
-.vrow .vn{font:600 15px var(--sans);color:var(--bone);overflow-wrap:anywhere}
-.vrow .vm{grid-column:1;display:flex;flex-wrap:wrap;gap:2px 12px;font-size:12.5px;color:var(--faint)}
-.vrow .vm .vk{color:var(--text)}
-.vrow .va{grid-column:2;grid-row:1 / span 2;display:flex;gap:6px}
-.vrow .va button{min-height:40px;min-width:64px;padding:8px 12px}
-.vrow .vv{grid-column:1 / -1;display:flex;align-items:center;gap:10px;margin-top:6px;padding:8px 10px;border-radius:8px;background:var(--ink);font:500 14px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--bone)}
-.vrow .vv code{flex:1;min-width:0;overflow-wrap:anywhere;font:inherit;user-select:all}
-.vrow .vv.vhid{color:var(--faint);letter-spacing:.2em}
-.vrow .vv .vused{font:500 11.5px var(--sans);color:var(--faint)}
-.vrow .vv button{min-height:40px;padding:6px 12px}
-.vempty{padding:28px 16px;text-align:center;font-size:14px;line-height:1.5;color:var(--faint);border:1px dashed var(--line);border-radius:12px;margin-top:8px}
-.vlog{margin-top:20px;font-size:13px;color:var(--faint)}.vlog summary{cursor:pointer;min-height:32px}
-.vlog .vlr{display:flex;gap:10px;padding:4px 0;border-top:1px solid var(--line)}.vlog .vlr b{color:var(--text);font-weight:500;flex:1;min-width:0;overflow-wrap:anywhere}
-body.lq-liquid .vlock,body.lq-liquid .vrow{border-color:rgba(255,255,255,.08);background:rgba(255,255,255,.03)}
-body.lq-liquid .vlock.open{border-color:var(--green)}
-body.lq-liquid.lq-light .vlock,body.lq-liquid.lq-light .vrow{border-color:rgba(21,26,33,.09);background:rgba(255,255,255,.6)}
+.vbar{display:flex;align-items:center;gap:10px;margin:2px 0 12px}
+.vsearch{position:relative;flex:1;min-width:0}
+.vsearch svg{position:absolute;left:13px;top:50%;margin-top:-8px;width:16px;height:16px;color:var(--faint);pointer-events:none}
+#panel-vault .vsearch input{width:100%;min-height:42px;padding:0 40px 0 38px;border-radius:12px;font-size:14px}
+.vsearch kbd{position:absolute;right:10px;top:50%;transform:translateY(-50%);font:500 12px var(--sans);color:var(--faint);border:1px solid var(--line);border-radius:6px;padding:1px 7px;pointer-events:none}
+.vsearch input:focus+kbd,.vsearch input:not(:placeholder-shown)+kbd{display:none}
+.vchip{display:flex;align-items:center;gap:6px;min-height:42px;padding:0 6px 0 12px;border-radius:12px;border:1px solid var(--line);font-size:13.5px;color:var(--text);white-space:nowrap}
+.vchip svg{width:15px;height:15px;flex:none}
+.vchip.open{border-color:var(--green);color:var(--bone)}.vchip.open svg{color:var(--green)}
+.vchip b{font-weight:600;color:var(--bone)}
+.vchip button{min-height:32px;padding:0 10px;border-radius:8px;font-size:13px}
+#panel-vault button.vtxt{background:transparent;border:0;color:var(--bone);font-weight:600;padding:0 8px;min-height:32px;cursor:pointer}
+#panel-vault .vadd{min-height:42px;display:flex;align-items:center;gap:6px;padding:0 16px}
+.vadd svg{width:15px;height:15px}
+.vfilt{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 14px}
+#panel-vault .vfilt button{min-height:34px;padding:0 13px;border-radius:999px;font:500 13px var(--sans);background:transparent;border:1px solid var(--line);color:var(--text);display:flex;align-items:center;gap:7px;cursor:pointer}
+#panel-vault .vfilt button[aria-pressed="true"]{background:var(--bone);color:var(--ink);border-color:var(--bone)}
+.vfilt i{font-style:normal;color:var(--faint)}.vfilt button[aria-pressed="true"] i{color:inherit;opacity:.7}
+.vdot{width:8px;height:8px;border-radius:50%;background:var(--amber);flex:none}
+.vsplit{display:grid;grid-template-columns:minmax(260px,340px) minmax(0,1fr);gap:18px;align-items:start}
+.vlist{min-width:0}
+.vgh{display:flex;align-items:center;gap:8px;padding:14px 10px 4px;font:600 12.5px var(--sans);color:var(--faint)}.vgh:first-child{padding-top:2px}
+.vgh i{font-style:normal;font-weight:400}
+#panel-vault .vrow{display:flex;align-items:center;gap:11px;width:100%;min-height:54px;padding:8px 10px;margin:1px 0;border-radius:11px;border:0;background:transparent;text-align:left;color:inherit;cursor:pointer;font:inherit}
+#panel-vault .vrow:hover{background:var(--vsoft)}
+#panel-vault .vrow[aria-selected="true"]{background:var(--vsel)}
+.vrow .vt{flex:1;min-width:0}
+.vrow .vt b,.vrow .vt span{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.vrow .vt b{font:600 14px/1.35 var(--sans);color:var(--bone)}
+.vrow .vt span{font-size:12.5px;line-height:1.4;color:var(--faint)}
+.vmono{flex:none;width:34px;height:34px;border-radius:10px;display:grid;place-items:center;font:600 14px var(--sans);color:hsl(var(--h) 75% 84%);background:hsl(var(--h) 30% 23%)}
+body.lq-light .vmono{color:hsl(var(--h) 55% 28%);background:hsl(var(--h) 60% 90%)}
+.vdetail{position:sticky;top:var(--vtop,12px);min-width:0;border:1px solid var(--line);border-radius:16px;background:var(--ink2);padding:22px}
+.vdh{display:flex;align-items:center;gap:14px;min-width:0}
+.vdh .vmono{width:50px;height:50px;border-radius:14px;font-size:21px}
+.vdh .vtt{flex:1;min-width:0}
+.vdh h2{margin:0;font:600 20px/1.25 var(--sans);color:var(--bone);overflow-wrap:anywhere}
+.vdh p{margin:3px 0 0;font-size:13px;color:var(--faint)}
+.vdact{display:flex;gap:6px;flex:none}
+#panel-vault .vdact button,#panel-vault .vbtn{min-height:38px;padding:0 13px;font-size:13.5px}
+#panel-vault button.vdel{background:transparent;border:1px solid var(--line);color:var(--vred)}
+#panel-vault button.vdel:hover{border-color:var(--vred)}
+#panel-vault button.vdanger{background:var(--vred);color:#fff;border:0;border-radius:10px;font:inherit;font-weight:600;cursor:pointer}
+.vissue{display:flex;gap:10px 14px;align-items:center;flex-wrap:wrap;margin:18px 0 0;padding:12px 14px;border-radius:12px;border:1px solid color-mix(in srgb,var(--amber) 40%,transparent);background:color-mix(in srgb,var(--amber) 9%,transparent);font-size:13.5px;line-height:1.45;color:var(--text)}
+.vissue p{flex:1 1 240px;margin:0;display:flex;gap:9px;align-items:baseline}.vissue p .vdot{position:relative;top:-1px}
+.vissue .vib{display:flex;gap:6px}
+.vfield{margin-top:18px;border:1px solid var(--line);border-radius:12px;background:var(--vsoft)}
+.vfl{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:11px 14px 0;font-size:12.5px;color:var(--faint);min-height:20px}.vfl.vfl2{padding:8px 8px 0 14px}
+.vval{display:flex;align-items:center;gap:8px;padding:6px 8px 8px 14px;min-height:54px}
+.vval code{flex:1;min-width:0;font:500 15.5px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--bone);overflow-wrap:anywhere;user-select:all}
+.vval code.vhid{letter-spacing:.16em;color:var(--faint);user-select:none;white-space:nowrap;overflow:hidden}
+.vval code .vd{color:var(--vdig)}.vval code .vs{color:var(--vsym)}
+#panel-vault .vval button,#panel-vault .vcode button{min-height:38px;min-width:70px;padding:0 12px;font-size:13.5px;display:flex;align-items:center;justify-content:center;gap:6px}
+.vval button svg,.vcode button svg{width:15px;height:15px}
+.vcodes{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:6px;padding:6px 10px 10px}
+.vcode{display:flex;align-items:center;gap:6px;padding:4px 4px 4px 10px;border-radius:9px;background:var(--ink);font:500 14px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--bone);min-height:46px}
+.vcode span{flex:1;min-width:0;overflow-wrap:anywhere}
+.vcode.used span{text-decoration:line-through;color:var(--faint)}.vcode.used em{font:400 12.5px var(--sans);color:var(--faint);padding-right:8px}
+.vok{min-height:20px;padding:0 14px 10px;font-size:12.5px;color:var(--green)}
+.vok:empty{display:none}
+.vmeta{margin:20px 0 0;display:grid;grid-template-columns:max-content minmax(0,1fr);gap:9px 18px;font-size:13.5px;line-height:1.45}
+.vmeta dt{color:var(--faint)}.vmeta dd{margin:0;color:var(--text);min-width:0;overflow-wrap:anywhere}
+.vmeta code{font:500 13px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:var(--ink);color:var(--bone);padding:2px 7px;border-radius:6px}
+.vmeta button{margin-left:6px}
+#panel-vault .vmeta button.vtxt{min-height:28px;padding:0 6px;font-size:12.5px;color:var(--faint)}
+.vform{display:grid;gap:12px;margin-top:2px}
+.vform label{display:grid;gap:5px;font-size:13px;color:var(--faint)}
+#panel-vault .vform input,#vaultsheet input,#vaultsheet textarea{width:100%;min-height:42px;font-size:14.5px;border-radius:10px;box-sizing:border-box}
+#vaultsheet textarea{min-height:120px;padding:10px 12px;font:500 14px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;resize:vertical}
+.vsb{display:flex;align-items:center;gap:8px;justify-content:flex-end;flex-wrap:wrap;margin-top:6px}
+#panel-vault .vsb button,#vaultsheet .vsb button{min-height:40px;padding:0 16px}
+.vconfirm{margin-top:18px;padding:14px 16px;border-radius:12px;border:1px solid var(--vred);background:color-mix(in srgb,var(--vred) 8%,transparent);font-size:14px;line-height:1.45;color:var(--text)}
+.vconfirm p{margin:0 0 10px}
+.vempty{padding:36px 22px;text-align:center;font-size:14px;line-height:1.55;color:var(--faint);border:1px dashed var(--line);border-radius:14px}
+.vempty b{display:block;margin-bottom:4px;font:600 15px var(--sans);color:var(--bone)}
+.vempty .vsb{justify-content:center;margin-top:14px}
+.vskel{height:54px;margin:1px 0;border-radius:11px;background:var(--vsoft)}
+.vlog{margin:22px 4px 0;font-size:13px;color:var(--faint)}
+.vlog summary{cursor:pointer;min-height:40px;display:flex;align-items:center;font-weight:500}
+.vlog .vlr{display:flex;gap:10px;padding:6px 0;border-top:1px solid var(--line)}.vlog .vlr b{color:var(--text);font-weight:500;flex:1;min-width:0;overflow-wrap:anywhere}
+#panel-vault .vback{display:none}
+#vaultmsg{position:fixed;left:16px;right:16px;bottom:104px;margin:0 auto;width:fit-content;max-width:560px;box-sizing:border-box;z-index:85;display:flex;align-items:center;gap:12px;padding:10px 10px 10px 16px;border-radius:12px;background:var(--bone);color:var(--ink);font-size:14px;line-height:1.4;box-shadow:0 10px 30px rgba(0,0,0,.35)}
+#vaultmsg:empty{display:none}#vaultmsg.err{background:var(--vred);color:#fff}
+#vaultmsg button{min-height:32px;padding:0 12px;border-radius:8px;border:0;background:rgba(0,0,0,.12);color:inherit;font:600 13.5px var(--sans);cursor:pointer}
+#vaultsheet{position:fixed;inset:0;z-index:90;display:grid;place-items:center;padding:16px;background:rgba(4,6,8,.55)}
+#vaultsheet.hidden{display:none}
+.vsheet{width:min(430px,100%);max-height:calc(100vh - 32px);overflow:auto;box-sizing:border-box;border-radius:18px;background:var(--ink2);border:1px solid var(--line);padding:24px;box-shadow:0 24px 60px rgba(0,0,0,.45)}
+.vsheet .vmono{width:44px;height:44px;border-radius:13px;margin-bottom:14px}
+.vsheet .vlockic{display:grid;place-items:center;width:44px;height:44px;border-radius:13px;margin-bottom:14px;background:var(--vsoft);color:var(--bone)}.vsheet .vlockic svg{width:20px;height:20px}
+.vsheet h3{margin:0 0 6px;font:600 18px/1.3 var(--sans);color:var(--bone)}
+.vsheet>p{margin:0 0 16px;font-size:14px;line-height:1.5;color:var(--text)}
+.vsheet .vform{gap:12px}
+.verr{min-height:0;font-size:13px;line-height:1.45;color:var(--vred)}.verr:empty{display:none}
+.vfine{margin:16px 0 0;font-size:12.5px;line-height:1.5;color:var(--faint)}
+.vfine code{font:500 12.5px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--text)}
+.vcheck{display:flex!important;grid-template-columns:none!important;align-items:center;gap:8px!important;color:var(--text)!important;font-size:13.5px!important;cursor:pointer}
+.vcheck input{appearance:auto;-webkit-appearance:checkbox;width:18px!important;min-height:18px!important;height:18px;margin:0;padding:0;border-radius:4px;accent-color:var(--green)}
+.vpw{position:relative}.vpw input{padding-right:70px}
+#vaultsheet .vpw button{position:absolute;right:5px;top:5px;min-height:32px;padding:0 10px;font-size:12.5px}
+body.lq-liquid #panel-vault{--vtop:74px}body.lq-liquid .vdetail{border-color:rgba(255,255,255,.08);background:rgba(255,255,255,.035)}
+body.lq-liquid.lq-light .vdetail{border-color:rgba(21,26,33,.09);background:rgba(255,255,255,.7)}
+body.lq-liquid .vfield,body.lq-liquid .vchip,body.lq-liquid .vfilt button{border-color:rgba(255,255,255,.1)}
+body.lq-liquid.lq-light .vfield,body.lq-liquid.lq-light .vchip,body.lq-liquid.lq-light .vfilt button{border-color:rgba(21,26,33,.12)}
+body.lq-liquid .vchip.open{border-color:var(--green)}
+body.lq-liquid .vsheet{background:#16181C}body.lq-liquid.lq-light .vsheet{background:#FBFBFA}
+@media (max-width:760px){
+.vsplit{grid-template-columns:minmax(0,1fr)}
+#panel-vault.vone .vlist,#panel-vault.vone .vfilt,#panel-vault.vone .vbar{display:none}
+#panel-vault:not(.vone) .vdetail{display:none}
+.vdetail{position:static;padding:16px;border-radius:14px}
+#panel-vault .vback{display:flex;align-items:center;gap:4px;min-height:40px;margin:0 0 10px;padding:0 10px 0 4px;background:transparent;border:0;color:var(--bone);font:600 14px var(--sans);cursor:pointer}
+.vdh{flex-wrap:wrap}.vdact{width:100%}.vdact button{flex:1}
+.vchip .vcl{display:none}
+#panel-vault .vadd span{display:none}#panel-vault .vadd{padding:0 13px}
+.vcodes{grid-template-columns:minmax(0,1fr)}
+#vaultmsg{bottom:96px}
+.vbar{flex-wrap:wrap}.vsearch{flex:1 1 100%}.vchip{flex:1}
+.vfilt{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;margin-left:-2px;padding:0 2px 2px}.vfilt::-webkit-scrollbar{display:none}#panel-vault .vfilt button{flex:none}
+.vmeta{grid-template-columns:minmax(0,1fr);gap:2px}.vmeta dd{margin-bottom:10px}
+}
 body.lq-liquid.lq-light .vlock.open{border-color:var(--green)}
 @media (max-width:560px){.vrow{grid-template-columns:minmax(0,1fr)}.vrow .va{grid-column:1;grid-row:auto;margin-top:6px}.vrow .va button{flex:1}.vlock input{flex:1 1 100%;width:100%}.vlock button{flex:1}}
 body.lq-liquid .sset > label:not(.check):not(.swl){display:block;font:500 12.5px var(--sans);color:var(--faint);margin:12px 0 6px}
@@ -1406,14 +1502,20 @@ body.lq-light .btip .bta button:not(.quiet){background:#151A21;color:#FFFFFF}
 <button class="ghost" id="driftrun">Rescan</button></div>
 <div id="driftout"></div>
 </section>
-<section id="panel-vault" class="hidden">
-<p class="vhead">Logins, keys and codes that you or your agents saved in Symbiot. Values stay hidden: unlock with your vault PIN to show or copy one.</p>
-<div id="vaultlock" class="vlock" aria-live="polite"></div>
-<div id="vaultmsg" class="vmsg" role="status" aria-live="polite"></div>
-<label for="vaultsearch" class="vsl">Search</label>
-<input id="vaultsearch" type="search" autocomplete="off" placeholder="Search by name, kind or email">
-<div id="vaultlist"></div>
-<details id="vaultlogbox" class="vlog"><summary>Recently shown or copied</summary><div id="vaultlog"></div></details>
+<section id="panel-vault" class="hidden" aria-label="Vault">
+<div class="vbar">
+<div class="vsearch"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><label for="vaultsearch" class="vsl">Search the vault</label><input id="vaultsearch" type="search" autocomplete="off" spellcheck="false" placeholder="Search names, services or emails"><kbd aria-hidden="true">/</kbd></div>
+<div id="vaultlock" class="vchip" aria-live="polite"></div>
+<button class="act vadd" type="button" data-va="add" aria-label="Add a login, key or code"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span>Add</span></button>
+</div>
+<div id="vaultfilters" class="vfilt" role="group" aria-label="Show"></div>
+<div class="vsplit">
+<div class="vlist"><div id="vaultlist" role="listbox" aria-label="Saved logins, keys and codes"></div>
+<details id="vaultlogbox" class="vlog"><summary>Recent activity</summary><div id="vaultlog"></div></details></div>
+<div id="vaultdetail" class="vdetail"></div>
+</div>
+<div id="vaultmsg" role="status" aria-live="polite"></div>
+<div id="vaultsheet" class="hidden" role="dialog" aria-modal="true" aria-labelledby="vaultsheett"></div>
 </section>
 <section id="panel-settings" class="hidden">
 <div id="firststeps" class="sset hidden" aria-live="polite"></div>
@@ -1491,8 +1593,8 @@ body.lq-light .btip .bta button:not(.quiet){background:#151A21;color:#FFFFFF}
 <div class="sset">
 <h3 class="ssh">Secrets</h3>
 <div id="secretslist"></div>
-<div class="note muted">Passwords, recovery codes and tokens you hand over are kept here, not in chat. Only names and counts show: an agent reads one by name when it needs it, and you can delete any of them.</div>
-<div class="row" style="margin-top:10px"><span class="muted" style="flex:1">To look one up, or show or copy its value with your vault PIN:</span><button class="ghost" type="button" id="openvault">Open the Vault</button></div>
+<div class="note muted">Passwords, recovery codes and tokens you hand over are kept in the Vault, not in chat. An agent reads one by name when it needs it. Look one up, add, rename or delete them there.</div>
+<div class="row" style="margin-top:10px"><span class="muted" style="flex:1">Show or copy one with your vault PIN:</span><button class="ghost" type="button" id="openvault">Open the Vault</button></div>
 </div>
 <div class="sset">
 <h3 class="ssh">Trusted sites for Screens <span class="muted">(experimental)</span></h3>
@@ -1584,7 +1686,7 @@ $('panel-reports').classList.toggle('hidden',tab!=='reports');if(tab==='reports'
 $('panel-asks').classList.toggle('hidden',tab!=='asks');if(tab==='asks')loadAsks();
 $('panel-marketing').classList.toggle('hidden',tab!=='marketing');if(tab==='marketing')loadMarketing();
 $('panel-computer').classList.toggle('hidden',tab!=='computer');if(tab==='computer')loadComputer();
-$('panel-vault').classList.toggle('hidden',tab!=='vault');if(tab==='vault'){vaultSay('');loadVault();}else if(VLT.token||Object.keys(VLT.shown).length)vaultLockNow(); // leaving it locks it
+$('panel-vault').classList.toggle('hidden',tab!=='vault');if(tab==='vault'){vaultSay('');loadVault();}else{if(VLT.del)vaultFlush();if(VLT.token||Object.keys(VLT.shown).length)vaultLockNow();else if($('vaultmsg')&&$('vaultmsg').innerHTML)vaultSay('');} // leaving it locks it
 if(isRun){$('what').textContent=tab;wuHead();WUTEXT='';$('out').textContent=WUEMPTY;$('out').classList.add('muted');$('copy').classList.add('hidden');$('outfoot').style.display='none';if(tab==='week')showLatestWeek();}
 if(isMap&&!mapLoaded)loadMap();
 if(isTasks)loadTasks();
@@ -2489,62 +2591,142 @@ function loadTrusted(){api('/api/screens/trusted').then(function(d){var box=docu
 box.innerHTML=sites.length?sites.map(function(h){return "<div class='task' data-h='"+esc(h)+"'><span class='t' style='font-family:ui-monospace,monospace;font-size:12px'>"+esc(h)+"</span><button class='ghost tsign' title='open "+esc(h)+" in the Symbiot Browser, to sign in for agents'>Sign in</button><button class='rm rmtrusted' title='stop trusting it: press and type ask first again'>&times;</button></div>";}).join(""):"<div class='muted' style='font-size:12px'>None yet: Press and Type ask first on every site.</div>";
 box.querySelectorAll('.tsign').forEach(function(btn){btn.addEventListener('click',function(){var h=btn.closest('.task').getAttribute('data-h');openSignIn({site:h},function(t,ok){var n=document.getElementById('trustednote');if(n)n.innerHTML="<span class='"+(ok?'ok':'err')+"'>"+esc(t)+"</span>";});});});
 box.querySelectorAll('.rmtrusted').forEach(function(btn){btn.addEventListener('click',function(){api('/api/screens/trusted/remove',{site:btn.closest('.task').getAttribute('data-h')}).then(function(){loadTrusted();loadScreensUI();});});});});}
-// The Vault page (vaultview.mjs): what's saved, by name, kind, account and date, and never a
-// value until you unlock it with your vault PIN. An unlock holds for a couple of minutes
-// (VLT.until), and the values it showed live only here (VLT.shown): they go when it runs
-// out, when you lock it, leave the page or the window is hidden. Show or Copy while locked
-// asks for the PIN, then does what you pressed. A copied value leaves the clipboard after
-// VCLIP_MS (vaultClip). Nothing here is sent to the AI or kept anywhere else.
-var VLT={list:[],token:'',until:0,shown:{},q:'',pin:true,wait:0,log:[],then:null,busy:false},VLT_T=null,VCLIP_MS=30000,VCLIP={t:null,v:'',pend:false};
+// The Vault page (vaultview.mjs): what's saved, grouped by the service it's for, the one you
+// pick in a pane beside the list (on a phone, a page of its own), and what needs a look: a name
+// that says nothing, a value saved twice, a file's name taken for a password. No value is in the
+// page until it's unlocked with the vault PIN: the unlock box comes up over the page, where you
+// are, then does what you pressed, and the unlock holds while you use it (the server renews it on
+// each use, VLT.until). Values it showed live only here (VLT.shown) and go when it locks, when you
+// leave the page or the window is hidden. A copied value leaves the clipboard after VCLIP_MS
+// (vaultClip); a delete waits VDEL_MS for Undo. Nothing here is sent to the AI or kept elsewhere.
+var VLT={list:[],token:'',until:0,shown:{},q:'',f:'all',sel:'',one:false,pin:true,wait:0,waitTo:0,log:[],then:null,busy:false,mode:'',state:'load',ok:{},del:null,sheet:''},VLT_T=null,VCLIP_MS=30000,VCLIP={t:null,v:'',pend:false},VDEL_MS=8000,VMSG_T=null;
+var VIC={lock:"<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'><rect x='4' y='11' width='16' height='10' rx='2.5'/><path d='M8 11V7.5a4 4 0 0 1 8 0V11'/></svg>",
+open:"<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'><rect x='4' y='11' width='16' height='10' rx='2.5'/><path d='M8 11V7.5a4 4 0 0 1 7.7-1.5'/></svg>",
+eye:"<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'><path d='M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z'/><circle cx='12' cy='12' r='3'/></svg>",
+copy:"<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'><rect x='9' y='9' width='12' height='12' rx='2.5'/><path d='M5 15V5.5A2.5 2.5 0 0 1 7.5 3H15'/></svg>",
+check:"<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'><path d='m5 12.5 4.5 4.5L19 7.5'/></svg>",
+back:"<svg viewBox='0 0 24 24' width='18' height='18' fill='none' stroke='currentColor' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'><path d='m15 5-7 7 7 7'/></svg>"};
+var VKINDS={pw:['Password','PIN'],key:['API key or token','Account ID'],code:['Recovery codes','One-time code']};
 function vaultOpen(){return !!VLT.token&&VLT.until>Date.now();}
 function vaultLeft(ms){var s=Math.max(0,Math.ceil(ms/1000));return Math.floor(s/60)+':'+('0'+(s%60)).slice(-2);}
 function vaultDate(t){try{return new Date(t).toLocaleDateString(undefined,{day:'numeric',month:'short',year:'numeric'});}catch(e){return '';}}
-function vaultSay(t,cls){var m=$('vaultmsg');if(!m)return;m.textContent=t||'';m.className='vmsg'+(cls?' '+cls:'');}
-function vaultDrop(){VLT.token='';VLT.until=0;VLT.shown={};if(VLT_T){clearInterval(VLT_T);VLT_T=null;}}
-function vaultLockNow(){if(VLT.token)api('/api/vault/lock',{token:VLT.token}).catch(function(){});vaultDrop();VLT.then=null;if(current==='vault')vaultDraw();}
-function vaultTick(){if(!vaultOpen()){vaultDrop();vaultSay('Locked again: values are hidden.');vaultDraw();return;}var s=$('vaultleft');if(s)s.textContent=vaultLeft(VLT.until-Date.now());}
-function loadVault(){var box=$('vaultlist');if(box&&!VLT.list.length)box.innerHTML="<div class='vempty'>Opening the vault&hellip;</div>";
-api('/api/vault',{token:VLT.token}).then(function(d){if(!d||d.error){vaultFail((d&&d.error)||'');return;}VLT.list=d.entries||[];VLT.pin=!!d.pin;VLT.wait=d.wait||0;VLT.log=d.log||[];if(!d.unlocked)vaultDrop();else VLT.until=d.unlocked;vaultDraw();}).catch(function(){vaultFail('');});}
-function vaultFail(why){var box=$('vaultlist');if(!box)return;box.innerHTML="<div class='vempty'>Couldn't open the vault"+(why?': '+esc(why):'. Symbiot may have stopped.')+"<div style='margin-top:10px'><button class='ghost' type='button' id='vaultretry'>Try again</button></div></div>";var r=$('vaultretry');if(r)r.addEventListener('click',loadVault);}
-function vaultLockBar(){var el=$('vaultlock');if(!el)return;var h,open=vaultOpen();
-if(open)h="<span class='vls'><b>Unlocked</b> for <span id='vaultleft'>"+vaultLeft(VLT.until-Date.now())+"</span>. Values hide again after that.</span><button class='ghost' type='button' id='vaultlockbtn'>Lock now</button>";
-else if(!VLT.pin)h="<span class='vls'><b>Set a vault PIN</b> to show or copy what's saved. At least 6 characters; you type it each time you look.</span><input id='vaultpin' type='password' autocomplete='new-password' aria-label='New vault PIN' placeholder='New vault PIN'><input id='vaultpin2' type='password' autocomplete='new-password' aria-label='The same PIN again' placeholder='The same PIN again'><button class='act' type='button' id='vaultgo'>Set PIN</button>";
-else if(VLT.wait>0)h="<span class='vls'><b>Locked.</b> Too many wrong tries: try again in "+Math.ceil(VLT.wait/60000)+" min.</span>";
-else h="<span class='vls'><b>Locked.</b> Type your vault PIN to show or copy a value for the next 2 minutes.</span><input id='vaultpin' type='password' autocomplete='current-password' aria-label='Vault PIN' placeholder='Vault PIN'><button class='act' type='button' id='vaultgo'>Unlock</button>";
-el.innerHTML=h;el.classList.toggle('open',open);el.classList.toggle('setp',!open&&!VLT.pin);
-var lb=$('vaultlockbtn');if(lb)lb.addEventListener('click',function(){vaultLockNow();vaultSay('Locked: values are hidden.');});
-var go=$('vaultgo'),p1=$('vaultpin'),p2=$('vaultpin2');if(go)go.addEventListener('click',vaultUnlock);
-[p1,p2].forEach(function(x){if(x)x.addEventListener('keydown',function(ev){if(ev.key==='Enter')vaultUnlock();});});}
-function vaultUnlock(){if(VLT.busy)return;var p1=$('vaultpin'),p2=$('vaultpin2'),pin=p1?p1.value:'';if(!pin){vaultSay('Type your vault PIN first.','err');if(p1&&p1.focus)p1.focus();return;}
-if(!VLT.pin&&p2&&p2.value!==pin){vaultSay("The two PINs don't match.",'err');return;}
-VLT.busy=true;vaultSay(VLT.pin?'Unlocking…':'Setting your PIN…');
-api(VLT.pin?'/api/vault/unlock':'/api/vault/pin',{pin:pin}).then(function(r){VLT.busy=false;if(p1)p1.value='';if(p2)p2.value='';
-if(!r||!r.ok){if(r&&r.wait)VLT.wait=r.wait;vaultSay((r&&r.error)||"Couldn't unlock it.",'err');vaultLockBar();var f=$('vaultpin');if(f&&f.focus)f.focus();return;}
-VLT.pin=true;VLT.wait=0;VLT.token=r.token;VLT.until=Date.now()+(r.unlockMs||120000);if(VLT_T)clearInterval(VLT_T);VLT_T=setInterval(vaultTick,1000);vaultSay('');
-var then=VLT.then;VLT.then=null;vaultDraw();if(then)vaultGet(then.name,then.act);}).catch(function(){VLT.busy=false;vaultSay("Couldn't reach Symbiot to unlock it.",'err');});}
-function vaultMatch(e,q){if(!q)return true;return (e.name+' '+e.kind+' '+(e.account||'')).toLowerCase().indexOf(q)>=0;}
-function vaultRow(e){var sh=VLT.shown[e.name],n=escQ(e.name);
-var meta="<span class='vk'>"+esc(e.kind)+"</span>"+(e.account?"<span>"+esc(e.account)+"</span>":"")+(e.saved?"<span>saved "+esc(vaultDate(e.saved))+"</span>":"")+(e.count>1?"<span>"+e.left+" of "+e.count+" unused</span>":"");
-var vals=sh?sh.map(function(x,i){return "<div class='vv'><code>"+esc(x.v)+"</code>"+(x.used?"<span class='vused'>used</span>":"")+(sh.length>1?"<button class='ghost vone' type='button' data-v='"+i+"' aria-label='Copy value "+(i+1)+" of "+n+"'>Copy</button>":"")+"</div>";}).join(''):"<div class='vv vhid' aria-label='Value hidden'>&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;</div>";
-var shown=e.account?e.name.replace(' ('+e.account+')','').replace('('+e.account+')',''):e.name;
-return "<div class='vrow' data-n='"+n+"'><div class='vn' title='"+n+"'>"+esc(shown||e.name)+"</div><div class='vm'>"+meta+"</div><div class='va'><button class='ghost vshow' type='button' aria-label='"+(sh?'Hide':'Show')+" "+n+"'>"+(sh?'Hide':'Show')+"</button><button class='ghost vcopy' type='button' aria-label='Copy "+n+"'>Copy</button></div>"+vals+"</div>";}
-function vaultDraw(){if(current!=='vault')return;vaultLockBar();var box=$('vaultlist');if(!box)return;var q=VLT.q,list=VLT.list.filter(function(e){return vaultMatch(e,q);});
-if(!VLT.list.length)box.innerHTML="<div class='vempty'>Nothing saved yet. When you paste a password, key or code into a chat, or an agent saves one for you, it shows here.</div>";
-else if(!list.length)box.innerHTML="<div class='vempty'>Nothing matches &ldquo;"+esc(q)+"&rdquo;. Try part of a name, a kind such as password, or an email address.</div>";
-else box.innerHTML="<div class='tgroup'>Saved <span class='tcount'>"+(q?list.length+' of ':'')+VLT.list.length+"</span></div>"+list.map(vaultRow).join('');
-box.querySelectorAll('.vrow').forEach(function(r){var name=r.getAttribute('data-n'),e=VLT.list.filter(function(x){return x.name===name;})[0];if(!e)return;name=e.name;
-var s=r.querySelector('.vshow');if(s)s.addEventListener('click',function(){if(VLT.shown[name]){delete VLT.shown[name];vaultDraw();return;}vaultGet(name,'reveal');});
-var c=r.querySelector('.vcopy');if(c)c.addEventListener('click',function(){vaultGet(name,'copy');});
-r.querySelectorAll('.vone').forEach(function(b){b.addEventListener('click',function(){var v=(VLT.shown[name]||[])[+b.getAttribute('data-v')];if(v)vaultCopied(name,v.v);});});});
-var lg=$('vaultlog');if(lg)lg.innerHTML=VLT.log.length?VLT.log.map(function(x){return "<div class='vlr'><b>"+esc(x.name)+"</b><span>"+(x.act==='copy'?'copied':'shown')+" "+esc(agoTxt(x.at))+"</span></div>";}).join(''):"<div class='vlr'>Nothing shown or copied yet.</div>";}
-// Show or Copy: locked, it asks for the PIN first and then does it
-function vaultGet(name,act){if(!vaultOpen()){vaultDrop();VLT.then={name:name,act:act};vaultDraw();vaultSay(VLT.pin?'Type your vault PIN to '+(act==='copy'?'copy':'show')+' “'+name+'”.':'Set a vault PIN first, then it '+(act==='copy'?'copies':'shows')+' “'+name+'”.');var f=$('vaultpin');if(f&&f.focus)f.focus();return;}
-api('/api/vault/value',{name:name,token:VLT.token,act:act}).then(function(r){if(r&&r.locked){vaultDrop();VLT.then={name:name,act:act};vaultDraw();vaultSay('Locked again: type your vault PIN.');return;}
-if(!r||!r.ok){vaultSay((r&&r.error)||"Couldn't read it.",'err');return;}
-VLT.log.unshift({at:Date.now(),name:name,act:act==='copy'?'copy':'reveal'});
-if(act==='copy'){var v=r.values.filter(function(x){return !x.used;})[0]||r.values[0];if(v)vaultCopied(name,v.v,true);vaultDraw();return;}
-VLT.shown[name]=r.values;vaultDraw();}).catch(function(){vaultSay("Couldn't reach Symbiot.",'err');});}
-function vaultCopied(name,v,logged){if(!logged){api('/api/vault/value',{name:name,token:VLT.token,act:'copy'}).catch(function(){});VLT.log.unshift({at:Date.now(),name:name,act:'copy'});}vaultClip(v).then(function(ok){vaultSay(ok?'Copied “'+name+'”. The clipboard is cleared in '+Math.round(VCLIP_MS/1000)+' seconds.':"Couldn't copy it: this window can't use the clipboard. Use Show and select it instead.",ok?'ok':'err');});}
+function vaultHue(s){var h=0;s=String(s||'');for(var i=0;i<s.length;i++)h=(h*31+s.charCodeAt(i))%360;return h;}
+function vaultMono(g){var l=String(g||'?').replace(/[^A-Za-z0-9]/g,'').charAt(0).toUpperCase()||'?';return "<span class='vmono' style='--h:"+vaultHue(g)+"' aria-hidden='true'>"+esc(l)+"</span>";}
+function vaultSub(e){var p=[e.kind];if(e.account)p.push(e.account);if(e.count>1)p.push(e.left+' of '+e.count+' unused');return p.join(' · ');}
+function vaultFmt(v){return String(v).split('').map(function(c){var x=esc(c);return /[0-9]/.test(c)?"<span class='vd'>"+x+"</span>":/[A-Za-z]/.test(c)?x:"<span class='vs'>"+x+"</span>";}).join('');}
+function vaultFind(n){return VLT.list.filter(function(x){return x.name===n;})[0]||null;}
+// a note at the foot of the screen, where it's seen wherever you pressed; undo: a button that calls it
+function vaultSay(t,cls,undo,ms){var m=$('vaultmsg');if(!m)return;if(VMSG_T){clearTimeout(VMSG_T);VMSG_T=null;}m.className=cls||'';m.innerHTML=t?"<span>"+esc(t)+"</span>"+(undo?"<button type='button' id='vaultundo'>Undo</button>":''):'';
+var u=$('vaultundo');if(u&&undo)u.addEventListener('click',function(){undo();vaultSay('');});if(t)VMSG_T=setTimeout(function(){vaultSay('');},ms||(undo?VDEL_MS:4500));}
+function vaultDrop(){VLT.token='';VLT.until=0;VLT.shown={};VLT.ok={};if(VLT_T){clearInterval(VLT_T);VLT_T=null;}}
+function vaultFlush(){var d=VLT.del;if(!d)return;VLT.del=null;clearTimeout(d.t);api('/api/vault/delete',{name:d.name,token:d.token}).then(function(r){if(r&&r.error)vaultSay("Couldn't delete it: "+r.error,'err');loadVault();}).catch(function(){});}
+function vaultLockNow(){vaultFlush();if(VLT.token)api('/api/vault/lock',{token:VLT.token}).catch(function(){});vaultDrop();VLT.then=null;if(VLT.mode==='rename'||VLT.mode==='delete')VLT.mode='';vaultClose();if(current==='vault')vaultDraw();}
+function vaultTick(){if(VLT.wait&&VLT.waitTo<=Date.now()){VLT.wait=0;if(VLT.sheet==='unlock')vaultSheet('unlock');}
+var w=$('vaultwait');if(w)w.textContent=vaultLeft(VLT.waitTo-Date.now());
+if(VLT.token&&!vaultOpen()){vaultDrop();if(VLT.mode==='rename'||VLT.mode==='delete')VLT.mode='';vaultSay('Locked again: values are hidden.');vaultDraw();return;}
+var s=$('vaultleft');if(s)s.textContent=vaultLeft(VLT.until-Date.now());if(!VLT.token&&!VLT.wait&&VLT_T){clearInterval(VLT_T);VLT_T=null;}}
+function vaultTimer(){if(!VLT_T)VLT_T=setInterval(vaultTick,1000);}
+function vaultHeld(r){if(r&&r.until){VLT.until=r.until;}}
+function loadVault(){if(!VLT.list.length&&VLT.state!=='ok'){VLT.state='load';vaultDraw();}
+api('/api/vault',{token:VLT.token}).then(function(d){if(!d||d.error){VLT.state='err';VLT.why=(d&&d.error)||'';vaultDraw();return;}
+VLT.state='ok';VLT.list=d.entries||[];VLT.pin=!!d.pin;VLT.wait=d.wait||0;VLT.waitTo=Date.now()+VLT.wait;if(VLT.wait)vaultTimer();VLT.log=d.log||[];if(!d.unlocked)vaultDrop();else{VLT.until=d.unlocked;vaultTimer();}vaultDraw();}).catch(function(){VLT.state='err';VLT.why='';vaultDraw();});}
+function vaultKind(e,f){if(f==='all')return true;if(f==='look')return !!(e.issues&&e.issues.length);var k=VKINDS[f];return k?k.indexOf(e.kind)>=0:e.kind==='Secret';}
+function vaultMatch(e,q){if(!q)return true;return (e.label+' '+e.name+' '+e.group+' '+e.kind+' '+(e.account||'')).toLowerCase().indexOf(q)>=0;}
+function vaultVisible(){var del=VLT.del&&VLT.del.name;return VLT.list.filter(function(e){return e.name!==del&&vaultKind(e,VLT.f)&&vaultMatch(e,VLT.q);}).sort(function(a,b){var ga=a.group==='Other'?'~':a.group.toLowerCase(),gb=b.group==='Other'?'~':b.group.toLowerCase();return ga<gb?-1:ga>gb?1:a.short.toLowerCase()<b.short.toLowerCase()?-1:1;});}
+function vaultFilters(){var del=VLT.del&&VLT.del.name,all=VLT.list.filter(function(e){return e.name!==del;}),n=function(f){return all.filter(function(e){return vaultKind(e,f);}).length;},look=n('look');
+var fs=[['all','All',all.length]].concat(look?[['look','Needs a look',look]]:[]).concat([['pw','Passwords',n('pw')],['key','Keys and IDs',n('key')],['code','Codes',n('code')],['other','Other',n('other')]]).filter(function(x){return x[0]==='all'||x[0]===VLT.f||x[2]>0;});
+return fs.map(function(x){return "<button type='button' data-va='filter' data-f='"+x[0]+"' aria-pressed='"+(VLT.f===x[0])+"'>"+(x[0]==='look'?"<span class='vdot' aria-hidden='true'></span>":'')+esc(x[1])+" <i>"+x[2]+"</i></button>";}).join('');}
+function vaultChip(){if(vaultOpen())return VIC.open+"<span>Unlocked <b id='vaultleft'>"+vaultLeft(VLT.until-Date.now())+"</b></span><button type='button' class='vtxt' data-va='lock'>Lock</button>";
+if(!VLT.pin)return VIC.lock+"<span class='vcl'>No PIN yet</span><button type='button' class='vtxt' data-va='unlockchip'>Set a PIN</button>";
+return VIC.lock+"<span class='vcl'>Locked</span><button type='button' class='vtxt' data-va='unlockchip'>Unlock</button>";}
+// The list: each service's entries under its name, A to Z, "Other" last
+function vaultListHtml(list){var out='',g=null,cnt={};list.forEach(function(e){cnt[e.group]=(cnt[e.group]||0)+1;});
+list.forEach(function(e){if(e.group!==g){g=e.group;out+="<div class='vgh' role='presentation'>"+esc(g)+" <i>"+cnt[g]+"</i></div>";}
+var look=e.issues&&e.issues.length;out+="<button type='button' class='vrow' role='option' data-va='pick' data-n='"+escQ(e.name)+"' aria-selected='"+(VLT.sel===e.name)+"'>"+vaultMono(e.group)+"<span class='vt'><b>"+esc(e.short||e.label)+"</b><span>"+esc(vaultSub(e))+"</span></span>"+(look?"<span class='vdot' title='Needs a look'></span><span class='vsl'>Needs a look</span>":'')+"</button>";});return out;}
+// One value field: hidden, shown (digits and symbols coloured, so 0 and O, 1 and l read apart), or a set of codes
+function vaultField(e){var sh=VLT.shown[e.name],n=escQ(e.name),ok=VLT.ok[e.name]||'',lab=e.count>1?(e.kind==='Recovery codes'?'Codes':'Values')+' · '+e.left+' of '+e.count+' unused':e.kind;
+var head="<div class='vfl'><span>"+esc(lab)+"</span>"+(sh?"<span>Hides when the vault locks</span>":'')+"</div>";
+if(sh&&sh.length>1){var order=sh.map(function(x,i){return {x:x,i:i};}).sort(function(a,b){return (a.x.used?1:0)-(b.x.used?1:0)||a.i-b.i;});
+return "<div class='vfield'><div class='vfl vfl2'><span>"+esc(lab)+" · hides when the vault locks</span><span class='vval' style='padding:0;min-height:0'><button type='button' class='ghost' data-va='hide' data-n='"+n+"'>"+VIC.eye+"Hide</button></span></div><div class='vcodes'>"+order.map(function(o){return "<div class='vcode"+(o.x.used?" used":"")+"'><span>"+vaultFmt(o.x.v)+"</span>"+(o.x.used?"<em>used</em>":"<button type='button' class='ghost' data-va='copyone' data-n='"+n+"' data-i='"+o.i+"' aria-label='Copy code "+(o.i+1)+"'>"+(ok==='c'+o.i?VIC.check+'Copied':VIC.copy+'Copy')+"</button>")+"</div>";}).join('')+"</div><div class='vok' role='status'>"+(ok?'Copied. It leaves the clipboard in '+Math.round(VCLIP_MS/1000)+' seconds.':'')+"</div></div>";}
+var val=sh?"<code>"+vaultFmt(sh[0].v)+"</code>":"<code class='vhid' aria-label='Hidden'>&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;</code>";
+return "<div class='vfield'>"+head+"<div class='vval'>"+val+"<button type='button' class='ghost' data-va='"+(sh?'hide':'show')+"' data-n='"+n+"'>"+VIC.eye+(sh?'Hide':'Show')+"</button><button type='button' class='ghost' data-va='copy' data-n='"+n+"'>"+(ok==='c'?VIC.check+'Copied':VIC.copy+'Copy')+"</button></div><div class='vok' role='status'>"+(ok?'Copied. It leaves the clipboard in '+Math.round(VCLIP_MS/1000)+' seconds.':'')+"</div></div>";}
+function vaultIssue(e,x){var n=escQ(e.name),b='';
+if(x.kind==='vague')b="<button type='button' class='ghost vbtn' data-va='rename' data-n='"+n+"'>Rename</button>";
+else if(x.kind==='same')b=(vaultFind(x.other)?"<button type='button' class='ghost vbtn' data-va='pick' data-n='"+escQ(x.other)+"'>Open the other</button>":'')+"<button type='button' class='ghost vbtn vdel' data-va='del' data-n='"+n+"'>Delete this one</button>";
+else if(x.kind==='file'&&!VLT.shown[e.name])b="<button type='button' class='ghost vbtn' data-va='show' data-n='"+n+"'>Show it</button><button type='button' class='ghost vbtn vdel' data-va='del' data-n='"+n+"'>Delete</button>";
+else if(x.kind==='file'||x.kind==='spent')b="<button type='button' class='ghost vbtn vdel' data-va='del' data-n='"+n+"'>Delete</button>";
+return "<div class='vissue'><p><span class='vdot' aria-hidden='true'></span><span>"+esc(x.text)+"</span></p><div class='vib'>"+b+"</div></div>";}
+function vaultLast(name){var l=VLT.log.filter(function(x){return x.name===name;})[0];if(!l)return 'Not yet, on this computer';return ({copy:'Copied',reveal:'Shown',add:'Added',rename:'Renamed'}[l.act]||'Changed')+' '+agoTxt(l.at);}
+function vaultDetailHtml(e){var n=escQ(e.name),back=VLT.one?"<button type='button' class='vback' data-va='back'>"+VIC.back+"All items</button>":'';
+var head;
+if(VLT.mode==='rename'){var lab=e.account?e.label.replace(e.account,'').replace(/[(][ ]*[)]/,'').trim():e.label;
+head="<div class='vdh'>"+vaultMono(e.group)+"<div class='vtt'><h2>Rename</h2><p>Agents will ask for it by its new name.</p></div></div><div class='vform' style='margin-top:16px'><label>What it's for<input id='vaultrn' value='"+escQ(lab)+"' autocomplete='off' spellcheck='false' maxlength='80'></label><label>Account or email (optional)<input id='vaultra' value='"+escQ(e.account||'')+"' autocomplete='off' spellcheck='false' maxlength='80'></label><div class='verr' id='vaultrerr' role='alert'></div><div class='vsb'><button type='button' class='ghost' data-va='cancel'>Cancel</button><button type='button' class='act' data-va='renamesave' data-n='"+n+"'>Save</button></div></div>";}
+else head="<div class='vdh'>"+vaultMono(e.group)+"<div class='vtt'><h2>"+esc(e.label)+"</h2><p>"+esc([e.group==='Other'?'':e.group,e.kind].filter(Boolean).join(' · '))+"</p></div><div class='vdact'><button type='button' class='ghost' data-va='rename' data-n='"+n+"'>Rename</button><button type='button' class='ghost vdel' data-va='del' data-n='"+n+"'>Delete</button></div></div>";
+var conf=VLT.mode==='delete'?"<div class='vconfirm' role='alert'><p><b>Delete “"+esc(e.label)+"”?</b> Agents that use it will have to ask you for it again. You can undo this for a few seconds.</p><div class='vsb' style='justify-content:flex-start'><button type='button' class='vdanger' data-va='delyes' data-n='"+n+"'>Delete</button><button type='button' class='ghost' data-va='cancel'>Keep it</button></div></div>":'';
+var iss=VLT.mode?'':(e.issues||[]).map(function(x){return vaultIssue(e,x);}).join('');
+var meta="<dl class='vmeta'>"+(e.account?"<dt>Account</dt><dd>"+esc(e.account)+"</dd>":'')+"<dt>Saved</dt><dd>"+esc(vaultDate(e.saved)||'Unknown')+"</dd><dt>Last shown or copied</dt><dd>"+esc(vaultLast(e.name))+"</dd><dt>Agents ask for</dt><dd><code>"+esc(e.name)+"</code><button type='button' class='vtxt' data-va='copyname' data-n='"+n+"'>Copy name</button></dd></dl>";
+return back+head+conf+iss+(VLT.mode==='rename'?'':vaultField(e)+meta);}
+function vaultEmptyDetail(){return "<div class='vempty'><b>Pick one to see it</b>Its value stays hidden until you unlock the vault.</div>";}
+function vaultDraw(){if(current!=='vault')return;var pv=$('panel-vault'),box=$('vaultlist'),det=$('vaultdetail'),ch=$('vaultlock'),fl=$('vaultfilters');if(!box||!det)return;
+if(ch){ch.innerHTML=vaultChip();ch.classList.toggle('open',vaultOpen());}
+var bar=pv&&pv.querySelector('.vbar'),lg=$('vaultlogbox');
+if(VLT.state!=='ok'){if(fl)fl.innerHTML='';if(lg)lg.style.display='none';pv.classList.remove('vone');
+if(VLT.state==='load'){box.innerHTML="<div class='vskel'></div><div class='vskel'></div><div class='vskel'></div><div class='vskel'></div>";det.innerHTML="<div class='vskel' style='height:180px'></div>";if(bar)bar.style.display='';}
+else{if(bar)bar.style.display='none';box.innerHTML='';det.style.display='';det.innerHTML="<div class='vempty' role='alert'><b>Couldn't open the vault</b>"+(VLT.why?esc(VLT.why):'Symbiot may have stopped. Nothing in the vault has changed.')+"<div class='vsb'><button type='button' class='ghost' data-va='retry'>Try again</button></div></div>";}return;}
+if(bar)bar.style.display='';
+if(!VLT.list.length){if(fl)fl.innerHTML='';if(lg)lg.style.display='none';pv.classList.remove('vone');box.innerHTML='';det.innerHTML="<div class='vempty'><b>Nothing saved yet</b>Passwords, keys and codes you paste into a chat, or that an agent saves for you, are kept here. You can add one yourself too.<div class='vsb'><button type='button' class='act' data-va='add'>Add one</button></div></div>";return;}
+if(fl)fl.innerHTML=vaultFilters();if(lg)lg.style.display='';
+var list=vaultVisible(),phone=window.innerWidth<=760;
+if(!list.length){box.innerHTML="<div class='vempty'><b>Nothing matches</b>"+(VLT.q?'Try part of a name, a service or an email address.':'Nothing of this kind is saved.')+"<div class='vsb'><button type='button' class='ghost' data-va='clear'>Show everything</button></div></div>";}
+else box.innerHTML=vaultListHtml(list);
+if(!phone&&!vaultFind(VLT.sel)&&list.length)VLT.sel=list[0].name;
+var e=vaultFind(VLT.sel);if(phone&&!e)VLT.one=false;
+pv.classList.toggle('vone',!!(phone&&VLT.one&&e));
+det.innerHTML=e?vaultDetailHtml(e):vaultEmptyDetail();
+var rs=box.querySelector("[aria-selected='true']");if(rs)rs.tabIndex=0;
+var lb=$('vaultlog');if(lb)lb.innerHTML=VLT.log.length?VLT.log.slice(0,12).map(function(x){return "<div class='vlr'><b>"+esc(x.label||x.name)+"</b><span>"+esc(({copy:'copied',reveal:'shown',add:'added',rename:'renamed','delete':'deleted'}[x.act]||x.act)+' '+agoTxt(x.at))+"</span></div>";}).join(''):"<div class='vlr'>Nothing shown, copied or changed yet.</div>";
+if(VLT.mode==='rename'){var ri=$('vaultrn');if(ri&&document.activeElement!==ri&&document.activeElement!==$('vaultra')){ri.focus();ri.select();}}}
+// ---- the unlock box, and adding one: over the page, where you are ------------------------
+function vaultSheet(kind,o){o=o||{};var s=$('vaultsheet');if(!s)return;VLT.sheet=kind;var h='';
+if(kind==='unlock'&&!VLT.pin)h="<div class='vsheet'><div class='vlockic'>"+VIC.lock+"</div><h3 id='vaultsheett'>Create your vault PIN</h3><p>You'll type it to show, copy or change what's saved here. At least 6 characters. Symbiot keeps only a scrambled form of it, which can't be turned back into your PIN.</p><div class='vform'><label>New PIN<input id='vaultpin' type='password' autocomplete='new-password'></label><label>The same PIN again<input id='vaultpin2' type='password' autocomplete='new-password'></label><div class='verr' id='vaulterr' role='alert'></div><div class='vsb'><button type='button' class='ghost' data-va='close'>Cancel</button><button type='button' class='act' data-va='unlock'>Create PIN</button></div></div></div>";
+else if(kind==='unlock')h="<div class='vsheet'><div class='vlockic'>"+VIC.lock+"</div><h3 id='vaultsheett'>Unlock the vault</h3><p>"+esc(VLT.then&&VLT.then.why?VLT.then.why+'. ':'')+"It stays unlocked while you use it and locks 5 minutes after.</p><div class='vform'>"+(VLT.wait?"<div class='verr' role='alert'>Too many wrong tries. You can try again in <b id='vaultwait'>"+vaultLeft(VLT.waitTo-Date.now())+"</b>.</div><div class='vsb'><button type='button' class='ghost' data-va='close'>Close</button></div>":"<label>Vault PIN<input id='vaultpin' type='password' autocomplete='current-password'></label><div class='verr' id='vaulterr' role='alert'>"+esc(o.err||'')+"</div><div class='vsb'><button type='button' class='ghost' data-va='close'>Cancel</button><button type='button' class='act' data-va='unlock'>Unlock</button></div>")+"</div><p class='vfine'>Forgot it? Run <code>symbiot secret pin-reset</code> in a terminal, then set a new one. What's saved stays as it is.</p></div>";
+else if(kind==='add')h="<div class='vsheet'><h3 id='vaultsheett'>Add to the vault</h3><p>Your agents can use it by its name; nobody sees the value without your PIN.</p><div class='vform'><label>What it's for<input id='vaddl' placeholder='e.g. Twilio auth token' autocomplete='off' spellcheck='false' maxlength='80'></label><label>Account or email (optional)<input id='vadda' autocomplete='off' spellcheck='false' maxlength='80'></label><label id='vaddvl'>Password, key or code<span class='vpw'><input id='vaddv' type='password' autocomplete='off' spellcheck='false'><button type='button' class='ghost' data-va='peekadd'>Show</button></span></label><label id='vaddcl' style='display:none'>Codes, one per line<textarea id='vaddc' spellcheck='false'></textarea></label><label class='vcheck'><input type='checkbox' id='vaddm' data-va='many'> It's a set of codes</label><div class='verr' id='vaulterr' role='alert'></div><div class='vsb'><button type='button' class='ghost' data-va='close'>Cancel</button><button type='button' class='act' data-va='addsave'>Save</button></div></div></div>";
+s.innerHTML=h;s.classList.remove('hidden');var f=s.querySelector('input:not([type=checkbox]),button.act,button.ghost');if(f&&f.focus)f.focus();}
+function vaultClose(){var s=$('vaultsheet');if(!s)return;var was=VLT.sheet;s.classList.add('hidden');s.innerHTML='';VLT.sheet='';if(was&&!vaultOpen())VLT.then=null;var r=document.querySelector("#vaultlist [aria-selected='true']");if(was&&r&&r.focus)r.focus();}
+// Do it now if it's unlocked, else ask for the PIN first and then do it
+function vaultNeed(a){if(vaultOpen()){vaultRun(a);return;}VLT.then=a;vaultSheet('unlock');}
+function vaultRun(a){if(!a)return;if(a.act==='add'){vaultSheet('add');return;}if(a.act==='rename'){VLT.sel=a.name;VLT.mode='rename';vaultDraw();return;}if(a.act==='del'){VLT.sel=a.name;VLT.mode='delete';vaultDraw();return;}vaultGet(a.name,a.act,a.i);}
+function vaultUnlock(){if(VLT.busy)return;var p1=$('vaultpin'),p2=$('vaultpin2'),er=$('vaulterr'),pin=p1?p1.value:'';var say=function(t){if(er)er.textContent=t;};
+if(!pin){say('Type your vault PIN first.');if(p1)p1.focus();return;}
+if(!VLT.pin&&pin.length<6){say('Make it at least 6 characters.');p1.focus();return;}
+if(!VLT.pin&&p2&&p2.value!==pin){say("The two PINs don't match.");p2.focus();return;}
+VLT.busy=true;say('');var b=document.querySelector("#vaultsheet [data-va='unlock']");if(b){b.disabled=true;b.textContent=VLT.pin?'Unlocking…':'Creating…';}
+api(VLT.pin?'/api/vault/unlock':'/api/vault/pin',{pin:pin}).then(function(r){VLT.busy=false;
+if(!r||!r.ok){if(r&&r.wait){VLT.wait=r.wait;VLT.waitTo=Date.now()+r.wait;vaultTimer();}vaultSheet('unlock',{err:(r&&r.error)||"Couldn't unlock it."});return;}
+var was=!VLT.pin;VLT.pin=true;VLT.wait=0;VLT.token=r.token;VLT.until=r.until||Date.now()+(r.unlockMs||300000);vaultTimer();var then=VLT.then;VLT.then=null;vaultClose();if(was)vaultSay('Your vault PIN is set, and the vault is unlocked.','');vaultDraw();vaultRun(then);}).catch(function(){VLT.busy=false;vaultSheet('unlock',{err:"Couldn't reach Symbiot to unlock it."});});}
+// Show or Copy (i: one code of a set)
+function vaultGet(name,act,i){var e=vaultFind(name);if(!vaultOpen()){vaultDrop();vaultNeed({act:act,name:name,i:i,why:(act==='copy'||act==='copyone'?'To copy':'To show')+' “'+(e?e.label:name)+'”'});return;}
+api('/api/vault/value',{name:name,token:VLT.token,act:act==='reveal'||act==='show'?'reveal':'copy'}).then(function(r){if(r&&r.locked){vaultDrop();vaultNeed({act:act,name:name,i:i,why:'To '+(act==='show'?'show':'copy')+' “'+(e?e.label:name)+'”'});vaultDraw();return;}
+if(!r||!r.ok){vaultSay((r&&r.error)||"Couldn't read it.",'err');return;}vaultHeld(r);
+VLT.log.unshift({at:Date.now(),name:name,label:e&&e.label,act:act==='show'?'reveal':'copy'});
+if(act==='show'){VLT.shown[name]=r.values;vaultDraw();return;}
+var v=act==='copyone'?r.values[+i]:(r.values.filter(function(x){return !x.used;})[0]||r.values[0]);if(v)vaultCopied(name,v.v,act==='copyone'?'c'+i:'c');}).catch(function(){vaultSay("Couldn't reach Symbiot.",'err');});}
+function vaultCopied(name,v,key){vaultClip(v).then(function(ok){if(!ok){vaultSay("This window can't use the clipboard. Press Show and select it instead.",'err');return;}VLT.ok[name]=key;vaultDraw();setTimeout(function(){if(VLT.ok[name]===key){delete VLT.ok[name];vaultDraw();}},2500);});}
+function vaultRenameSave(name){var l=$('vaultrn'),a=$('vaultra'),er=$('vaultrerr');if(!l||!l.value.trim()){if(er)er.textContent="Say what it's for: that's its name.";if(l)l.focus();return;}
+if(!vaultOpen()){vaultNeed({act:'rename',name:name,why:'To rename it'});return;}
+api('/api/vault/rename',{name:name,label:l.value,account:a?a.value:'',token:VLT.token}).then(function(r){if(r&&r.locked){vaultDrop();vaultNeed({act:'rename',name:name,why:'To rename it'});return;}
+if(!r||!r.ok){if(er)er.textContent=(r&&r.error)||"Couldn't rename it.";return;}vaultHeld(r);
+if(VLT.shown[name]&&r.name!==name){VLT.shown[r.name]=VLT.shown[name];delete VLT.shown[name];}VLT.mode='';VLT.sel=r.name;vaultSay('Renamed. Agents now ask for it by its new name.');loadVault();}).catch(function(){if(er)er.textContent="Couldn't reach Symbiot.";});}
+function vaultDelete(name){var e=vaultFind(name);if(!e)return;if(!vaultOpen()){vaultNeed({act:'del',name:name,why:'To delete “'+e.label+'”'});return;}
+vaultFlush();var vis=vaultVisible(),at=vis.indexOf(e),next=vis[at+1]||vis[at-1];VLT.del={name:name,token:VLT.token,t:setTimeout(vaultFlush,VDEL_MS)};VLT.mode='';delete VLT.shown[name];VLT.sel=next?next.name:'';VLT.one=false;vaultDraw();
+vaultSay('Deleted “'+e.label+'”.','',function(){if(VLT.del&&VLT.del.name===name){clearTimeout(VLT.del.t);VLT.del=null;VLT.sel=name;vaultDraw();}});}
+function vaultAddSave(){var l=$('vaddl'),a=$('vadda'),m=$('vaddm'),er=$('vaulterr'),vals;
+var nl=String.fromCharCode(10);vals=m&&m.checked?String(($('vaddc')||{}).value||'').split(nl).map(function(x){return x.trim();}).filter(Boolean):[String(($('vaddv')||{}).value||'')].filter(function(x){return x.trim();});
+if(!l||!l.value.trim()){if(er)er.textContent="Say what it's for: that's its name.";if(l)l.focus();return;}
+if(!vals.length){if(er)er.textContent=m&&m.checked?'Paste the codes, one per line.':'Paste the password, key or code.';return;}
+if(!vaultOpen()){vaultClose();vaultNeed({act:'add',why:'To add it'});return;}
+api('/api/vault/add',{label:l.value,account:a?a.value:'',values:vals,token:VLT.token}).then(function(r){if(r&&r.locked){vaultClose();vaultDrop();vaultNeed({act:'add',why:'To add it'});return;}
+if(!r||!r.ok){if(er)er.textContent=(r&&r.error)||"Couldn't save it.";return;}vaultHeld(r);vaultClose();VLT.sel=r.name;VLT.f='all';VLT.q='';var s=$('vaultsearch');if(s)s.value='';vaultSay('Saved. Agents can ask for it by its name.');loadVault();}).catch(function(){if(er)er.textContent="Couldn't reach Symbiot.";});}
 // A copied value is wiped from the clipboard VCLIP_MS later. Where that can't happen yet (the
 // window isn't focused, so the browser refuses), it's wiped as soon as the window has focus again.
 function vaultClip(text,env){env=env||{};var clip=env.clip||(typeof navigator!=='undefined'&&navigator.clipboard)||null,later=env.later||setTimeout,stop=env.stop||clearTimeout;
@@ -2553,11 +2735,45 @@ return clip.writeText(String(text)).then(function(){if(VCLIP.t)stop(VCLIP.t);VCL
 function vaultUnclip(clip){if(!VCLIP.v)return Promise.resolve(false);return clip.writeText('').then(function(){VCLIP.v='';VCLIP.pend=false;return true;},function(){VCLIP.pend=true;return false;});}
 if(typeof window!=='undefined'&&window.addEventListener)window.addEventListener('focus',function(){if(VCLIP.pend&&typeof navigator!=='undefined'&&navigator.clipboard)vaultUnclip(navigator.clipboard);});
 if(typeof document!=='undefined'&&document.addEventListener)document.addEventListener('visibilitychange',function(){if(document.hidden&&VLT.token)vaultLockNow();});
-(function(){var s=$('vaultsearch');if(s&&s.addEventListener)s.addEventListener('input',function(){VLT.q=String(s.value||'').trim().toLowerCase();vaultDraw();});
+// One listener for the page's buttons (data-va), and its keys: / to search, arrows through the list, Esc to close
+function vaultAct(b){var a=b.getAttribute('data-va'),n=b.getAttribute('data-n');
+if(a==='pick'){VLT.sel=n;VLT.mode='';VLT.one=true;vaultDraw();var r=document.querySelector("#vaultlist [aria-selected='true']");if(r&&window.innerWidth>760&&r.focus)r.focus();else{var d=$('vaultdetail');if(d&&d.scrollIntoView)d.scrollIntoView({block:'start'});}}
+else if(a==='filter'){VLT.f=b.getAttribute('data-f');vaultDraw();}
+else if(a==='clear'){VLT.f='all';VLT.q='';var s=$('vaultsearch');if(s)s.value='';vaultDraw();}
+else if(a==='show'||a==='copy'||a==='copyone')vaultGet(n,a,b.getAttribute('data-i'));
+else if(a==='hide'){delete VLT.shown[n];vaultDraw();}
+else if(a==='copyname')vaultClip(n).then(function(ok){vaultSay(ok?'Copied its name.':"This window can't use the clipboard.",ok?'':'err');});
+else if(a==='rename')vaultNeed({act:'rename',name:n,why:'To rename it'});
+else if(a==='renamesave')vaultRenameSave(n);
+else if(a==='del')vaultNeed({act:'del',name:n,why:'To delete it'});
+else if(a==='delyes')vaultDelete(n);
+else if(a==='cancel'){VLT.mode='';vaultDraw();}
+else if(a==='back'){VLT.one=false;VLT.mode='';vaultDraw();var r2=document.querySelector("#vaultlist [aria-selected='true']");if(r2&&r2.focus)r2.focus();}
+else if(a==='lock'){vaultLockNow();vaultSay('Locked. Values are hidden.');}
+else if(a==='unlockchip'){VLT.then=null;vaultSheet('unlock');}
+else if(a==='add')vaultNeed({act:'add',why:'To add to it'});
+else if(a==='addsave')vaultAddSave();
+else if(a==='peekadd'){var v=$('vaddv');if(v){v.type=v.type==='password'?'text':'password';b.textContent=v.type==='password'?'Show':'Hide';}}
+else if(a==='many'){var on=b.checked;$('vaddvl').style.display=on?'none':'';$('vaddcl').style.display=on?'':'none';}
+else if(a==='unlock')vaultUnlock();
+else if(a==='close')vaultClose();
+else if(a==='retry')loadVault();}
+(function(){var pv=$('panel-vault');if(!pv||!pv.addEventListener)return;var vm=$('vaultmsg');if(vm&&document.body&&typeof document.body.appendChild==='function'&&vm.parentNode!==document.body)try{document.body.appendChild(vm);}catch(e){}
+pv.addEventListener('click',function(ev){var b=ev.target&&ev.target.closest&&ev.target.closest('[data-va]');if(!b||!pv.contains(b))return;if(b.getAttribute('data-va')==='many')return vaultAct(b);vaultAct(b);});
+var sh=$('vaultsheet');if(sh&&sh.addEventListener)sh.addEventListener('mousedown',function(ev){if(ev.target===sh)vaultClose();});
+pv.addEventListener('keydown',function(ev){var t=ev.target;if(ev.key==='Escape'){var done=true;if(VLT.sheet)vaultClose();else if(VLT.mode){VLT.mode='';vaultDraw();}else if(VLT.one&&window.innerWidth<=760){VLT.one=false;vaultDraw();}else if(t&&t.id==='vaultsearch'&&t.value){t.value='';VLT.q='';vaultDraw();}else done=false;if(done){ev.preventDefault();ev.stopPropagation();}return;}
+if(ev.key==='Enter'&&t&&t.id&&(t.id==='vaultpin'||t.id==='vaultpin2')){vaultUnlock();ev.preventDefault();return;}
+if(ev.key==='Enter'&&t&&(t.id==='vaultrn'||t.id==='vaultra')){vaultRenameSave(VLT.sel);ev.preventDefault();return;}
+if(ev.key==='Enter'&&t&&(t.id==='vaddl'||t.id==='vadda'||t.id==='vaddv')){vaultAddSave();ev.preventDefault();return;}
+if(VLT.sheet&&ev.key==='Tab'){var f=[].slice.call(sh.querySelectorAll('input,button,textarea')).filter(function(x){return !x.disabled&&x.offsetParent;});if(f.length){var i=f.indexOf(document.activeElement);if(ev.shiftKey&&i<=0){f[f.length-1].focus();ev.preventDefault();}else if(!ev.shiftKey&&i===f.length-1){f[0].focus();ev.preventDefault();}}return;}
+if((ev.key==='ArrowDown'||ev.key==='ArrowUp')&&t&&(t.classList&&t.classList.contains('vrow')||t.id==='vaultsearch')){var rows=[].slice.call(document.querySelectorAll('#vaultlist .vrow'));if(!rows.length)return;var k=rows.indexOf(t),j=t.id==='vaultsearch'?0:Math.max(0,Math.min(rows.length-1,k+(ev.key==='ArrowDown'?1:-1)));ev.preventDefault();VLT.sel=rows[j].getAttribute('data-n');VLT.mode='';vaultDraw();var nr=document.querySelector("#vaultlist [aria-selected='true']");if(nr&&nr.focus){nr.focus();if(nr.scrollIntoView)nr.scrollIntoView({block:'nearest'});}}});
+if(document.addEventListener)document.addEventListener('keydown',function(ev){if(current!=='vault'||ev.key!=='/'||VLT.sheet)return;var t=ev.target,tag=t&&t.tagName;if(tag==='INPUT'||tag==='TEXTAREA'||(t&&t.isContentEditable))return;var s=$('vaultsearch');if(s){ev.preventDefault();s.focus();}});
+var s=$('vaultsearch');if(s&&s.addEventListener)s.addEventListener('input',function(){VLT.q=String(s.value||'').trim().toLowerCase();vaultDraw();});
+if(window.addEventListener)window.addEventListener('resize',function(){if(current==='vault')vaultDraw();});
 var o=$('openvault');if(o&&o.addEventListener)o.addEventListener('click',function(){if(typeof lqPool==='function'&&document.body.classList.contains('lq-liquid'))lqPool('vault');else setTab('vault');});})();
-function loadSecrets(){api('/api/secrets').then(function(d){var box=document.getElementById('secretslist');if(!box)return;var s=(d&&d.secrets)||[];
-box.innerHTML=s.length?s.map(function(x){return "<div class='task' data-n='"+esc(x.name)+"'><span class='t'>"+esc(x.name)+"</span><span class='muted' style='font-size:12px'>"+x.left+" of "+x.count+" unused</span><button class='rm rmsecret' title='delete it from this computer'>&times;</button></div>";}).join(""):"<div class='muted' style='font-size:12px'>None saved yet.</div>";
-box.querySelectorAll('.rmsecret').forEach(function(btn){btn.addEventListener('click',function(){var n=btn.closest('.task').getAttribute('data-n');if(typeof confirm==='function'&&!confirm("Delete the secret “"+n+"”? It can't be brought back."))return;api('/api/secrets/delete',{name:n}).then(loadSecrets);});});});}
+// Settings: how many are saved and what needs a look; the Vault is where they're looked up and kept tidy
+function loadSecrets(){api('/api/vault',{}).then(function(d){var box=document.getElementById('secretslist');if(!box)return;var s=(d&&d.entries)||[],look=s.filter(function(e){return e.issues&&e.issues.length;}).length;
+box.innerHTML="<div class='muted' style='font-size:13px'>"+(s.length?s.length+' saved'+(look?' · '+look+' need'+(look===1?'s':'')+' a look':''):'None saved yet.')+"</div>";});}
 function addTrustedUI(){var i=document.getElementById('newtrusted');var v=(i.value||'').trim();if(!v)return;var n=document.getElementById('trustednote');
 api('/api/screens/trusted/add',{site:v}).then(function(r){if(!r||r.error){n.innerHTML="<span class='err'>"+esc((r&&r.error)||'failed')+"</span>";return;}i.value='';loadTrusted();loadScreensUI();});}
 // Email: opt-in, read from mail already on this computer (no API) — see mail.mjs.
