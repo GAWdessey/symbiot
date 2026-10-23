@@ -2,6 +2,19 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one), for anyone who installs the app: what changed in it, never whose work it was (no projects, people, accounts, services, run ids or task wording of the person who made it). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.83.0 — 2026-10-23
+
+- **New screens are designed before they're built.** When an agent is about to build a new page, screen, dashboard or flow, or rework one, Symbiot first starts a designer on its strongest model. The designer writes no code. It looks at what's there and writes a spec:
+  - what the screen is for, and the best product of its kind to measure it against;
+  - every flow people expect;
+  - each screen at desktop and phone size;
+  - its states and its actual words;
+  - what's left out of this round;
+  - an acceptance checklist.
+
+  The builder then builds to that spec, and the design critic judges the result against it as well as the usual standard. Small fixes (a colour, spacing, one button) go straight to the builder.
+- **The critic's review stays out of the builder's conversation.** A run started after a review now carries on from the builder's own conversation, not the critic's.
+
 ## 0.82.1 — 2026-10-23
 
 - **Approve keeps what's yours out of public repos.** Before it pushes a change to a public repository, Approve checks what the change adds, on your computer: the names of your projects, the people you work with, the servers you connect to and this computer's own addresses. A change that names any of them isn't pushed; Approve says what it found and where, so it can be taken out first. Private repos are yours, and aren't checked.
