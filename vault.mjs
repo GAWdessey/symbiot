@@ -89,6 +89,15 @@ function markUsed(name, value) {
   const x = e.values.find((y) => y.v === value || y.v.startsWith(value)); if (!x) return { error: "No such value in that secret." };
   x.used = true; store(name, e); return { ok: true, left: e.values.filter((y) => !y.used).length };
 }
+// A new name for one, values and date as they were (the Vault page's Rename): agents ask for it by the new name.
+function renameSecret(name, to) {
+  to = String(to || "").trim().slice(0, 80); if (!to) return { error: "Give it a name." };
+  const e = load(name); if (!e) return { error: `No secret called "${name}".` };
+  if (to === name) return { ok: true, name };
+  if (readIndex().names[to]) return { error: `There's already one called "${to}".` };
+  store(to, { ...e, name: to }); deleteSecret(name);
+  return { ok: true, name: to };
+}
 function deleteSecret(name) {
   const idx = readIndex(), m = idx.names[name]; if (!m) return { error: `No secret called "${name}".` };
   if (m.where === "keyring") { const kr = keyring(); if (kr) kr.del(name); }
@@ -404,4 +413,4 @@ function heldFor(text) {
   return "";
 }
 
-export { heldFor, heldName, vaultSealed, repairFalseSaves, meetsStep, serviceOf, saveSecret, saveCode, CODE_TTL, listSecrets, getSecret, peekSecret, markUsed, deleteSecret, findSecrets, captureSecrets, scrubStored, SCRUB_V };
+export { heldFor, heldName, vaultSealed, repairFalseSaves, meetsStep, serviceOf, saveSecret, saveCode, CODE_TTL, listSecrets, getSecret, peekSecret, markUsed, deleteSecret, renameSecret, findSecrets, captureSecrets, scrubStored, SCRUB_V };

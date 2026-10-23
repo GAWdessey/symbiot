@@ -1,19 +1,21 @@
-// The Vault page: the logins, keys and codes in Symbiot's vault (vault.mjs), looked up by
-// the user. The list is names and what's known about each (its kind, the account or email
-// it's for, when it was saved), never a value. A value is shown or copied only after a
-// fresh unlock with the vault PIN, which holds for UNLOCK_MS; each show and copy is logged
-// here, on this computer (name, what and when, never the value). The PIN is kept as a
-// scrypt hash with its own salt (vault-pin.json, 0600), as a master password is in a
-// zero-knowledge vault: what's on disk can't be turned back into it. Wrong tries in a row
-// lock the page for a while. Nothing here goes to the AI, a log, a report or a brief, and
-// nothing in the vault is changed: no value is spent, renamed or deleted.
+// The Vault page: the logins, keys and codes in Symbiot's vault (vault.mjs), looked up and kept
+// tidy by the user. The list is names and what's known about each (a readable name, the service
+// it belongs to, its kind, the account or email it's for, when it was saved, and what needs a
+// look: a name that says nothing, a value saved twice, a file's name taken for a password),
+// never a value. A value is shown or copied, and an entry added, renamed or deleted, only on a
+// page unlocked with the vault PIN; the unlock holds while it's used and ends UNLOCK_MS after the
+// last use. Each show, copy and change is logged here, on this computer (name, what and when,
+// never the value). The PIN is kept as a scrypt hash with its own salt (vault-pin.json, 0600), as
+// a master password is in a zero-knowledge vault: what's on disk can't be turned back into it.
+// Wrong tries in a row lock the page for a while. Nothing here goes to the AI, a log, a report or
+// a brief.
 import { join } from "node:path";
-import { randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 import { CONFIG_DIR, readState, writeJsonAtomic } from "./core.mjs";
-import { listSecrets, peekSecret } from "./vault.mjs";
+import { listSecrets, peekSecret, saveSecret, renameSecret, deleteSecret } from "./vault.mjs";
 
 const PIN_FILE = () => join(CONFIG_DIR, "vault-pin.json"), LOG_FILE = () => join(CONFIG_DIR, "vault-log.json");
-const UNLOCK_MS = 2 * 60000, TRIES = 5, LOCKOUT_MS = 5 * 60000, LOG_KEEP = 500, PIN_MIN = 6;
+const UNLOCK_MS = 5 * 60000, TRIES = 5, LOCKOUT_MS = 5 * 60000, LOG_KEEP = 500, PIN_MIN = 6;
 const SCRYPT = { N: 1 << 15, r: 8, p: 1, maxmem: 64 * 1024 * 1024 };
 const hash = (pin, salt) => scryptSync(String(pin), salt, 32, SCRYPT);
 const readPin = () => readState(PIN_FILE()) || null;
@@ -28,14 +30,83 @@ function kindOf(name) {
   if (/\bcode$/.test(n)) return "One-time code";
   if (/\b(?:api|key|keys|token|tokens|secret)\b/.test(n.replace(/[-_]/g, " "))) return "API key or token";
   if (/\b(?:sid|account id|account-sid|client id|username|user)\b/.test(n.replace(/[-_]/g, " "))) return "Account ID";
+  if (/\bpin\b/.test(n.replace(/[-_]/g, " "))) return "PIN";
   return "Secret";
 }
 const accountOf = (name) => ((String(name).match(EMAIL) || [])[0] || "").toLowerCase();
 
+// The name as people read it: "twilio_auth_token" → "Twilio auth token", "parcel-tracker
+// account sid" → "Parcel tracker account SID". The email it's for goes (it shows beside it),
+// short forms are in capitals, a word already cased its own way stays so, and a name that's
+// lower case by design (npm) stays lower case. The raw name stays the key.
+const UPPER = new Set(["sid", "api", "id", "pin", "url", "sms", "otp", "totp", "2fa", "mfa", "ssh", "aws", "s3", "smtp", "imap", "jwt", "dns", "ip", "ftp", "sftp", "db", "vpn", "crm", "gpg", "pgp", "ai", "cli", "ui", "uri", "sdp", "wa"]);
+const LOWER = new Set(["npm", "pnpm", "npx"]);
+const CASED = { github: "GitHub", gitlab: "GitLab", linkedin: "LinkedIn", whatsapp: "WhatsApp", openai: "OpenAI", paypal: "PayPal", mongodb: "MongoDB", digitalocean: "DigitalOcean", youtube: "YouTube", icloud: "iCloud", macos: "macOS", ios: "iOS" };
+const capital = (w) => (LOWER.has(w) || w !== w.toLowerCase() ? w : w.charAt(0).toUpperCase() + w.slice(1));
+const shortForm = (w) => UPPER.has(w.toLowerCase()) || (/^[a-z]{2,4}$/.test(w) && !/[aeiouy]/.test(w)); // "sts", "sdp": letters, no vowel
+function labelOf(name) {
+  const acct = String(name).match(EMAIL);
+  let s = String(name);
+  if (acct) s = s.replace(acct[0], "").replace(/\(\s*\)/g, "");
+  s = s.replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim() || String(name);
+  const words = s.split(" ").map((w) => CASED[w.toLowerCase()] || (shortForm(w) && !LOWER.has(w) ? w.toUpperCase() : w));
+  words[0] = capital(words[0]);
+  return words.join(" ");
+}
+
+// The service an entry belongs to, so a service's keys sit together ("Twilio": its account SID and
+// auth token): a service it names, else the first word of its name, else "Other" for a name that
+// says nothing ("token", "password").
+const SERVICES = [[/\btwilio\b/i, "Twilio"], [/\bcloudflare\b|\bcf\b/i, "Cloudflare"], [/\bzoho\b/i, "Zoho"], [/\blemon ?squeezy\b/i, "Lemon Squeezy"], [/\bgithub\b|\bgh\b/i, "GitHub"], [/\bgitlab\b/i, "GitLab"], [/\bnpm\b/i, "npm"], [/\bgmail\b|\bgoogle\b/i, "Google"], [/\baws\b|\bamazon\b/i, "AWS"], [/\bstripe\b/i, "Stripe"], [/\bopenai\b/i, "OpenAI"], [/\banthropic\b/i, "Anthropic"], [/\btwitter\b/i, "X (Twitter)"], [/\blinkedin\b/i, "LinkedIn"], [/\bslack\b/i, "Slack"], [/\bwhatsapp\b/i, "WhatsApp"], [/\bfacebook\b|\bmeta\b/i, "Meta"], [/\binstagram\b/i, "Instagram"], [/\bsupabase\b/i, "Supabase"], [/\bvercel\b/i, "Vercel"], [/\bnetlify\b/i, "Netlify"], [/\bdigital ?ocean\b/i, "DigitalOcean"], [/\bfirebase\b/i, "Firebase"], [/\bmongo(?:db)?\b/i, "MongoDB"], [/\bmicrosoft\b|\bazure\b|\boutlook\b/i, "Microsoft"], [/\bapple\b|\bicloud\b/i, "Apple"], [/\bpaypal\b/i, "PayPal"], [/\bshopify\b/i, "Shopify"], [/\bnotion\b/i, "Notion"], [/\bdiscord\b/i, "Discord"], [/\btelegram\b/i, "Telegram"]];
+const GENERIC = new Set(["password", "passwords", "pass", "pw", "token", "tokens", "secret", "secrets", "key", "keys", "api", "pin", "code", "codes", "test", "live", "my", "the", "a", "new", "old", "login", "account", "recovery", "backup"]);
+function groupOf(name) {
+  const n = String(name).replace(EMAIL, " ").replace(/[_-]+/g, " ");
+  for (const [rx, g] of SERVICES) if (rx.test(n)) return g;
+  const first = (n.trim().split(/\s+/)[0] || "").toLowerCase();
+  if (!first || GENERIC.has(first) || /\.\w{2,4}$/.test(first) || first.length < 2) return "Other";
+  return shortForm(first) ? first.toUpperCase() : capital(first);
+}
+// The name without its service, as it reads under the service's heading ("Twilio auth token" → "Auth token").
+function shortOf(label, group) {
+  if (group === "Other") return label;
+  const words = group.toLowerCase().replace(/\s*\(.*\)$/, "").split(/\s+/), l = label.split(" ");
+  let i = 0; while (i < words.length && i < l.length && l[i].toLowerCase() === words[i]) i++;
+  const rest = l.slice(i).join(" ").trim();
+  return rest ? capital(rest.split(" ")[0]) + rest.slice(rest.split(" ")[0].length) : label;
+}
+
+// What needs a look, per name: { name: [{ kind, text, other? }] }. Values are compared here, on
+// this computer, and only ever as a hash: "Same value as …" says no value.
+const VAGUE = /^(?:token|password|pass|pw|secret|key|api ?key|code|pin|login|credentials?)s?$/i;
+const FILEY = /\.(?:md|txt|json|csv|pdf|docx?|xlsx?|html?|ya?ml|env|log)\b/i;
+function issuesOf(list, { peek = peekSecret } = {}) {
+  const out = {}, add = (n, x) => { (out[n] = out[n] || []).push(x); };
+  const seen = new Map();
+  for (const s of list) {
+    const bare = String(s.name).replace(EMAIL, "").replace(/[()]/g, "").replace(/[_-]+/g, " ").trim();
+    if (VAGUE.test(bare)) add(s.name, { kind: "vague", text: "Its name doesn't say what it's for. Rename it, so you and your agents can find it." });
+    if (FILEY.test(s.name)) add(s.name, { kind: "file", text: "It's named after a file, so it may not be a real password. Show it to check, and delete it if it isn't one." });
+    if (s.count > 1 && s.count - (s.used || 0) <= 0) add(s.name, { kind: "spent", text: "Every code in it has been used. Delete it once you have new ones." });
+    let e = null; try { e = peek(s.name); } catch {}
+    for (const v of (e && Array.isArray(e.values) ? e.values : [])) {
+      const h = createHash("sha256").update(String(v.v)).digest("hex");
+      const o = seen.get(h);
+      if (o && o !== s.name) {
+        if (!(out[s.name] || []).some((x) => x.kind === "same" && x.other === o)) add(s.name, { kind: "same", other: o, text: `Same value as “${labelOf(o)}”. Keep one: delete the other.` });
+        if (!(out[o] || []).some((x) => x.kind === "same" && x.other === s.name)) add(o, { kind: "same", other: s.name, text: `Same value as “${labelOf(s.name)}”. Keep one: delete the other.` });
+      } else if (!o) seen.set(h, s.name);
+    }
+  }
+  return out;
+}
+
 // The list: names and what's known, newest first. { entries, pin: set or not, unlocked until }
-function vaultList({ token = "", now = Date.now() } = {}) {
-  const entries = listSecrets().map((s) => ({ name: s.name, kind: kindOf(s.name), account: accountOf(s.name), saved: s.ts || 0, count: s.count || 0, left: s.left ?? s.count ?? 0 }))
-    .sort((a, b) => (b.saved || 0) - (a.saved || 0) || a.name.localeCompare(b.name));
+function vaultList({ token = "", now = Date.now(), peek = peekSecret } = {}) {
+  const list = listSecrets(), issues = issuesOf(list, { peek });
+  const entries = list.map((s) => {
+    const label = labelOf(s.name), group = groupOf(s.name);
+    return { name: s.name, label, group, short: shortOf(label, group), kind: kindOf(s.name), account: accountOf(s.name), saved: s.ts || 0, count: s.count || 0, left: s.left ?? s.count ?? 0, issues: issues[s.name] || [] };
+  }).sort((a, b) => (b.saved || 0) - (a.saved || 0) || a.name.localeCompare(b.name));
   return { entries, ...lockState({ token, now }) };
 }
 
@@ -44,6 +115,12 @@ const SESSIONS = new Map(); // token -> until; in memory only, so a restart lock
 function lockState({ token = "", now = Date.now() } = {}) {
   const p = readPin(), until = SESSIONS.get(String(token)) || 0;
   return { pin: !!(p && p.hash), unlocked: until > now ? until : 0, wait: p && p.until > now ? p.until - now : 0, unlockMs: UNLOCK_MS };
+}
+// An unlock still running: it holds UNLOCK_MS from now (each use keeps it open), or 0.
+function held(token, now = Date.now()) {
+  const t = String(token || ""), until = SESSIONS.get(t) || 0;
+  if (!(until > now)) return 0;
+  SESSIONS.set(t, now + UNLOCK_MS); return now + UNLOCK_MS;
 }
 function setPin(pin, { old = "", token = "", now = Date.now() } = {}) {
   pin = String(pin || "");
@@ -64,9 +141,9 @@ function check(pin, { now = Date.now() } = {}) {
   if (got.length === want.length && timingSafeEqual(got, want)) { if (p.fails) writePin({ ...p, fails: 0, until: 0 }); return { ok: true }; }
   const fails = (p.fails || 0) + 1, locked = fails >= TRIES;
   writePin({ ...p, fails: locked ? 0 : fails, until: locked ? now + LOCKOUT_MS : 0 });
-  return locked ? { error: `Too many wrong tries. Try again in ${LOCKOUT_MS / 60000} min.`, wait: LOCKOUT_MS } : { error: `That PIN isn't right. ${TRIES - fails} ${TRIES - fails === 1 ? "try" : "tries"} left before a ${LOCKOUT_MS / 60000}-minute wait.` };
+  return locked ? { error: `Too many wrong tries. Try again in ${LOCKOUT_MS / 60000} min.`, wait: LOCKOUT_MS } : { error: `That PIN isn't right. ${TRIES - fails} ${TRIES - fails === 1 ? "try" : "tries"} left before a ${LOCKOUT_MS / 60000}-minute wait.`, left: TRIES - fails };
 }
-// A fresh unlock: a token the page holds, good for UNLOCK_MS. Each unlock is a new one.
+// A fresh unlock: a token the page holds, good for UNLOCK_MS after its last use. Each unlock is a new one.
 function unlock(pin, { now = Date.now() } = {}) {
   const c = check(pin, { now }); if (!c.ok) return c;
   for (const [t, u] of SESSIONS) if (u <= now) SESSIONS.delete(t);
@@ -75,26 +152,55 @@ function unlock(pin, { now = Date.now() } = {}) {
   return { ok: true, token, until, unlockMs: UNLOCK_MS };
 }
 function lock(token) { SESSIONS.delete(String(token || "")); return { ok: true }; }
+const LOCKED = { locked: true, error: "Unlock the vault to do that." };
 
 // One entry's values, for an unlocked page only. act: "reveal" or "copy", logged either way.
 function vaultValue(name, { token = "", act = "reveal", now = Date.now() } = {}) {
-  const until = SESSIONS.get(String(token)) || 0;
-  if (!(until > now)) return { locked: true, error: "Unlock the vault to see this." };
+  const until = held(token, now); if (!until) return { ...LOCKED, error: "Unlock the vault to see this." };
   const e = peekSecret(String(name || "")); if (e.error) return { error: e.error };
   if (e.once && e.expires && now > e.expires) return { error: "This code ran out of time." };
   note(e.name, act === "copy" ? "copy" : "reveal", now);
   return { ok: true, name: e.name, values: e.values, until };
 }
 
-// ---- the log: who looked at what, on this computer ------------------------------------
-function note(name, act, at = Date.now()) {
+// ---- keeping it tidy: add, rename, delete (unlocked only, each logged without its value) ----
+const cleanName = (n) => String(n || "").replace(/\s+/g, " ").trim().slice(0, 80);
+// A name from what the user typed: what it's for, and the account it's for, in brackets as agents read it.
+const nameFrom = (label, account = "") => { const l = cleanName(label), a = cleanName(account); return a && !l.includes(a) ? `${l} (${a})`.slice(0, 80) : l; };
+function addEntry({ label = "", account = "", values = [], token = "", now = Date.now() } = {}) {
+  const until = held(token, now); if (!until) return LOCKED;
+  const name = nameFrom(label, account); if (!name) return { error: "Say what it's for: that's its name." };
+  const vals = [].concat(values).map((v) => String(v || "").trim()).filter(Boolean);
+  if (!vals.length) return { error: "Paste the password, key or codes to keep." };
+  if (listSecrets().some((s) => s.name.toLowerCase() === name.toLowerCase())) return { error: `There's already one called “${labelOf(name)}”. Open that one, or give this a different name.` };
+  const r = saveSecret(name, vals); if (r.error) return r;
+  note(name, "add", now);
+  return { ok: true, name, count: r.count, until };
+}
+function renameEntry(name, { label = "", account = "", token = "", now = Date.now() } = {}) {
+  const until = held(token, now); if (!until) return LOCKED;
+  const to = nameFrom(label, account); if (!to) return { error: "Give it a name." };
+  if (to !== name && listSecrets().some((s) => s.name !== name && s.name.toLowerCase() === to.toLowerCase())) return { error: `There's already one called “${labelOf(to)}”.` };
+  const r = renameSecret(String(name || ""), to); if (r.error) return r;
+  if (r.name !== name) note(r.name, "rename", now, { from: name });
+  return { ok: true, name: r.name, until };
+}
+function removeEntry(name, { token = "", now = Date.now() } = {}) {
+  const until = held(token, now); if (!until) return LOCKED;
+  const r = deleteSecret(String(name || "")); if (r.error) return r;
+  note(name, "delete", now);
+  return { ok: true, until };
+}
+
+// ---- the log: who looked at or changed what, on this computer --------------------------------
+function note(name, act, at = Date.now(), extra = {}) {
   const log = readState(LOG_FILE(), Array.isArray) || [];
-  log.push({ at, name: String(name).slice(0, 80), act });
+  log.push({ at, name: String(name).slice(0, 80), act, ...(extra.from ? { from: String(extra.from).slice(0, 80) } : {}) });
   try { writeJsonAtomic(LOG_FILE(), log.slice(-LOG_KEEP), { mode: 0o600 }); } catch {}
 }
-const vaultLog = (n = 20) => (readState(LOG_FILE(), Array.isArray) || []).slice(-n).reverse();
+const vaultLog = (n = 30) => (readState(LOG_FILE(), Array.isArray) || []).slice(-n).reverse().map((x) => ({ ...x, label: labelOf(x.name) }));
 
 // Forgot the PIN: `symbiot secret pin-reset` in a terminal (someone at your own terminal can read the vault anyway).
 function resetPin() { const had = !!(readPin() || {}).hash; try { writePin({ v: 1, reset: Date.now() }); } catch { return { error: "Couldn't reset it." }; } SESSIONS.clear(); return { ok: true, had }; }
 
-export { vaultList, vaultValue, vaultLog, setPin, unlock, lock, lockState, resetPin, kindOf, accountOf, UNLOCK_MS, TRIES, LOCKOUT_MS, PIN_MIN };
+export { vaultList, vaultValue, vaultLog, setPin, unlock, lock, lockState, resetPin, addEntry, renameEntry, removeEntry, kindOf, accountOf, labelOf, groupOf, shortOf, issuesOf, nameFrom, UNLOCK_MS, TRIES, LOCKOUT_MS, PIN_MIN };
