@@ -3,6 +3,11 @@
 // but never imported or defined (no-undef), and an import or helper left behind
 // with nothing using it (no-unused-vars). Not a style checker.
 import globals from "globals";
+import { readFileSync } from "node:fs";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const ROOT = dirname(fileURLToPath(import.meta.url));
 
 const RULES = {
   "no-undef": "error",
@@ -16,9 +21,25 @@ const RULES = {
 // it that way), so the script is its text with the escapes undone (\\' → \'),
 // which is done a line at a time to keep the lines where they are.
 const cookLine = (l) => { try { return new Function("return `" + l + "`;")().replace(/[\r\n]/g, " "); } catch { return l; } };
+// The page in parts (ui.mjs joins ui/js/<area>.mjs in the order of its SCRIPT list): the script is
+// linted as the one script it is (a name one part defines and another uses is no "undefined"), and
+// what's found is said with the part and line it's on.
+function partsScript(text) {
+  const m = text.match(/const SCRIPT = \[([^\]]+)\]/); if (!m) return null;
+  const lines = [], from = [];
+  for (const name of m[1].split(",").map((x) => x.trim().toLowerCase())) {
+    const file = `ui/js/${name}.mjs`, src = readFileSync(join(ROOT, file), "utf8");
+    const open = src.indexOf("export default `") + "export default `".length, body = src.slice(open, src.lastIndexOf("`;"));
+    const before = src.slice(0, open).split("\n").length;
+    body.split("\n").forEach((l, i) => { lines.push(cookLine(l)); from.push(`${file}:${before + i}`); });
+  }
+  return { text: lines.join("\n"), from };
+}
 const pageScripts = {
   meta: { name: "symbiot/page-scripts" },
   preprocess(text) {
+    const parts = partsScript(text);
+    if (parts) { pageScripts.offsets.push({ from: parts.from }); return [text, { text: parts.text, filename: "page1.js" }]; }
     const blocks = [text], re = /<script>([\s\S]*?)<\/script>/g;
     let m;
     while ((m = re.exec(text))) {
@@ -34,6 +55,7 @@ const pageScripts = {
     return lists.flatMap((msgs, i) => {
       if (!i) return msgs;
       const o = offs[i - 1];
+      if (o.from) return msgs.map((m) => ({ ...m, message: `${m.message} (page script, ${o.from[m.line - 1] || "ui/js"})`, line: 1, column: 1, endLine: undefined, endColumn: undefined, fix: undefined, suggestions: undefined }));
       const at = (l, c) => (l === 1 ? c + o.col : c);
       return msgs.map((m) => ({ ...m, message: `${m.message} (page script)`, line: m.line + o.line, column: at(m.line, m.column),
         ...(m.endLine ? { endLine: m.endLine + o.line, endColumn: at(m.endLine, m.endColumn) } : {}), fix: undefined, suggestions: undefined }));

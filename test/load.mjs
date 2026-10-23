@@ -6,7 +6,7 @@
 //   node test/load.mjs
 //
 import { spawnSync } from "node:child_process";
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync, existsSync, readdirSync } from "node:fs";
 import { join, dirname, normalize } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -16,7 +16,8 @@ let pass = 0, fail = 0;
 const ok = (n, c, got) => { if (c) { pass++; console.log("  ✓ " + n); } else { fail++; console.log("  ✗ " + n + (got !== undefined ? "  got: " + JSON.stringify(got).slice(0, 600) : "")); } };
 
 const files = (pkg.files || []).map(normalize);
-const shipped = files.filter((f) => f.endsWith(".mjs"));
+const inDirs = (d) => { try { return readdirSync(join(PKG, d), { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? inDirs(join(d, e.name)) : e.name.endsWith(".mjs") ? [join(d, e.name)] : [])); } catch { return []; } };
+const shipped = [...files.filter((f) => f.endsWith(".mjs")), ...files.filter((f) => f === "ui").flatMap(inDirs)]; // ui/: the app page's parts
 
 console.log("PACKAGE — the bin entry point is shipped and runnable");
 const binRaw = (pkg.bin && pkg.bin.symbiot) || "";
@@ -36,7 +37,7 @@ for (const f of shipped) {
   const src = readFileSync(join(PKG, f), "utf8");
   for (const m of src.matchAll(/(?:^|\n)\s*(?:import|export)\s[^;]*?\sfrom\s+["'](\.{1,2}\/[^"']+)["']|\bimport\(\s*["'](\.{1,2}\/[^"']+)["']\s*\)/g)) {
     const dep = normalize(join(dirname(f), m[1] || m[2]));
-    if (!files.includes(dep) || !existsSync(join(PKG, dep))) missing.push(`${f} -> ${dep}`);
+    if (!(files.includes(dep) || files.some((d) => !/\.\w+$/.test(d) && dep.startsWith(d + "/"))) || !existsSync(join(PKG, dep))) missing.push(`${f} -> ${dep}`); // a file, or one in a folder that's listed (ui/)
   }
 }
 ok(`local imports of ${shipped.join(", ")} are all in "files"`, missing.length === 0, missing);

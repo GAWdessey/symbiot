@@ -21,7 +21,7 @@ import { join } from "node:path";
 import { availableParallelism, cpus } from "node:os";
 
 const root = fileURLToPath(new URL("..", import.meta.url)), here = process.env.SYMBIOT_TEST_DIR || join(root, "test"); // another folder: test/runner.mjs
-const NOT_SUITES = new Set(["run.mjs"]); // this runner
+const NOT_SUITES = new Set(["run.mjs", "uisource.mjs"]); // this runner, and a helper the suites import
 const TIMES = join(here, ".test-times.json");
 
 function args(argv) {

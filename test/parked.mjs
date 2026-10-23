@@ -5,7 +5,7 @@
 //
 //   node test/parked.mjs
 //
-import { mkdtempSync, mkdirSync, readFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -38,7 +38,7 @@ ok("not the user's waits, a lane that is running, an ended job or a card", !p.so
 console.log("PARKED — Home and the chat");
 const ctx = homeContext({ you: [], youCount: 0, feeds: [], working: 0, runs: [], finished: [], digest: [], ledger: [], handed: [], lanes: [], next: [], at: now });
 ok("the chat is told plainly when no card waits for the user", /no card is waiting for them, so never say one is/.test(ctx), ctx.slice(0, 200));
-const ui = readFileSync(new URL("../ui.mjs", import.meta.url), "utf8");
+const ui = (await import("./uisource.mjs")).uiSource();
 ok("Home draws them (a drop each, a count in its line)", /kind:'park'/.test(ui) && /parked on others/.test(ui) && /w\.parked\|\|\[\]/.test(ui));
 console.log(`\n${fail ? "✗" : "✓"} parked: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

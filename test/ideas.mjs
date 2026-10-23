@@ -76,7 +76,7 @@ console.log("ON ITS LANE'S PROJECT SHEET — Home's relay");
 
 console.log("DRAWN — both places, the same buttons");
 {
-  const ui = readFileSync(new URL("../ui.mjs", import.meta.url), "utf8");
+  const ui = (await import("./uisource.mjs")).uiSource();
   ok("the agent card draws the pointer line, and ideas from another agent tagged with it", /idea"\+\(x\.n>1\?"s":""\)\+" sent to "\+esc\(x\.repo\)/.test(ui) && />from "\+esc\(s\.from\)/.test(ui), "");
   ok("...Skip on a card is sent with the folder that raised the idea", /api\('\/api\/agents\/skip',\{path:s\.path\|\|a\.path,text:s\.text\}\)/.test(ui), "");
   ok("Home's relay draws the pointer, and the idea's source", /p\.sent\.map\(function\(x\)/.test(ui) && /d\.from\?" <small class='rlfrom'>from "/.test(ui), "");
