@@ -267,6 +267,9 @@ try {
   ok("no task: says so", commitSubject([]) === "symbiot: changes approved without a task", commitSubject([]));
   const priv = commitText(["Deploy it on /home/pat/app and check prod-box, run act-2ae1923d", "Fix the login bug that signs people out early. More detail here."], [{ term: "prod-box", why: "a server you connect to" }]);
   ok("commit text: a task naming private things stays out, the rest goes", priv.subject === "Fix the login bug that signs people out early." && !/act-|prod-box|pat/.test(priv.subject + priv.body) && /kept in Symbiot/.test(priv.body), JSON.stringify(priv));
+  const guard = commitText(["Read-only: change no code, commit nothing, push nothing, send nothing.", "Fix the login bug that signs people out early."]);
+  ok("commit text: a brief's guard line is no title or body", guard.subject === "Fix the login bug that signs people out early." && !/read-only|nothing/i.test(guard.subject + guard.body), guard.subject + "|" + guard.body);
+  ok("commit text: only a guard line leaves no title from it", !/read-only/i.test(commitText(["Read-only: change no code, commit nothing, push nothing, send nothing."]).subject));
   ok("commit text: nothing public gives a generic subject", commitText(["Check prod-box"], [{ term: "prod-box", why: "x" }]).subject === "Small fixes and improvements");
 } finally {
   ollama.close();

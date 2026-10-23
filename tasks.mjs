@@ -908,7 +908,12 @@ function commitSubject(texts) {
 // notes) so the full task text, with its paths, servers and run ids, stays in Symbiot
 // (0.66.6's commit and PR #202 carried it). Gives { subject, body }.
 const PRIVATE_LEFT = "Tasks with private details are kept in Symbiot, not here.";
+// A brief's guard line ("Read-only: change no code, commit nothing, push nothing, send nothing.", PR #258's
+// title, 23 Oct 2026) is an instruction to the run, not a change: it never makes a title or a body.
+const GUARD_LINE = /^\s*(read-only\b|(do not|don't|never)\b.*\b(commit|push|send)\b|(change|commit|push|send) nothing\b|.*\bcommit nothing, push nothing)/i;
+const bySubstance = (list) => list.filter((x) => !GUARD_LINE.test(String(x).replace(/^\s*(#+|[-*+]|\d+[.)])\s+/, "").replace(/\*\*|__/g, "")));
 function commitText(texts, deny = [], notes = null) {
+  texts = bySubstance(texts); if (notes) notes = bySubstance(notes);
   if (!texts.length) return { subject: commitSubject(texts), body: "No ticked task covers these changes." };
   const entries = notes && notes.length ? [...new Set(notes)] : uniqueTasks(texts.map(changelogEntry));
   const kept = entries.filter((e) => !leaksIn(e, deny).length), left = entries.length - kept.length;

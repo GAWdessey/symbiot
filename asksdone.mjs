@@ -1,7 +1,7 @@
 // One shared record of the questions the user has answered, for every agent and Home:
 // an ask that's in it isn't raised again (Home drops it) and each agent's brief lists it.
 import { readFileSync, readdirSync, statSync, writeFileSync, mkdirSync } from "node:fs";
-import { join, basename } from "node:path";
+import { join, basename, isAbsolute, dirname } from "node:path";
 import { createHash } from "node:crypto";
 import { CONFIG_DIR, readState, writeJsonAtomic } from "./core.mjs";
 import { signInDone, browserBrief } from "./browserfails.mjs";
@@ -100,12 +100,14 @@ const saysDone = (a) => { const t = String(a || "").trim(); return !!t && !/\?/.
 // What was said on a card before it was answered: the user's questions and the agent's replies,
 // per question, in the folder's .symbiot/talk.json. Shown on the card, and given to the run with
 // the answer when it comes (agents.mjs answerQuestions).
-const TALK = (path) => join(String(path || ""), ".symbiot", "talk.json");
+// A card that isn't a folder's (a goal's is "goal:<id>") keeps its talk in Symbiot's own folder: joined
+// as a folder it made ~/goal:7b486530/.symbiot/talk.json, wherever the app was started (23 Oct 2026).
+const TALK = (path) => { const p = String(path || ""); return isAbsolute(p) ? join(p, ".symbiot", "talk.json") : join(CONFIG_DIR, "talk", `${p.replace(/[^\w.-]+/g, "_").slice(0, 120) || "card"}.json`); };
 function talkAll(path) { try { const o = JSON.parse(readFileSync(TALK(path), "utf8")); return o && typeof o === "object" ? o : {}; } catch { return {}; } }
 const talkOf = (path, q) => talkAll(path)[key(q)] || [];
 function addTalk(path, q, msg, now = Date.now()) {
   const all = talkAll(path), k = key(q); all[k] = [...(all[k] || []), { from: msg.from, text: String(msg.text || "").slice(0, 4000), at: now }].slice(-20);
-  try { mkdirSync(join(String(path), ".symbiot"), { recursive: true }); writeFileSync(TALK(path), JSON.stringify(all, null, 1)); } catch {}
+  try { mkdirSync(dirname(TALK(path)), { recursive: true }); writeFileSync(TALK(path), JSON.stringify(all, null, 1)); } catch {}
   return all[k];
 }
 function endTalk(path, q) { const all = talkAll(path), k = key(q); if (!all[k]) return; delete all[k]; try { writeFileSync(TALK(path), JSON.stringify(all, null, 1)); } catch {} }
@@ -154,6 +156,10 @@ function reportAsked(answers) {
 // words in the same lane, 4 from another. the user's 4 Paddle asks shared paddle/symbiot/pro or more.
 const HOLD_FOR = 14 * 86400000;
 function heldBy(q, { lane = "", now = Date.now(), readSince = () => false, id = "" } = {}) {
+  // a code ask is a new code, whatever was asked before: on 23 Oct 2026 the phone check's "which 6-digit code did
+  // codecheck.dev text you?" was held by ops' "open Symbiot … so the phone code check can start?", asked back about
+  // the day before (3 words shared: phone, code, check), so it never reached Home and the check stopped at step 2
+  if (codeAsk({ q })) return null;
   // the same id is the same question, whatever its words: answered once, or asked back about until read
   if (id) { const x = doneList().slice().reverse().find((y) => y.id === String(id).toLowerCase() && !y.code); if (x && (!x.back || (x.ts && now - x.ts < HOLD_FOR && !readSince(x.ts, x.lane || lane)))) return x; }
   const w = words(q); if (w.size < 2) return null;

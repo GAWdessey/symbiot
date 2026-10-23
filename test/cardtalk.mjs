@@ -81,6 +81,27 @@ try {
     const r = H.homeAnswer("needs:m1", { text: "allowed it" }, d);
     ok("its agent can't start this second: the answer is still saved, the card settles, and it says so (no \"didn't start\" error, no resend)", r.ok && !r.error && log.settled === 1 && /Saved as your answer/.test(r.said) && /lane is paused/.test(r.said) && /allowed it/.test(answersOf()), [r, log]); }
   ok("a question on a step card is still talk with its agent", H.homeAnswer("needs:m1", { text: "is it running yet" }, stepDeps({ settled: 0, ran: 0 })).talk === true);
+
+  console.log("CARD TALK — never \"this card\": a card with no question isn't shown, and talk finds the card it's on");
+  // 23 Oct 2026: "what is this for?" typed on a relay card (needs:earlier-7f4dfae5, not among Home's first six)
+  // went to its agent as "this card", in ~/earlier-7f4dfae5, and the AI said the card was empty.
+  const N = await import("../needs.mjs");
+  ok("blank, placeholder and self-referential words are no question", ["", "  ", "this card", "This card?", "the card", "undefined", "N/A", "…", "null"].every(N.blankText) && !N.blankText("Can I send the guide to Jono?") && !N.blankText("I didn't send it to anyone."));
+  ok("…a card is blank only when none of its words say anything", N.blankAsk({ kind: "ask", q: "this card", sub: "" }) && !N.blankAsk({ kind: "ask", q: "", sub: "Send the guide to Jono?" }) && !N.blankAsk({ kind: "setup", title: "Connect an AI" }));
+  const logged = [], cards = [{ kind: "ask", id: "needs:r9", path: run, q: "this card", title: "Grok guide waits for your OK" }, { kind: "ask", id: "ask:" + run, path: run, q: Q }];
+  const kept = H.dropBlank(cards, [{ id: "r9", path: run, name: "Agent: Make a clean copy of the guide" }], (l) => logged.push(l));
+  ok("the blank card is dropped, the real one kept", kept.length === 1 && kept[0].q === Q, kept);
+  ok("…and app.log says which run made it, once", logged.length === 1 && /needs:r9/.test(logged[0]) && /run r9/.test(logged[0]) && /Make a clean copy/.test(logged[0]) && H.dropBlank(cards, [], (l) => logged.push(l)).length === 1 && logged.length === 1, logged);
+  const NQ = "I didn't send it to anyone. Check first: the brief is in FURNITURE-GOOGLE-SEO-GROK-BRIEF.md";
+  const shown = new Map([["needs:r9", { id: "needs:r9", kind: "ask", path: run, raw: NQ, q: "Can I send the guide?" }]]);
+  ok("a card Home or the relay built is found by its id, with its own question and folder", (H.cardFor("needs:r9", { deps: { shown } }) || {}).q === NQ && H.cardFor("needs:r9", { deps: { shown } }).path === run);
+  const none = new Map(), runs = () => [{ id: "earlier-7f4dfae5", path: run, needs: { what: "I didn't send it to anyone.", check: "the brief" } }];
+  ok("…one gone since is found from its run, by the run's id, never as a folder named for it", (H.cardFor("needs:earlier-7f4dfae5", { deps: { shown: none, agents: runs } }) || {}).path === run && /didn't send it/.test(H.cardFor("needs:earlier-7f4dfae5", { deps: { shown: none, agents: runs } }).q));
+  ok("…else with the question the page sent", (H.cardFor("needs:gone1", { q: "Send it to Jono?", deps: { shown: new Map([["needs:gone1", { id: "needs:gone1", path: run, q: "" }]]), agents: () => [] } }) || {}).q === "Send it to Jono?");
+  ok("…and with no real folder or question, there's no card: nothing is made up", H.cardFor("needs:earlier-7f4dfae5", { deps: { shown: none, agents: () => [] } }) === null && H.cardFor("needs:r9", { q: "this card", deps: { shown: new Map([["needs:r9", { id: "needs:r9", path: run, q: "" }]]), agents: () => [] } }) === null);
+  ok("cardTalk won't talk about \"this card\"", (await H.cardTalk(run, [{ q: "this card", a: "what is this for?" }], { force: true, ask: async () => JSON.stringify({ reply: "it's empty" }) })) === null);
+  S.addTalk("goal:7b486530", "Should I move the domain?", { from: "you", text: "how should i know" });
+  ok("a goal card's talk (its path is \"goal:<id>\") is kept in Symbiot's folder, not a folder of that name", S.talkOf("goal:7b486530", "Should I move the domain?").length === 1 && existsSync(join(CFG, "talk", "goal_7b486530.json")) && !existsSync(join(process.cwd(), "goal:7b486530")));
 } catch (e) { ok("ran", false, String((e && e.stack) || e)); }
 finally { rmSync(HOME, { recursive: true, force: true }); }
 console.log(`\n${fail ? "✗" : "✓"} cardtalk: ${pass} passed, ${fail} failed`);

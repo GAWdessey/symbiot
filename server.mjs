@@ -51,7 +51,7 @@ import { adaptState, noteUse } from "./adapt.mjs";
 import { settleDone } from "./proof.mjs";
 import { writeCards, loadCardText, keyOf as cardKeyOf } from "./needs.mjs";
 import { shoot } from "./design.mjs";
-import { updateAsk, cardTalk, dismissCard, reportIdeasAdd, reportIdeasDismiss, reportAsk, reportDraftAnswer, homeState, homeTick, homeAsk, homeAnswer, homeNext, workScene, forgetWork, workGo, workTick, firstSteps, marketingState, marketingGo, marketingDraftAnswer, marketingTask, moveToMarketing, onboarding, setOnboarding, startOnboarding, phoneSetupFirst, loadDismissed } from "./home.mjs";
+import { updateAsk, cardTalk, cardFor, dismissCard, reportIdeasAdd, reportIdeasDismiss, reportAsk, reportDraftAnswer, homeState, homeTick, homeAsk, homeAnswer, homeNext, workScene, forgetWork, workGo, workTick, firstSteps, marketingState, marketingGo, marketingDraftAnswer, marketingTask, moveToMarketing, onboarding, setOnboarding, startOnboarding, phoneSetupFirst, loadDismissed } from "./home.mjs";
 import { marketingOverview } from "./mkoverview.mjs";
 import { MARKETING_DIR, MARKETING, productNames, draftPreview, laneMedia, displayName, setDraftMedia } from "./marketing.mjs";
 import { trays, trayMedia, setBlur, addBlur, removeBlur, setReviewed, renderCapture } from "./tray.mjs";
@@ -756,8 +756,9 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
         const b = await readBody(req), r = homeAnswer(b.id, { pick: b.pick, text: b.text });
         if (!r || !r.talk) return json(res, r);
         // neither yes nor no: it's said to the card's agent, and the card stays (home.mjs cardTalk)
-        const card = ((homeState() || {}).you || []).find((y) => y.id === b.id) || {}, path = card.path || String(b.id || "").replace(/^\w+:/, "");
-        const t = await cardTalk(path, [{ q: card.q || card.sub || card.title || "this card", a: r.text }], { force: true }).catch(() => null);
+        const card = cardFor(b.id, { q: b.q });
+        if (!card) { console.log(`card talk: no card or question behind ${String(b.id || "").slice(0, 80)}, so "${String(r.text).slice(0, 60)}" went to no agent`); return json(res, { ok: true, keep: true, said: "I can't find what this card asks any more: it was answered or changed a moment ago. Ask on Home, and I'll answer from there." }); }
+        const t = await cardTalk(card.path, [{ q: card.q, a: r.text }], { force: true }).catch(() => null);
         return json(res, t || { ok: true, keep: true, said: "Noted on the card for its agent. A question doesn't settle it: press one of its buttons, or say in your own words what you did, when you're ready." });
       }
       if (u.pathname === "/api/away" && req.method === "POST") { const b = await readBody(req); return json(res, toggleAway(() => winUrl(server.address().port), b.open)); } // a pass per window
