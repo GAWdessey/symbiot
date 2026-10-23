@@ -23,7 +23,7 @@ import { judgeChrome, seen as seenChrome, openTabs, PREFIX as CHROME } from "./c
 import { judgePush } from "./pushgate.mjs";
 import { judgePhone, letGo as phoneLetGo, phoneAsked } from "./phonegate.mjs";
 
-const SECRET = [".ssh", ".gnupg", ".aws", ".azure", ".kube", ".docker/config.json", ".config/gcloud", ".config/gh/hosts.yml", ".netrc", ".npmrc", ".pypirc", ".git-credentials", ".config/symbiot/secrets.json", ".config/symbiot/vault.json", ".config/symbiot/vault.key"];
+const SECRET = [".ssh", ".gnupg", ".aws", ".azure", ".kube", ".docker/config.json", ".config/gcloud", ".config/gh/hosts.yml", ".netrc", ".npmrc", ".pypirc", ".git-credentials", ".config/symbiot/secrets.json", ".config/symbiot/vault.json", ".config/symbiot/vault.key", ".config/symbiot/vault-pin.json"];
 const under = (p, d) => p === d || p.startsWith(d.endsWith("/") ? d : d + "/");
 const expand = (p, home, cwd) => resolve(cwd, String(p).replace(/^~(?=\/|$)/, home).replace(/^\$HOME(?=\/|$)/, home).replace(/^\$\{HOME\}(?=\/|$)/, home));
 const BROWSER = /\b(google-chrome(-stable)?|chromium(-browser)?|chrome|firefox|msedge|playwright|puppeteer|wkhtmltoimage|cutycapt)\b/i;

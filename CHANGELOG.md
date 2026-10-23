@@ -2,6 +2,10 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one), for anyone who installs the app: what changed in it, never whose work it was (no projects, people, accounts, services, run ids or task wording of the person who made it). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.81.0 — 2026-10-23
+
+- **A Vault page to look up what's saved.** The logins, API keys and codes that you or your agents saved in Symbiot are now on a page of their own (from Settings, or by name from Home). Search by name, kind or email; each entry shows its kind, the account it belongs to and when it was saved. Values stay hidden. Showing or copying one needs your vault PIN, set the first time you open it, and an unlock lasts two minutes; leaving the page or hiding the window locks it again. A copied value is cleared from the clipboard after 30 seconds. Five wrong PINs in a row mean a five-minute wait. Each show and copy is noted on this computer (which entry and when, never the value), and nothing on the page is sent to the AI. The vault itself is unchanged: the page reads it and never spends, renames or deletes anything. Forgot the PIN? `symbiot secret pin-reset` in a terminal clears it.
+
 ## 0.80.4 — 2026-10-22
 
 - **Home shows jobs that are parked on someone else.** A job that is staged and waiting on a person outside, another project or a set time used to be invisible: Home listed only what was running. It now shows each one with what it waits on ("parked · waiting on someone outside: staged, nothing sent, waiting on a yes"), and counts them in its top line.

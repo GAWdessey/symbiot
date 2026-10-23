@@ -497,11 +497,18 @@ async function cmdSecret() {
   }
   // scrub: read the chat history again for secrets stored before they were caught, vault them and blank every copy (names and files only, never a value)
   if (sub === "scrub") { const r = (await via("/api/secrets/scrub", {})) || v.scrubStored({ force: true }); if (r.error) { console.error(r.error); process.exitCode = 1; return; } console.log(r.found && r.found.length ? `Saved ${r.found.join(", ")}; blanked in ${r.files.length} file${r.files.length === 1 ? "" : "s"}.` : "Nothing found."); return; }
+  // pin-reset: a forgotten vault PIN (the Vault page's unlock, vaultview.mjs) is cleared from a terminal, by a person:
+  // the page then asks for a new one. Nothing saved in the vault changes.
+  if (sub === "pin-reset") {
+    if (!process.stdin.isTTY) { console.error("Run this yourself, in a terminal."); process.exitCode = 1; return; }
+    const r = (await import("./vaultview.mjs")).resetPin(); if (r.error) { console.error(r.error); process.exitCode = 1; return; }
+    console.log(r.had ? "Vault PIN cleared. Open the Vault page in Symbiot to set a new one; what's saved in the vault is unchanged." : "No vault PIN was set."); return;
+  }
   if (!name) { console.error("symbiot secret " + sub + " <name>"); process.exitCode = 1; return; }
   if (sub === "get" && v.vaultSealed() && !(await via("/api/ping", {}))) { console.error(SEALED); process.exitCode = 1; return; }
   const r = sub === "get" ? ((await via("/api/secrets/get", { name, use: has("use") })) || v.getSecret(name, { use: has("use") }))
     : sub === "used" ? ((await via("/api/secrets/used", { name, value })) || v.markUsed(name, String(value || "")))
-    : sub === "delete" ? ((await via("/api/secrets/delete", { name })) || v.deleteSecret(name)) : { error: "symbiot secret list | add <name> (value on stdin, or --from <file>) | get <name> [--use] | used <name> <value> | delete <name> | scrub" };
+    : sub === "delete" ? ((await via("/api/secrets/delete", { name })) || v.deleteSecret(name)) : { error: "symbiot secret list | add <name> (value on stdin, or --from <file>) | get <name> [--use] | used <name> <value> | delete <name> | scrub | pin-reset" };
   if (r.error) { console.error(r.error); process.exitCode = 1; return; }
   console.log(sub === "get" ? r.value : "ok");
 }

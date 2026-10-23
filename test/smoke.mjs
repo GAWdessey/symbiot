@@ -80,7 +80,7 @@ async function runUi(js, page, { storage = {}, handlers = true, android = null, 
   };
   const exists = (id) => ids.has(id) || rendered.some((h) => h.includes(`id='${id}'`) || h.includes(`id="${id}"`));
   // every screen the liquid opens (lqPool, via window.symbiotOpen), as the tab bar listed them before the liquid
-  const tabs = ["map", "board", "drift", "week", "standup", "todo", "tasks", "reports", "marketing", "computer", "settings"];
+  const tabs = ["map", "board", "drift", "week", "standup", "todo", "tasks", "reports", "marketing", "computer", "vault", "settings"];
   const document = {
     body: makeEl("body"),
     getElementById(id) { return exists(id) ? (els[id] = els[id] || makeEl(id)) : null; },
@@ -347,6 +347,11 @@ const calls = [
   ["/api/phone/forget", "POST"],
   ["/api/secrets", "GET"],          // saved secret names for Settings (isolated HOME -> none; never values)
   ["/api/secrets/delete", "POST"],  // no name -> "No secret called", nothing removed
+  ["/api/vault", "POST"],           // the Vault page: names only (isolated HOME -> none), locked, no PIN set
+  ["/api/vault/pin", "POST"],       // no PIN -> "at least 6 characters", nothing saved
+  ["/api/vault/unlock", "POST"],    // no PIN set -> refused, no unlock
+  ["/api/vault/lock", "POST"],      // no token -> nothing to lock
+  ["/api/vault/value", "POST"],     // not unlocked -> locked, no value, nothing logged
   ["/api/desktop", "GET"],         // weekly write-up + start-at-login state
   ["/api/desktop/weekly", "POST"],  // empty body -> schedule unchanged (stays off)
   ["/api/desktop/autostart", "POST"], // empty body -> off: removes nothing outside the isolated HOME
