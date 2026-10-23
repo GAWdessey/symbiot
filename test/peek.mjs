@@ -37,7 +37,7 @@ try {
   ok("a bare host with a path, and a full link; trailing punctuation off; a file name isn't a link", ls.join() === "https://mentenaz-server.com/about/x,https://store.godotengine.org/asset/godotvmf", ls);
 
   console.log("YOUR NETWORK — refused, so a message can't make Symbiot poke it");
-  ok("private, loopback, link-local and CGNAT (Tailscale) addresses are yours", ["192.168.1.1", "10.0.0.5", "127.0.0.1", "169.254.1.1", "100.78.4.37", "::1", "fd00::1", "::ffff:192.168.8.121"].every(privateIp) && !privateIp("93.184.216.34"), "");
+  ok("private, loopback, link-local and CGNAT (Tailscale) addresses are yours", ["192.168.1.1", "10.0.0.5", "127.0.0.1", "169.254.1.1", "100.101.102.103", "::1", "fd00::1", "::ffff:192.168.8.60"].every(privateIp) && !privateIp("93.184.216.34"), "");
   const lan = await peek("http://192.168.1.1/admin", { get: web({}).get, resolve: PUBLIC });
   ok("a link to your router isn't fetched", /private network/.test(lan.error || ""), lan);
   const w0 = web({ "https://short.example/r": { status: 302, headers: { location: "http://intranet.local/x" } } });

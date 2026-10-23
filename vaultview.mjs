@@ -43,7 +43,7 @@ const UPPER = new Set(["sid", "api", "id", "pin", "url", "sms", "otp", "totp", "
 const LOWER = new Set(["npm", "pnpm", "npx"]);
 const CASED = { github: "GitHub", gitlab: "GitLab", linkedin: "LinkedIn", whatsapp: "WhatsApp", openai: "OpenAI", paypal: "PayPal", mongodb: "MongoDB", digitalocean: "DigitalOcean", youtube: "YouTube", icloud: "iCloud", macos: "macOS", ios: "iOS" };
 const capital = (w) => (LOWER.has(w) || w !== w.toLowerCase() ? w : w.charAt(0).toUpperCase() + w.slice(1));
-const shortForm = (w) => UPPER.has(w.toLowerCase()) || (/^[a-z]{2,4}$/.test(w) && !/[aeiouy]/.test(w)); // "sts", "sdp": letters, no vowel
+const shortForm = (w) => UPPER.has(w.toLowerCase()) || (/^[a-z]{2,4}$/.test(w) && !/[aeiouy]/.test(w)); // "sdp", "crm": letters, no vowel
 function labelOf(name) {
   const acct = String(name).match(EMAIL);
   let s = String(name);

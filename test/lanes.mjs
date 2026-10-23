@@ -25,6 +25,9 @@ const { buildTasksMd, mergeWhenGreen } = await import("../tasks.mjs");
   const rg = await mergeWhenGreen("/tmp", "7", g.gh), rf = await mergeWhenGreen("/tmp", "7", f.gh), rp = await mergeWhenGreen("/tmp", "7", p.gh);
   ok("merging from Symbiot: green checks merge past the self-review rule, so no second GitHub account is needed", rg.ok && g.calls.join() === "pr checks,pr merge", [rg, g.calls]);
   ok("…but a failing or running check never merges", rf.error && !f.calls.includes("pr merge") && rp.pending && !p.calls.includes("pr merge"), [rf, rp]);
+  const wf = join(HOME, "wf-repo"); mkdirSync(join(wf, ".github", "workflows"), { recursive: true }); writeFileSync(join(wf, ".github", "workflows", "ci.yml"), "on: pull_request\n");
+  const n0 = fake([]), rn = await mergeWhenGreen(wf, "7", n0.gh), n1 = fake([]), rn1 = await mergeWhenGreen(join(HOME, "no-wf"), "7", n1.gh);
+  ok("…nor one whose checks haven't started yet (a PR just opened), in a repo that has them; one with no checks at all merges", rn.pending && !n0.calls.includes("pr merge") && rn1.ok, [rn, rn1]);
 }
 const { actBrief } = await import("../mind.mjs");
 

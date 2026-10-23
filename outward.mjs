@@ -141,4 +141,32 @@ function checkChangelog(md, deny = []) {
   return out;
 }
 
-export { PRODUCT_TERMS, nodeTerms, denyTerms, denyList, leaksIn, internalOnly, publicItems, checkChangelog };
+// What a change adds to a PUBLIC repo that's the user's own (Approve, before it pushes): a lane's
+// name, a person's, a server they connect to, or an address of this computer. On 23 Oct 2026 an
+// approved change put the maker's clients and people in a public repo's code and tests, and the only
+// check (CI's, with the private names) ran after it had merged. Code is full of words a release note
+// isn't (providers, month names, WATCH_GRACE), so only those kinds count here, and a word joined by
+// "_" is a different word. added: [{ file, line, text }]; mine: this computer's addresses.
+const CODE_KINDS = new Set(["a lane of yours", "a person", "a server you connect to"]);
+function privateIn(added, deny = [], { mine = [] } = {}) {
+  const terms = deny.filter((d) => d && CODE_KINDS.has(d.why)).map((d) => ({ ...d, rx: new RegExp(`(?<![A-Za-z0-9_])${d.term.split(/[\s._-]+/).filter(Boolean).map(escRe).join("[\\s._-]*")}(?![A-Za-z0-9_])`, "i") }));
+  const ips = mine.filter((ip) => ip && !/^127\./.test(ip)), out = [];
+  for (const a of added) {
+    const t = String(a.text || "");
+    for (const d of terms) if (d.rx.test(t)) out.push({ file: a.file, line: a.line, term: d.term, why: d.why });
+    for (const ip of ips) if (new RegExp(`(?<![\\d.])${escRe(ip)}(?![\\d])`).test(t)) out.push({ file: a.file, line: a.line, term: ip, why: "an address of this computer" });
+  }
+  return out;
+}
+// The lines a diff (`git diff -U0`) adds: [{ file, line, text }].
+function addedLines(diff) {
+  const out = []; let file = "", n = 0;
+  for (const l of String(diff || "").split("\n")) {
+    if (l.startsWith("+++ ")) { file = l.replace(/^\+\+\+ (b\/)?/, ""); continue; }
+    const h = l.match(/^@@ -\S+ \+(\d+)/); if (h) { n = +h[1]; continue; }
+    if (l.startsWith("+") && file && file !== "/dev/null") out.push({ file, line: n++, text: l.slice(1) });
+    else if (!l.startsWith("-") && !l.startsWith("\\")) n++;
+  }
+  return out;
+}
+export { privateIn, addedLines, CODE_KINDS, PRODUCT_TERMS, nodeTerms, denyTerms, denyList, leaksIn, internalOnly, publicItems, checkChangelog };

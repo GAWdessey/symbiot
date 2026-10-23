@@ -20,22 +20,22 @@ const post = (title, product, when) => `# ${title}\ntype: post\nproduct: ${produ
 const NOW = Date.parse("2026-10-23T09:00:00");
 const at = (s) => Date.parse(s.replace(" ", "T"));
 
-put("drafts/dailify/06-life-cover.md", post("12:32, a life cover call", "Dailify", "2026-10-29 08:00"));
-put("drafts/dailify/06b-life-cover.md", post("12:32, a life cover call", "Dailify", "2026-10-29 08:00"));
-put("drafts/dailify/new-draft.md", post("A new idea for brokers", "Dailify", ""));
-put("drafts/dailify/old.md", post("Already out", "Dailify", "2026-10-19 08:00"));
+put("drafts/bookly/06-life-cover.md", post("12:32, a life cover call", "Bookly", "2026-10-29 08:00"));
+put("drafts/bookly/06b-life-cover.md", post("12:32, a life cover call", "Bookly", "2026-10-29 08:00"));
+put("drafts/bookly/new-draft.md", post("A new idea for brokers", "Bookly", ""));
+put("drafts/bookly/old.md", post("Already out", "Bookly", "2026-10-19 08:00"));
 put("drafts/symbiot/stall.md", post("The app stalled for two seconds", "Symbiot", "2026-11-13 08:00"));
 put("drafts/symbiot/plan.md", "# A plan\ntype: plan\nproduct: Symbiot\n\n## Notes\nnot a post\n");
 const statuses = {};
-for (const [rel, when] of [["drafts/dailify/06-life-cover.md", "2026-10-29 08:00"], ["drafts/dailify/06b-life-cover.md", "2026-10-29 08:00"], ["drafts/dailify/old.md", "2026-10-19 08:00"], ["drafts/symbiot/stall.md", "2026-11-13 08:00"]]) {
+for (const [rel, when] of [["drafts/bookly/06-life-cover.md", "2026-10-29 08:00"], ["drafts/bookly/06b-life-cover.md", "2026-10-29 08:00"], ["drafts/bookly/old.md", "2026-10-19 08:00"], ["drafts/symbiot/stall.md", "2026-11-13 08:00"]]) {
   statuses[rel] = { status: "approved", sig: "x", at: NOW - 1000, posted: at(when), postedOn: "linkedin" };
 }
 put(".symbiot/drafts.json", JSON.stringify(statuses));
 
 console.log("no weekly report yet:");
 {
-  const o = marketingOverview({ dir, now: NOW, names: ["Dailify", "Symbiot"] });
-  const d = o.products.find((p) => p.name === "Dailify"), s = o.products.find((p) => p.name === "Symbiot");
+  const o = marketingOverview({ dir, now: NOW, names: ["Bookly", "Symbiot"] });
+  const d = o.products.find((p) => p.name === "Bookly"), s = o.products.find((p) => p.name === "Symbiot");
   ok("scheduled posts sit under their product, soonest first, a redraft marked too counted once", d && d.scheduled.length === 1 && d.scheduled[0].title === "12:32, a life cover call" && d.scheduled[0].platform === "LinkedIn", d && d.scheduled);
   ok("a post that already went out isn't scheduled", !d.scheduled.some((x) => /Already/.test(x.title)));
   ok("a draft without a verdict waits on you", d.waiting.length === 1 && d.waiting[0].title === "A new idea for brokers", d.waiting);
@@ -50,30 +50,30 @@ put(".symbiot/MARKETING-WEEK.md", `# How marketing did this week (Mon 19 to Fri 
 
 | Day | Post | Product | Impressions | Reached | Reactions | Comments | Reposts |
 |---|---|---|---|---|---|---|---|
-| Mon 19 Oct | Nine, not Nein | Dailify | 107 | 74 | 0 | 0 | 0 |
-| Tue 20 Oct | Steve's post | — | 35 | 18 | 1 | 2 | 1 |
+| Mon 19 Oct | Nine, not Nein | Bookly | 107 | 74 | 0 | 0 | 0 |
+| Tue 20 Oct | Robin's post | — | 35 | 18 | 1 | 2 | 1 |
 | Wed 21 Oct | What arrived | Symbiot | 1,178 | 118 | 2 | 0 | 0 |
-| Fri 23 Oct | New address | Dailify | goes out at 08:00 | | | | |
+| Fri 23 Oct | New address | Bookly | goes out at 08:00 | | | | |
 | **Total** | 3 posts out | | **1,320** | | **3** | **2** | **1** |
 `);
-put(".symbiot/MARKETING-WEEK-OLD.md", "# How marketing did this week (Mon 12 to Fri 16 Oct 2026)\n\n| Post | Product | Impressions |\n|---|---|---|\n| Old | Dailify | 999 |\n");
+put(".symbiot/MARKETING-WEEK-OLD.md", "# How marketing did this week (Mon 12 to Fri 16 Oct 2026)\n\n| Post | Product | Impressions |\n|---|---|---|\n| Old | Bookly | 999 |\n");
 const { utimesSync } = await import("node:fs");
 utimesSync(join(dir, ".symbiot/MARKETING-WEEK-OLD.md"), new Date(NOW - 7 * 86400000), new Date(NOW - 7 * 86400000));
-put(".symbiot/TASKS.md", `# t\n- [~] [LinkedIn Ads] Claim the credit. (waits on: Garth turning on two-step verification at linkedin.com (re-checked 23 Oct))\n- [~] An untagged long item that waits\n- [x] [Dailify] done\n`);
+put(".symbiot/TASKS.md", `# t\n- [~] [LinkedIn Ads] Claim the credit. (waits on: Pat turning on two-step verification at linkedin.com (re-checked 23 Oct))\n- [~] An untagged long item that waits\n- [x] [Bookly] done\n`);
 
 console.log("with the week's report:");
 {
-  const o = marketingOverview({ dir, now: NOW, names: ["Dailify", "Symbiot"] });
-  const d = o.products.find((p) => p.name === "Dailify"), s = o.products.find((p) => p.name === "Symbiot"), x = o.products.find((p) => p.name === "Other posts");
+  const o = marketingOverview({ dir, now: NOW, names: ["Bookly", "Symbiot"] });
+  const d = o.products.find((p) => p.name === "Bookly"), s = o.products.find((p) => p.name === "Symbiot"), x = o.products.find((p) => p.name === "Other posts");
   ok("the newest weekly report is the one pinned", o.report && /19 to Fri 23 Oct/.test(o.report.title) && /quiet week/.test(o.report.result), o.report);
   ok("a product's numbers are its posts' own; a post that hasn't gone out has none", d.numbers.length === 1 && d.total.reach === 107 && d.total.reactions === 0, d.total);
   ok("thousands read as numbers", s.total.reach === 1178, s.total);
   ok("a post of no product is listed apart, the Total row not counted", x && x.total.reach === 35 && x.numbers.length === 1, x);
   ok("clicks the report doesn't hold stay null, not zero", d.total.clicks === null && s.numbers[0].clicks === null);
-  ok("open items: the tagged one, by what it waits on, without its brackets of detail", o.open.length === 1 && o.open[0].tag === "LinkedIn Ads" && o.open[0].text === "waiting on Garth turning on two-step verification at linkedin.com", o.open);
+  ok("open items: the tagged one, by what it waits on, without its brackets of detail", o.open.length === 1 && o.open[0].tag === "LinkedIn Ads" && o.open[0].text === "waiting on Pat turning on two-step verification at linkedin.com", o.open);
 }
 {
-  const rows = weeklyRows("| Post | Product | Impressions | Link clicks |\n|---|---|---|---|\n| A | Dailify | 10 | 3 |\n| B | Dailify | 5 | n/a |\n");
+  const rows = weeklyRows("| Post | Product | Impressions | Link clicks |\n|---|---|---|---|\n| A | Bookly | 10 | 3 |\n| B | Bookly | 5 | n/a |\n");
   ok("a clicks column is read when the report has one", rows.length === 2 && rows[0].clicks === 3 && rows[1].clicks === null, rows);
 }
 {

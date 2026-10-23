@@ -5,7 +5,8 @@
 import { isUiWork, designBrief } from "./design.mjs";
 import { can } from "./licence.mjs";
 import { spawn, spawnSync } from "node:child_process";
-import { join } from "node:path";
+import { join, basename } from "node:path";
+import { networkInterfaces } from "node:os";
 import { readFileSync, writeFileSync, existsSync, readdirSync, mkdirSync, statSync, unlinkSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { VERSION, LATEST_VERSION, REGISTRY, semverGt, loadConfig, saveConfig, loadTasks, saveTasks, CONFIG_DIR, readState, writeJsonAtomic, TASK_MAX, clipWords, taskWords, sameTask, isFinding, uniqueTasks, gitOut, hasCmd, repoState } from "./core.mjs";
@@ -17,7 +18,7 @@ import { userStyleLine } from "./adapt.mjs";
 import { inflightIds } from "./parallel.mjs";
 import { QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, isUrgent, handoffCmd, runHandoff, runningHandoff, onShipping, untrackedBefore, forgetUntracked, loadRunFiles, forgetRunFiles, writeTasks, droppedTasks, startHeldTasks, connectorsLine } from "./agents.mjs";
 import { gitDefaultBranch } from "./drift.mjs";
-import { publicItems, leaksIn } from "./outward.mjs";
+import { publicItems, leaksIn, privateIn, addedLines, denyList } from "./outward.mjs";
 import { readRunLog, briefPlan } from "./work.mjs";
 import { changesBy, originLine } from "./origin.mjs";
 import { repoPathMap, laneMap, nearLane, openWork, detectRepo } from "./scan.mjs";
@@ -42,7 +43,7 @@ function leadOf(text) {
 // A task filed under a name that's no lane sat queued, and nothing picked it up: an ops run's
 // folder (act-304032d6: an ops report's ideas took the folder's name, "Blocked: Symbiot can't find
 // its folder"), a copy of a repo's folder (f3440e9ee59f under "symbiot-825733") and an ops run's
-// title ("Agent: **Resume the dailify.co.za jobs…": 3a7c3f92ebe9 and 81cc1e7f7528), 16 Oct 2026.
+// title ("Agent: **Resume the bookly.co.za jobs…": 3a7c3f92ebe9 and 81cc1e7f7528), 16 Oct 2026.
 // The lane a name stands for: ops for an ops folder, a lane's own name in any case, the lane of a
 // copy of its repo (its folder name and -<6 hex>, agents.mjs whereOf), or the lane it nearly names
 // (lanes.mjs nearLane: a typo, a word more). "" when it stands for none: the task keeps the name,
@@ -1112,6 +1113,7 @@ function unsentHeadline(why, { fix = null, note = "" } = {}) {
   const file = (String(note).match(/✗ ([\w./-]+\.mjs)(?:, [\w./-]+\.mjs)* failed/) || [])[1];
   if (why === "conflicts") return fix ? "It clashes with a change already on main. An agent is sorting that out now; there's nothing for you to do." : "It clashes with a change already on main. Send again sorts it out.";
   if (why === "tests") return `A test failed${file ? ` (${file})` : ""}, so it wasn't sent. Send again retries; if it fails again, its agent needs to fix it.`;
+  if (why === "privacy") return "It wasn't sent: the repo is public and the change names what's yours (a client, a person or a server). Its agent needs to take those out first.";
   if (why === "pr") return "It's on GitHub, but the pull request didn't open. Send again opens it.";
   return "It didn't upload to GitHub. Send again retries.";
 }
@@ -1119,7 +1121,7 @@ async function sendBranch(path, s) {
   const r = await pushAndOpen(path, s);
   if (!r.ok || s.opts.push === false || s.opts.pr === false || r.local) return r;
   if (r.pr) { noteUnsent(path, null); return r; }
-  const why = r.conflicts ? "conflicts" : r.testsFailed ? "tests" : r.pushed ? "pr" : "push";
+  const why = r.conflicts ? "conflicts" : r.testsFailed ? "tests" : r.privacy ? "privacy" : r.pushed ? "pr" : "push";
   let fix = s.fix || null, fresh = false; // fresh: added (or found open again) now, so the caller starts the run; one carried from an earlier try isn't restarted
   if (why === "conflicts" && s.opts.repo) {
     const t = addTask(rebaseTask(r.branch, s.base, { merges: branchMerges(path, "origin/" + s.base, r.branch) }), s.opts.repo);
@@ -1198,6 +1200,26 @@ async function syncBranch(path, branch, base) {
   if (!keep.ok) return conflicts(`${base} changed a file that's also changed, uncommitted, here (${keep.err.split("\n").find((l) => /not uptodate|would be overwritten/i.test(l)) || keep.err.split("\n")[0]})`);
   return moved;
 }
+// Whether origin is a public repo (gh): true, false, or null when it can't tell. Kept per folder.
+const PUBLIC = new Map();
+async function isPublicRepo(path, gh = ghRun(path)) {
+  if (PUBLIC.has(path)) return PUBLIC.get(path);
+  if (!hasCmd("gh")) return null;
+  let v = null; try { const r = await gh(["repo", "view", "--json", "visibility", "-q", ".visibility"]); const t = String(r.stdout || "").trim().toUpperCase(); v = t === "PUBLIC" ? true : t ? false : null; } catch {}
+  if (v !== null) PUBLIC.set(path, v);
+  return v;
+}
+// What the branch adds over the remote's base that's the user's own, when the repo is public: [{ file, line, term, why }].
+// opts.publicRepo / opts.deny / opts.mine stand in for gh, the deny list and this computer's addresses (tests).
+async function privateCheck(path, tip, branch, opts = {}) {
+  const pub = opts.publicRepo !== undefined ? opts.publicRepo : await isPublicRepo(path, opts.gh);
+  if (!pub) return [];
+  const diff = (await gitAsync(path, ["diff", "-U0", `${tip}...${branch}`, "--", ".", ":!package-lock.json", ":!*.lock"], 120000)).out;
+  const repo = basename(git(path, ["rev-parse", "--show-toplevel"]).out || path);
+  const deny = opts.deny || await denyList(repo).catch(() => []);
+  const mine = opts.mine || Object.values(networkInterfaces()).flat().filter((a) => a && a.family === "IPv4" && !a.internal).map((a) => a.address);
+  return privateIn(addedLines(diff), deny, { mine });
+}
 async function pushAndOpen(path, { base, subject, body, out, opts, newBranch, said = "", net = {} }) {
   let branch = out.branch;
   const noted = (note) => ({ ...out, note: (said ? said + " " : "") + note });
@@ -1213,6 +1235,13 @@ async function pushAndOpen(path, { base, subject, body, out, opts, newBranch, sa
     const v = await (typeof opts.verify === "function" ? opts.verify : repoTests)(path);
     if (v && v.ok === false) return { ...noted(`Committed, but not pushed: the tests fail on top of ${tip}${v.note ? " (" + v.note + ")" : ""}, so no PR was opened.`), testsFailed: true };
     if (v && v.untested) { said = [said, v.untested[0].toUpperCase() + v.untested.slice(1) + "."].filter(Boolean).join(" "); out.note = said; out.untested = true; }
+  }
+  // a public repo gets nothing that's the user's own (outward.mjs privateIn): held here, on this computer,
+  // before it's pushed, since CI's check only runs once it's up (and a merge may not wait for it)
+  if (opts.privacy !== false) {
+    shipStep(path, "checking it names nothing of yours");
+    const leaks = await privateCheck(path, tip, branch, opts);
+    if (leaks.length) return { ...noted(`Committed, but not pushed: this repo is public, and the change names what's yours: ${leaks.slice(0, 3).map((x) => `“${x.term}” (${x.why}) in ${x.file}:${x.line}`).join("; ")}${leaks.length > 3 ? ` and ${leaks.length - 3} more` : ""}. Take those out, or use a made-up name, then Approve again.`), privacy: leaks };
   }
   shipStep(path, "pushing");
   let ps = await gitAsync(path, ["push", "-u", "origin", branch], 120000);
@@ -1252,12 +1281,17 @@ async function pushAndOpen(path, { base, subject, body, out, opts, newBranch, sa
 // PR, so a "1 approving review" rule would otherwise send the user to a second account
 // to click Approve. The owner may merge past that rule (--admin); never past a check.
 // gh in the background (ghRun): two sync calls of up to a minute each held the app up meanwhile.
+// Whether the repo runs checks on its PRs (a GitHub Actions workflow).
+function hasChecks(path) { try { return readdirSync(join(path, ".github", "workflows")).some((f) => /\.ya?ml$/.test(f)); } catch { return false; } }
 async function mergeWhenGreen(path, ref, gh = ghRun(path)) {
   if (!hasCmd("gh")) return { error: "Install the GitHub CLI (gh) to merge from Symbiot." };
   const ck = await gh(["pr", "checks", String(ref), "--json", "bucket"]);
   let buckets; try { buckets = JSON.parse(String(ck.stdout || "[]")).map((c) => c.bucket); } catch { return { error: "Couldn't read the checks: " + String(ck.stderr || "").trim().split("\n").pop() }; }
   if (buckets.some((b) => b === "fail" || b === "cancel")) return { error: "A check is failing, so it isn't merged. Fix that first." };
   if (buckets.some((b) => b === "pending")) return { pending: true, error: "Checks are still running. Merge it once they pass." };
+  // none yet on a repo that has checks: a PR just opened, its checks not started. Merging then is
+  // merging past them (23 Oct 2026: a change merged before its privacy check had run).
+  if (!buckets.length && hasChecks(path)) return { pending: true, error: "Its checks haven't started yet. Merge it once they pass." };
   const m = await gh(["pr", "merge", String(ref), "--squash", "--admin", "--delete-branch"]);
   if (m.status !== 0) return { error: "gh couldn't merge: " + (String(m.stderr || "").trim().split("\n").filter(Boolean).pop() || "unknown error") };
   return { ok: true, merged: String(ref) };
