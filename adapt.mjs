@@ -49,6 +49,13 @@ const HICK_COVER = 0.9, HICK_MIN = 3, HICK_MAX = 7;
 const HYSTERESIS = 0.15;
 const FITTS = { a: 0.1, b: 0.15 };       // seconds; only ratios matter here
 const SHAPES = ["board", "map", "tasks", "agents", "week", "standup", "todo", "drift", "settings", "reports", "marketing", "vault"];
+// When a part came in a release. One not opened yet shows on Home for NEW_MS after that, so a
+// new page is seen rather than born under "more": the Vault shipped on 23 Oct 2026 and nothing
+// on Home led to it, as it had never been used. Opened once, it's ranked like the rest.
+// A part added to SHAPES gets its date here (test/adapt.mjs checks).
+const ADDED = { vault: Date.UTC(2026, 9, 23) };
+const NEW_MS = 21 * 86400000;
+const isNew = (d, id, now) => !!ADDED[id] && now >= ADDED[id] && now - ADDED[id] < NEW_MS && !(d.shapes[id] && d.shapes[id].n);
 
 function loadAdapt(file = ADAPT_FILE) {
   const d = readState(file, (v) => !!v && typeof v === "object" && !Array.isArray(v)) || {};
@@ -128,7 +135,13 @@ function layoutFor(d, ids = SHAPES, { from = "", now = Date.now(), hour, budget 
   const pRaw = predict(d, ids, { from, now, hour: hour ?? new Date(now).getHours() });
   const a = adaptivity(d, pRaw), p = pRaw.map((x) => a * x + (1 - a) / ids.length);
   const pOf = Object.fromEntries(ids.map((id, i) => [id, p[i]]));
-  const { shown, more } = hick(ids, p);
+  let { shown, more } = hick(ids, p);
+  const fresh = more.filter((id) => isNew(d, id, now));
+  if (fresh.length) { // in, in place of the least likely of the rest
+    const keep = shown.slice(0, Math.max(HICK_MIN, Math.min(shown.length, HICK_MAX - fresh.length)));
+    more = shown.filter((id) => !keep.includes(id)).concat(more.filter((id) => !fresh.includes(id)));
+    shown = keep.concat(fresh);
+  }
   const floor = touch ? Math.max(minR, 34) : minR;
   const radii = allocate(shown.map((id) => pOf[id]), { budget, minR: floor, maxR });
   const pmax = Math.max(...shown.map((id) => pOf[id])), pmin = Math.min(...shown.map((id) => pOf[id]));
@@ -140,7 +153,9 @@ function layoutFor(d, ids = SHAPES, { from = "", now = Date.now(), hour, budget 
     const sameSet = prev.items.map((x) => x.id).sort().join() === items.map((x) => x.id).sort().join();
     const gain = (expectedTime(prev.items, pOf) - expectedTime(items, pOf)) / Math.max(expectedTime(prev.items, pOf), 1e-9);
     // a new input method (a finger now, not a pointer) always re-lays out: its targets must fit it
-    if (!!prev.touch === !!touch && (!commit || (sameSet && gain < HYSTERESIS))) use = prev; // not worth moving things under your hand
+    // and a new part not shown yet comes in now, not at the next commit
+    const lacks = items.some((x) => isNew(d, x.id, now) && !prev.items.some((y) => y.id === x.id));
+    if (!lacks && !!prev.touch === !!touch && (!commit || (sameSet && gain < HYSTERESIS))) use = prev; // not worth moving things under your hand
   }
   if (commit || !prev) d.shown = use;
   return { ...use, p: pOf, adaptivity: a, entropy: entropy(pRaw), changed: use !== prev };
@@ -239,4 +254,4 @@ function noteUse(body = {}) {
   return { ok: true, events: d.events };
 }
 
-export { ADAPT_FILE, SHAPES, HALF_LIFE, HYSTERESIS, decayed, bump, recordUse, predict, entropy, adaptivity, fittsTime, allocate, hick, expectedTime, layoutFor, modes, styleOf, styleLine, userStyleLine, adaptState, noteUse, loadAdapt, saveAdapt, affinity, neighbours, KIN };
+export { ADAPT_FILE, SHAPES, ADDED, NEW_MS, isNew, HALF_LIFE, HYSTERESIS, decayed, bump, recordUse, predict, entropy, adaptivity, fittsTime, allocate, hick, expectedTime, layoutFor, modes, styleOf, styleLine, userStyleLine, adaptState, noteUse, loadAdapt, saveAdapt, affinity, neighbours, KIN };

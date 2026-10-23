@@ -66,6 +66,21 @@ try {
   const hs = A.hick(A.SHAPES, [0.6, 0.25, 0.08, 0.03, 0.01, 0.01, 0.01, 0.005, 0.005, 0, 0, 0].slice(0, A.SHAPES.length));
   ok("habits: as few as cover 90% (never under 3)", hs.shown.length === 3 && hs.more.length === A.SHAPES.length - 3, hs);
 
+  console.log("NEW PARTS — a page that just shipped is seen, and every part can be asked for (the Vault, 23 Oct 2026)");
+  const BASE = ["board", "map", "tasks", "agents", "week", "standup", "todo", "drift", "settings", "reports", "marketing"];
+  ok("every part added since has the date it shipped (else it's born under more, unseen)", A.SHAPES.filter((id) => !BASE.includes(id)).every((id) => A.ADDED[id] > 0), A.SHAPES.filter((id) => !BASE.includes(id) && !A.ADDED[id]));
+  const M = await import("../mind.mjs");
+  ok("every part can be opened by asking the chat (\"open the vault\")", A.SHAPES.every((id) => id === "agents" || M.PAGES[id]) && M.goOf({ to: "vault" }).to === "vault" && M.goOf("Vault").to === "vault", A.SHAPES.filter((id) => id !== "agents" && !M.PAGES[id]));
+  const TV = A.ADDED.vault + 3600000, dv = fresh();
+  for (let i = 0; i < 40; i++) for (const s of ["tasks", "board", "reports", "marketing", "settings", "map", "drift", "week"]) A.recordUse(dv, s, { now: TV - 86400000 + i * 60000 });
+  const before = A.layoutFor(dv, A.SHAPES, { now: A.ADDED.vault - 3600000, commit: true });
+  ok("(before it shipped, habits fill Home and the Vault is under more)", !before.items.some((x) => x.id === "vault") && before.more.includes("vault"), before.items.map((x) => x.id));
+  const lv = A.layoutFor(dv, A.SHAPES, { now: TV });
+  ok("once it's out, the new Vault is on Home, even before the next commit, and Home still holds at most 7", lv.items.some((x) => x.id === "vault") && lv.items.length <= 7 && !lv.more.includes("vault"), lv.items.map((x) => x.id));
+  A.recordUse(dv, "vault", { now: TV + 1000 });
+  ok("opened once, it's ranked like the rest", !A.isNew(dv, "vault", TV + 2000));
+  ok("…and after three weeks unopened it's ranked like the rest too", !A.isNew(fresh(), "vault", A.ADDED.vault + A.NEW_MS + 1) && A.isNew(fresh(), "vault", TV));
+
   console.log("STABILITY — it doesn't move things under your hand");
   const s = fresh();
   for (let i = 0; i < 20; i++) A.recordUse(s, "tasks", { now: T0 + i * 1000 });

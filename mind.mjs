@@ -186,6 +186,8 @@ function actNow(request, { title, context, known, alongside, lane = "", run = ru
 const IDENTITY = `You are Symbiot, the one assistant in the user's Symbiot app. The Dashboard's cards, the Tasks list and the rest are only places they talk to you: it's all you, and you remember across them (see "What you know" and "Lately, elsewhere in the app").`;
 // The pages a chat can open (Home's: converse({ nav: true })), as the app names them,
 // with what's on each, so a vague "where are my updates" lands somewhere sensible.
+// Every part of Home (adapt.mjs SHAPES) is here: one Home doesn't show is reached by asking,
+// and a page left off (the Vault, 23 Oct 2026) was one nothing led to (test/adapt.mjs checks).
 // "lane:<name>" is a lane's own page (its tasks and agent).
 const PAGES = {
   home: ["Home", "what only they can do, what's new on what they watch, agents at work"],
@@ -200,6 +202,7 @@ const PAGES = {
   drift: ["Drift", "uncommitted, unpushed and stale work across repos"],
   map: ["Map", "their repos as a map"],
   settings: ["Settings", "the AI, their agent, folders, linked sites, email, voice"],
+  vault: ["Vault", "the logins, passwords, keys and codes saved in Symbiot: look one up, show or copy it with their vault PIN"],
   archive: ["Archive", "tasks that were done or dropped"],
 };
 // A "go" from the model, checked: { to, label, why?, alts: [{ to, label }] }, or null.
