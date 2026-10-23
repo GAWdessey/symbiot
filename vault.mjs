@@ -1,9 +1,9 @@
 // Secrets the user hands over (passwords, recovery codes, tokens): kept in the OS keyring
-// when there is one (secret-tool on Linux, security on macOS), else encrypted on disk
+// when there is one (secret-tool, or libsecret's own bindings, on Linux; security on macOS), else encrypted on disk
 // (AES-256-GCM, key in vault.key, 0600). Only a name and a count sit in vault.json, never
 // a value. Chat redacts a pasted secret before it is stored or sent (captureSecrets), and
 // an agent reads one by name (`symbiot secret get <name>`) and marks a one-use code spent.
-import { existsSync, readFileSync, writeFileSync, chmodSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync, chmodSync, readdirSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { randomBytes, createCipheriv, createDecipheriv } from "node:crypto";
@@ -19,9 +19,35 @@ function key() {
 const seal = (s) => { const iv = randomBytes(12), c = createCipheriv("aes-256-gcm", key(), iv), ct = Buffer.concat([c.update(s, "utf8"), c.final()]); return [iv, c.getAuthTag(), ct].map((b) => b.toString("base64")).join("."); };
 const unseal = (s) => { const [iv, tag, ct] = s.split(".").map((p) => Buffer.from(p, "base64")), d = createDecipheriv("aes-256-gcm", key(), iv); d.setAuthTag(tag); return Buffer.concat([d.update(ct), d.final()]).toString("utf8"); };
 
+// The keyring through libsecret's own bindings (python3-gi, gir1.2-secret-1), where secret-tool
+// isn't installed but the desktop's keyring is running: most GNOME-family desktops ship the
+// bindings and not the tool, so every secret sat on disk beside its key (23 Oct 2026). The same
+// item secret-tool would make (attributes app, name), so either finds the other's. The value goes
+// in on stdin, never as an argument (that's in the process list).
+const GI = `import sys, json
+import gi
+gi.require_version("Secret", "1")
+from gi.repository import Secret
+S = Secret.Schema.new("org.freedesktop.Secret.Generic", Secret.SchemaFlags.DONT_MATCH_NAME, {"app": Secret.SchemaAttributeType.STRING, "name": Secret.SchemaAttributeType.STRING})
+r = json.loads(sys.stdin.read()); a = {"app": "symbiot", "name": r["name"]}
+if r["op"] == "put": sys.exit(0 if Secret.password_store_sync(S, a, Secret.COLLECTION_DEFAULT, "Symbiot: " + r["name"], r["value"], None) else 1)
+if r["op"] == "get":
+    v = Secret.password_lookup_sync(S, a, None)
+    if v is None: sys.exit(1)
+    sys.stdout.write(v); sys.exit(0)
+if r["op"] == "del": Secret.password_clear_sync(S, a, None); sys.exit(0)
+if r["op"] == "ping": sys.exit(0 if Secret.Service.get_sync(Secret.ServiceFlags.NONE, None) else 1)`;
+const gi = (op, name = "", value = "") => spawnSync("python3", ["-c", GI], { input: JSON.stringify({ op, name, value }), encoding: "utf8", timeout: 15000 });
+let GI_OK = null; // asked once per process: python3 with the bindings, and a keyring answering
+const giReady = () => (GI_OK !== null ? GI_OK : (GI_OK = hasCmd("python3") && gi("ping").status === 0));
 // The keyring, when this machine has one and SYMBIOT_VAULT isn't "file".
 function keyring() {
   if (process.env.SYMBIOT_VAULT === "file") return null;
+  if (process.platform === "linux" && !hasCmd("secret-tool") && giReady()) return {
+    put: (n, v) => gi("put", n, v).status === 0,
+    get: (n) => { const r = gi("get", n); return r.status === 0 ? r.stdout : null; },
+    del: (n) => gi("del", n).status === 0,
+  };
   if (process.platform === "linux" && hasCmd("secret-tool")) return {
     put: (n, v) => spawnSync("secret-tool", ["store", "--label", "Symbiot: " + n, "app", "symbiot", "name", n], { input: v }).status === 0,
     get: (n) => { const r = spawnSync("secret-tool", ["lookup", "app", "symbiot", "name", n], { encoding: "utf8" }); return r.status === 0 ? r.stdout : null; },
@@ -34,20 +60,41 @@ function keyring() {
   };
   return null;
 }
+// Keyring reads kept a few minutes in this process: each is a process of its own (secret-tool or
+// python3), and the Vault page reads every entry to find a value saved twice.
+const KR_CACHE = new Map(), KR_KEEP = 5 * 60000;
+const krGet = (kr, name, now = Date.now()) => { const c = KR_CACHE.get(name); if (c && now - c.at < KR_KEEP) return c.raw; const raw = kr.get(name); if (raw !== null) KR_CACHE.set(name, { raw, at: now }); return raw; };
 const load = (name) => {
   const idx = readIndex(), kr = keyring(); let raw = null;
-  if (idx.names[name]?.where === "keyring" && kr) raw = kr.get(name);
+  if (idx.names[name]?.where === "keyring" && kr) raw = krGet(kr, name);
   else if (idx.blobs[name]) { try { raw = unseal(idx.blobs[name]); } catch {} }
   try { return raw ? JSON.parse(raw) : null; } catch { return null; }
 };
 function store(name, entry) {
   const idx = readIndex(), kr = keyring(), raw = JSON.stringify(entry);
   let where = "file";
+  KR_CACHE.delete(name);
   if (kr && kr.put(name, raw)) { where = "keyring"; delete idx.blobs[name]; } else idx.blobs[name] = seal(raw);
   idx.names[name] = { ts: entry.ts, count: entry.values.length, used: entry.values.filter((v) => v.used).length, where };
   writeIndex(idx);
 }
 
+// The secrets kept on disk beside their key, moved into the keyring once there is one; the key file
+// goes when nothing on disk needs it. Each is read back from the keyring before its copy on disk goes.
+// { moved, left, keyGone } or null with no keyring.
+function toKeyring({ kr = keyring() } = {}) {
+  if (!kr) return null;
+  const idx = readIndex(); let moved = 0;
+  for (const name of Object.keys(idx.blobs || {})) {
+    let raw = null; try { raw = unseal(idx.blobs[name]); } catch { continue; }
+    if (!kr.put(name, raw) || kr.get(name) !== raw) continue;
+    delete idx.blobs[name]; if (idx.names[name]) idx.names[name].where = "keyring"; moved++;
+  }
+  if (moved) writeIndex(idx);
+  const left = Object.keys(idx.blobs || {}).length; let keyGone = false;
+  if (!left && existsSync(KEYFILE())) { try { unlinkSync(KEYFILE()); keyGone = true; } catch {} }
+  return { moved, left, keyGone };
+}
 // Save secret values under a name. A name that exists gets the new values added to it.
 function saveSecret(name, values) {
   name = String(name || "").trim().slice(0, 80); if (!name) return { error: "A secret needs a name." };
@@ -100,7 +147,7 @@ function renameSecret(name, to) {
 }
 function deleteSecret(name) {
   const idx = readIndex(), m = idx.names[name]; if (!m) return { error: `No secret called "${name}".` };
-  if (m.where === "keyring") { const kr = keyring(); if (kr) kr.del(name); }
+  KR_CACHE.delete(name); if (m.where === "keyring") { const kr = keyring(); if (kr) kr.del(name); }
   delete idx.names[name]; delete idx.blobs[name]; writeIndex(idx); return { ok: true };
 }
 
@@ -413,4 +460,4 @@ function heldFor(text) {
   return "";
 }
 
-export { heldFor, heldName, vaultSealed, repairFalseSaves, meetsStep, serviceOf, saveSecret, saveCode, CODE_TTL, listSecrets, getSecret, peekSecret, markUsed, deleteSecret, renameSecret, findSecrets, captureSecrets, scrubStored, SCRUB_V };
+export { toKeyring, heldFor, heldName, vaultSealed, repairFalseSaves, meetsStep, serviceOf, saveSecret, saveCode, CODE_TTL, listSecrets, getSecret, peekSecret, markUsed, deleteSecret, renameSecret, findSecrets, captureSecrets, scrubStored, SCRUB_V };

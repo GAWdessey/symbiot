@@ -957,6 +957,8 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
     process.on("exit", () => { try { rmSync(SCREENS_SOCK, { force: true }); } catch {} });
   }
   server.listen(PORT, "127.0.0.1");
+  // secrets kept on disk beside their key go into the keyring once there is one, and the key file with them (vault.mjs)
+  setTimeout(() => { import("./vault.mjs").then((v) => { const r = v.toKeyring(); if (r && r.moved) console.log(`Vault: ${r.moved} secret${r.moved === 1 ? "" : "s"} moved into the keyring${r.keyGone ? "; the key file on disk is gone" : ""}.`); }).catch(() => {}); }, 15000).unref();
   checkLatest(); setInterval(checkLatest, 2 * 60 * 1000).unref(); // background update check (every 2 min)
   setInterval(() => { autoUpdateTick().catch(() => {}); }, Number(process.env.SYMBIOT_AUTO_EVERY) || 60000).unref(); // and it updates itself once nothing's working (autoUpdateDue)
   startWeekly(writeup); // the weekly write-up + notification, when switched on in Settings

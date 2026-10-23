@@ -398,6 +398,34 @@ function sandboxEnv(box, { token = () => (hasCmd("gh") ? sh("gh auth token").tri
   if (!process.env.GH_TOKEN) { let t = ""; try { t = token(); } catch {} if (/^[\w-]{20,}$/.test(t)) env.GH_TOKEN = t; }
   return env;
 }
+// ---- the ops run's walls ----------------------------------------------------------------------
+// An ops run isn't in Claude Code's sandbox: it needs ssh to your servers, and that sandbox lets
+// nothing leave the machine but web requests through its proxy (tried 23 Oct 2026: ssh "Network is
+// unreachable", and its way to let a command out is ignored in a run's own settings). It had the
+// guard alone, which reads command text. So it runs in walls of Symbiot's own (bubblewrap): the
+// network as it is, the disk as it is, except
+// - read-only: what would turn the guard off or let something start again later (Claude's settings,
+//   the shell's start-up files, autostart and systemd's user units, the installed Symbiot and Claude),
+//   your ssh keys (used, not changed), and what Symbiot alone writes and every agent reads or obeys:
+//   the guard's settings, the sandbox's, your customisations (their triggers run in the app), the
+//   standing rules and memory (in every brief), and what's settled (which cards you see). The rest of
+//   Symbiot's folder stays writable: the symbiot commands ops uses write their settings there;
+// - not there at all: the vault's key and the vault PIN's file (an empty file in their place).
+// config.opsWalls: false turns it off; without bwrap (or off Linux) the run starts as before.
+const OPS_RO = [".claude/settings.json", ".claude/settings.local.json", ".claude/hooks", ".bashrc", ".bash_profile", ".bash_login", ".bash_logout", ".profile", ".zshrc", ".zprofile", ".zshenv", ".zlogin", ".config/fish", ".config/autostart", ".config/systemd", ".config/environment.d", ".local/share/systemd", ".local/bin", ".npm-global", ".local/share/claude", ".ssh", ".gitconfig", ".config/git"];
+const OPS_OWN = ["agent-guard.json", "sandbox", "overrides", "standing.json", "mind.json", "focus.md", "settled.json", "asks-done.json"], OPS_HIDDEN = ["vault.key", "vault-pin.json"];
+function opsWalls(repoPath, { home = homedir(), cfg = loadConfig(), has = hasCmd, platform = process.platform, exists = existsSync } = {}) {
+  if (!isOps(repoPath) || cfg.opsWalls === false || platform !== "linux" || !has("bwrap")) return null;
+  const args = ["--die-with-parent", "--dev-bind", "/", "/"];
+  const ro = (p) => { if (exists(p)) args.push("--ro-bind", p, p); };
+  for (const r of OPS_RO) ro(join(home, r));
+  for (const o of OPS_OWN) ro(join(CONFIG_DIR, o));
+  for (const h of OPS_HIDDEN) { const p = join(CONFIG_DIR, h); if (exists(p)) args.push("--ro-bind", "/dev/null", p); }
+  args.push("--chdir", repoPath);
+  return args;
+}
+// The command, inside them: bwrap … -- sh -c '<command>'.
+const walled = (cmd, args) => (args ? `bwrap ${args.map(shSingle).join(" ")} -- sh -c ${shSingle(cmd)}` : cmd);
 // For Settings → Handoff: { on, ready, missing } (on: repo runs get it).
 function sandboxState() { const n = sandboxNeeds(); return { on: loadConfig().agentSandbox !== false && trustFull(), ready: n.ready, missing: n.missing, ...(n.unsupported ? { unsupported: true } : {}) }; }
 const SESSION = "session.json", RESUME_MAX = 8, RESUME_AGE = 2 * 86400000;
@@ -555,7 +583,8 @@ function runHandoff(repoPath, { force = false, lost = false, model = "", onExit 
   const env = { ...(own || {}), ...(boxEnv || {}), ...(owner || {}), SYMBIOT_AGENT: repoPath };
   const gap = isClaudeCmd(runCmd) && process.platform !== "win32" ? startGap() : 0; // a few seconds between starts (the shell sleeps; the lock is held meanwhile)
   const full = fillHandoff(runCmd, repoPath, `${critic ? CRITIC_PROMPT : designer ? DESIGNER_PROMPT : stalled ? HANDOFF_PROMPT + STALL_PROMPT_TAIL : fresh ? carryOn(repoPath) : resume ? RESUME_PROMPT : HANDOFF_PROMPT} ${whereLine(repoPath)}${note ? " " + note : ""}`);
-  const e = track(critic ? `Design critic: ${repoPath.split("/").pop()}` : designer ? `Designer: ${repoPath.split("/").pop()}` : typeof opts.name === "string" && opts.name ? opts.name.slice(0, 80) : repoPath.split("/").pop(), gap ? `sleep ${Math.ceil(gap / 1000)}; ${full}` : full, repoPath, (code) => {
+  const walls = (() => { try { return opsWalls(repoPath); } catch { return null; } })(); // an ops run: in walls of its own (opsWalls)
+  const e = track(critic ? `Design critic: ${repoPath.split("/").pop()}` : designer ? `Designer: ${repoPath.split("/").pop()}` : typeof opts.name === "string" && opts.name ? opts.name.slice(0, 80) : repoPath.split("/").pop(), walled(gap ? `sleep ${Math.ceil(gap / 1000)}; ${full}` : full, walls), repoPath, (code) => {
     if (!critic && !designer && noteSession(repoPath, code, !!resume && !fresh) === "lost") { setTimeout(() => { try { runHandoff(repoPath, { force: true, lost: true, onExit }); } catch {} }, 300); return; } // its conversation is gone: start afresh
     try { if (JSON.parse(readFileSync(lock, "utf8")).pid === e.pid) unlinkSync(lock); } catch {}
     try { const d = noteClaudeDown(repoPath); if (d) e.down = d; } catch {} // Claude itself was the reason: no start anywhere until it's back
@@ -2621,4 +2650,4 @@ function agentsNow({ now = Date.now() } = {}) {
 }
 const forgetAgents = () => { agentsKept = null; };
 
-export { runOpen, namedRun, twinRunning, TWIN_WAIT, wholeLog, uiReview, onGoalAnswer, runOutcome, settleRecord, waitsOutside, triageSweep, runSection, autoStart, AUTO_MAX, oneNeedEach, NOTHING_FOR_YOU, chaseReport, CHASED, UNMET, heldAsk, onCardGone, withOwnTools, escalation, grantCard, cardRules, cardIsPermission, runPhase, onRunEnd, isClaudeCmd, GUARD, tidyRule, tidyRules, tidySettings, pruneRuns, claudePlugins, idlePlugins, runSettings, archiveAnswers, allAnswers, answersDigest, ANSWERS_ARCHIVE, ANSWERS_KEEP, runsTick, RUN_START, HANG_MIN, noteBlocked, userAnswers, CONTINUED_FILE, onAnswered, CHANGES, toKnownHost, continueLanes, autoPick, autoDecide, FACTS, factsOf, knownRun, withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, linkReach, fillHandoff, runHandoff, nothingToDo, whereOf, whereLine, whereAnswer, askTask, PARKED_NOTE, parkedPaths, isParked, parkLane, agentMissing, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, unchangedStep, waitingFor, startWaiting, noteUntracked, untrackedBefore, forgetUntracked, writeTasks, droppedTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, pickAgent, findOrcaCli, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, routeIdeas, agentQuestions, answerQuestions, agentsList, agentsNow, forgetAgents, AGENTS_KEEP, needsOf, settleNeeds, closeAsk, closedAsk, sameSubject, NEEDS_FOR, readLastWords, readNeeds, parseRead, READ_FILE, autoAllow, autoAllowSweep, allowlistInWork, installAllowlist, inWork, withScope, withTrust, sandboxFor, sandboxLifts, sandboxEnv, sandboxNeeds, sandboxState, sandboxWrites, SANDBOX_DIR, resumeFor, noteSession, tooLong, carryOn, RESUME_CTX, CARRY_PROMPT, trustFull, GUARD_SETTINGS, runCmdOf, claimLock, wideRoot, sandboxDenies, questionFolders, folderState, dirtyState, ANSWERS_SEEN, newAnswers, claudeDownIn, claudePause, noteClaudeDown, resetTime, PAUSE_FILE, startGap, isUrgent, urgentStop, urgentFirst, urgentUndo, urgentDone, urgentSweep, urgentState, licenceGate, stopRun, loadRunFiles, saveRunFiles, forgetRunFiles, withModel, routedModel, userWords, onShipping, waitingTask };
+export { opsWalls, walled, OPS_RO, OPS_OWN, OPS_HIDDEN, runOpen, namedRun, twinRunning, TWIN_WAIT, wholeLog, uiReview, onGoalAnswer, runOutcome, settleRecord, waitsOutside, triageSweep, runSection, autoStart, AUTO_MAX, oneNeedEach, NOTHING_FOR_YOU, chaseReport, CHASED, UNMET, heldAsk, onCardGone, withOwnTools, escalation, grantCard, cardRules, cardIsPermission, runPhase, onRunEnd, isClaudeCmd, GUARD, tidyRule, tidyRules, tidySettings, pruneRuns, claudePlugins, idlePlugins, runSettings, archiveAnswers, allAnswers, answersDigest, ANSWERS_ARCHIVE, ANSWERS_KEEP, runsTick, RUN_START, HANG_MIN, noteBlocked, userAnswers, CONTINUED_FILE, onAnswered, CHANGES, toKnownHost, continueLanes, autoPick, autoDecide, FACTS, factsOf, knownRun, withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, linkReach, fillHandoff, runHandoff, nothingToDo, whereOf, whereLine, whereAnswer, askTask, PARKED_NOTE, parkedPaths, isParked, parkLane, agentMissing, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, unchangedStep, waitingFor, startWaiting, noteUntracked, untrackedBefore, forgetUntracked, writeTasks, droppedTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, pickAgent, findOrcaCli, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, routeIdeas, agentQuestions, answerQuestions, agentsList, agentsNow, forgetAgents, AGENTS_KEEP, needsOf, settleNeeds, closeAsk, closedAsk, sameSubject, NEEDS_FOR, readLastWords, readNeeds, parseRead, READ_FILE, autoAllow, autoAllowSweep, allowlistInWork, installAllowlist, inWork, withScope, withTrust, sandboxFor, sandboxLifts, sandboxEnv, sandboxNeeds, sandboxState, sandboxWrites, SANDBOX_DIR, resumeFor, noteSession, tooLong, carryOn, RESUME_CTX, CARRY_PROMPT, trustFull, GUARD_SETTINGS, runCmdOf, claimLock, wideRoot, sandboxDenies, questionFolders, folderState, dirtyState, ANSWERS_SEEN, newAnswers, claudeDownIn, claudePause, noteClaudeDown, resetTime, PAUSE_FILE, startGap, isUrgent, urgentStop, urgentFirst, urgentUndo, urgentDone, urgentSweep, urgentState, licenceGate, stopRun, loadRunFiles, saveRunFiles, forgetRunFiles, withModel, routedModel, userWords, onShipping, waitingTask };
