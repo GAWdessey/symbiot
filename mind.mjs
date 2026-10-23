@@ -252,6 +252,7 @@ const CONTROL_RULES = `
 - answer: "id" is "ask:<folder>" from an agent's open question, "text" the answer. Only when the user has already given it in this chat; never guess a password, code or yes to spending or deleting.
 - front: "id" is a task id; it moves to the front of its lane's queue.
 - merge: two agents on the same job: "id" is the duplicate to stop, "into" the one that keeps it.
+A question about what happened ("did we send the 100?", "is it done?", "did it work?") gets its answer first, in one plain line with the numbers, from the jobs and the agents' last words below; "control" stays empty for it and nothing is stopped, started or handed over. Never put a failure of stopping or handing over in place of that answer.
 Stopping, cancelling, redirecting and reordering can be undone, so do them without asking. Say in your reply what you did, and only once "control" holds it; what is hard to undo (paying, sending, deleting, publishing) stays the agent's own question to the user.`;
 // about: { lane: one line on the project } (scan.mjs laneAbouts) so a bare name is guessable.
 // lanes: the repos "do" can point at; self: Symbiot's own repo among them, where
@@ -327,6 +328,11 @@ function actIn(request, repo, { map = {}, known = "", title, context, said, self
 // They asked for it to be done, not just told Symbiot what's wrong: "fix it", "can you…",
 // "please", "now". A complaint or a question ("why are these under bookly?") isn't.
 const ASKS_NOW = /\b((?:it|this|that|them|on it) now|now,? please|right away|straight away|immediately|asap|please|pls|can you|could you|would you|will you|can i (?:please )?(?:have|get|see)|i (?:want|need|'?d like)|go ahead|do it|start (?:it|on it|that|this)|(?:fix|sort|change|make|build|add|do) (?:it|this|that|them)\b)/i;
+// "did we send the 100?", "is it done?", "has it gone out?": a question about what happened. It is
+// answered from the job record and the agents' last words; it never stops, redirects or starts anything.
+const STATUS_Q = /^\W*(?:(?:did|do|does|have|has|had|was|were|is|are|how(?:'s| is| did| many)?|what(?:'s| is| happened)|where)\b|(?:any|so)\b.*\?)/i;
+const ORDER = /\b(stop|cancel|kill|halt|pause|redirect|restart|retry|resend|send it|start|fix|do it|go ahead|front|merge)\b/i;
+const asksStatus = (text) => { const t = String(text || "").trim(); return STATUS_Q.test(t) && /\?\s*$/.test(t) && !ORDER.test(t) && !ASKS_NOW.test(t); };
 const asksNow = (text) => isUrgent(text) || ASKS_NOW.test(String(text || ""));
 // The line under a handover's reply, from what actIn did (see there).
 function handedLine(did) {
@@ -453,7 +459,7 @@ async function converse({ where, role = "", context = "", history = "", question
   if (did && !did.error) { try { const g = await goalFor(question, { child: did.job ? "run:" + did.job : did.task || did.id ? "task:" + (did.task || did.id) : "", lane: did.lane || (did.kind === "agent" ? "ops" : ""), path: did.dir || (did.lane && lanes[did.lane]) || "", now, write: ask === DEFAULT_ASK ? write : null }); if (g) did.goal = g.key; } catch {} }
   // what Home did to agents and tasks (control.mjs): said from what happened, the failures first and plainly
   let steered = [];
-  if (control && act.control && Array.isArray(j.control) && j.control.length) {
+  if (control && act.control && Array.isArray(j.control) && j.control.length && !asksStatus(question)) {
     steered = await act.control(j.control.filter((x) => x && typeof x === "object").slice(0, 5));
     const bad = steered.filter((x) => x.error), good = steered.filter((x) => x.ok);
     // the reply was written before the actions ran, so any claim in it ("Sorted, I've told…") is dropped when one failed

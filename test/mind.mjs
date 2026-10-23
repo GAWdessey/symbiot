@@ -25,6 +25,11 @@ try {
   const liar = await converse({ where: "Home", question: "fix it", ask: said({ reply: "Sending this to the symbiot lane now.", do: null, remember: [] }) });
   ok("claimed hand-off with no 'do': corrected", /Correction: nothing was handed/.test(liar.reply), liar.reply);
   const plain = await converse({ where: "Home", question: "hi", ask: said({ reply: "Hello, how can I help?", do: null, remember: [] }) });
+  let steered = 0; const stopper = said({ reply: "Yes: sent 100 once, 0 failed.", do: null, control: [{ op: "stop", id: "run:/x" }], remember: [] });
+  const q1 = await converse({ where: "Home", question: "did we send the 100?", control: true, act: { control: async (o) => { steered++; return o.map((x) => ({ op: x.op, error: "no agent is running there, so there's nothing to stop." })); } }, ask: stopper });
+  ok("a 'did we send it?' question stops nothing and keeps its answer", steered === 0 && /sent 100 once/.test(q1.reply) && !/couldn't stop/.test(q1.reply), q1.reply);
+  const q2 = await converse({ where: "Home", question: "stop the sms run", control: true, act: { control: async (o) => { steered++; return o.map((x) => ({ op: x.op, error: "nope" })); } }, ask: stopper });
+  ok("an order to stop still reaches control", steered === 1, q2.reply);
   ok("plain reply untouched", !/Correction/.test(plain.reply), plain.reply);
   ok("a started hand-off backs the claim", !unbackedClaim("I'm handing it over", { kind: "agent", job: "j1" }));
   ok("a not-started hand-off doesn't", unbackedClaim("I've handed it to the agent", { kind: "agent", notStarted: "x" }));

@@ -119,6 +119,17 @@ function changesSelf(part, { home, cwd }) {
 // the branch a bare `git push` pushes: the one checked out in cwd
 function currentBranch(cwd) { try { return execFileSync("git", ["-C", cwd, "rev-parse", "--abbrev-ref", "HEAD"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim(); } catch { return ""; } }
 
+// Stopping or restarting the Symbiot app the run itself runs under (an ops run restarted its service to load a
+// new version on 22 Oct 2026, which killed the run halfway through the phone check and told no one).
+const SVC_STOP = /^(restart|stop|kill|try-restart|reload-or-restart|try-reload-or-restart|force-reload)$/;
+function restartsApp(w) {
+  const prog = w[0].split("/").pop(), args = w.slice(1);
+  if (prog === "systemctl") { const v = args.filter((a) => !a.startsWith("-")); return SVC_STOP.test(v[0] || "") && v.slice(1).some((u) => /symbiot/i.test(u)); }
+  if (/^(pkill|killall)$/.test(prog)) return args.filter((a) => !a.startsWith("-")).some((a) => /symbiot|index\.mjs/i.test(a));
+  if (prog === "kill") return /symbiot|agent\.pid/i.test(args.join(" "));
+  return false;
+}
+
 function judgeBash(cmd, { cwd, home, branch, session = "" }) {
   const c = String(cmd || "");
   // the user's phone over adb: an app opened on it waits for their yes, and one run uses it at a time (phonegate.mjs)
@@ -129,6 +140,7 @@ function judgeBash(cmd, { cwd, home, branch, session = "" }) {
     const w = s.split(/\s+/);
     if (/^(sudo|su|doas)$/.test(w[0])) return { why: "sudo: only you run things as root" };
     if (!process.env.SYMBIOT_OWNER && s.includes(SELF) && changesSelf(s, { home, cwd })) return { why: "Symbiot doesn't edit its own code" };
+    if (restartsApp(w)) return { why: "that stops or restarts the Symbiot app this run is running under, which ends the run halfway and tells no one. Don't: say in .symbiot/QUESTIONS.md that the app needs reopening to load the new version (a ### heading in plain words, one option, \"🤖 Agent: I'll reopen Symbiot, then carry on\"), mark the item [~] waiting on that, and carry on with the rest" };
     if (/^(shutdown|reboot|poweroff|halt)$/.test(w[0])) return { why: "shutting the computer down is yours to do" };
     if (/^(mkfs(\.\w+)?|fdisk|parted|wipefs)$/.test(w[0]) || (/^dd$/.test(w[0]) && /\bof=\/dev\//.test(s))) return { why: "that writes a disk directly" };
     if (/^git$/.test(w[0]) || /^git\s/.test(s)) {

@@ -4,6 +4,7 @@ What each Symbiot release brought, newest first. When Approve bumps the version,
 
 ## 0.81.2 — 2026-10-23
 
+- **An agent can't restart the Symbiot app it is running under.** Stopping or restarting the app from a run ended that run halfway with nobody told. Now the command is held, and the run asks you to reopen Symbiot instead, then carries on with the rest.
 - **Your app's key stays out of the list of running programs.** Symbiot's window opens with a one-use pass that's good for a minute, rather than the key itself, which any program on the computer could read.
 - **A post editor in Symbiot's browser keeps what you typed.** Typing, choosing, uploading and pressing from a lane all happen on the same open page while the app runs. If the app can't be reached, the command waits a minute and then says so, with nothing done, rather than opening the page again and losing the text.
 - **Fewer pointless sign-in asks.** When signing in isn't what's in the way on a site, the card asks for what is: letting agents act there, or saying it's already signed in.
