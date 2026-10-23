@@ -79,6 +79,27 @@ try {
   ok("one PNG per size, named for the page and size, at the window size asked", sh.shots.length === 2 && /orders-1440x900\.png$/.test(sh.shots[0]) && /orders-390x844\.png$/.test(sh.shots[1]) && calls[0].includes("--window-size=1440,900") && calls[1].includes("--window-size=390,844"), [sh, calls[0]]);
   ok("…--full takes a tall window for a long page", D.shoot("http://localhost:3100/", { out, bin: "chrome", full: true, sizes: "1440x900", run: (b, args) => { calls.push(args); writeFileSync(args.find((a) => a.startsWith("--screenshot=")).slice(13), "png"); } }).shots[0].endsWith("-full.png") && calls.at(-1).includes("--window-size=1440,4000"));
   ok("…and says so when Chrome took none", /didn't take/.test(D.shoot("http://localhost:3100/", { out: join(HOME, "none"), bin: "chrome", run: () => {} }).error));
+
+  console.log("THE JOB FIRST — the standard asks for the flows the best product of its kind has, not only tidiness");
+  ok("the builder's brief and the critic's both start from the job and the flows people expect", /The job first/.test(D.CHECKLIST[0]) && /removing, undoing/.test(D.CHECKLIST[0]) && D.designBrief().join("\n").includes("The job first") && D.criticBrief([{ item: "x", rounds: 0 }]).includes("The job first"));
+
+  console.log("A MERGE WAITS FOR THE CRITIC — UI work it sent back holds a merge in its repo (23 Oct 2026)");
+  const mlane = join(HOME, "work", "app"); mkdirSync(join(mlane, ".symbiot"), { recursive: true });
+  D.noteOpen(mlane, { "Build the vault page": { rounds: 1, at: Date.now(), fixes: ["rows too tall"] } }, { slug: "acme/app" });
+  ok("under review or sent back: a merge into that repo is held, by owner/name or by its name (a moved repo)", D.holdsMerge("acme/app").length === 1 && D.holdsMerge("newowner/app")[0].item === "Build the vault page" && D.holdsMerge("acme/other").length === 0);
+  const { judge } = await import("../guard.mjs");
+  const g = judge("Bash", { command: "gh pr merge 251 --repo acme/app --merge" }, { cwd: HOME, home: HOME });
+  ok("the guard holds `gh pr merge` there, says why and what to do, and offers the user no way round it", !!(g && g.why) && /design critic/.test(g.why) && /UI-REVIEW\.md/.test(g.why) && !g.setting, g);
+  ok("…by a PR's address too, and not in another repo", !!judge("Bash", { command: "gh pr merge https://github.com/acme/app/pull/9" }, { cwd: HOME, home: HOME }) && !judge("Bash", { command: "gh pr merge 3 -R acme/other" }, { cwd: HOME, home: HOME }));
+  D.noteOpen(mlane, { "Build the vault page": { rounds: 1, passed: true } }, { slug: "acme/app" });
+  ok("passed: the merge is open again", D.holdsMerge("acme/app").length === 0 && !judge("Bash", { command: "gh pr merge 251 --repo acme/app" }, { cwd: HOME, home: HOME }));
+  D.noteOpen(mlane, { "Build the vault page": { rounds: 2, failed: true } }, { slug: "acme/app" });
+  ok("after two rounds it's the user's call: nothing is held", D.holdsMerge("acme/app").length === 0);
+  D.noteOpen(mlane, { "Old page": { rounds: 1 } }, { slug: "acme/app", now: Date.now() - D.OPEN_MS - 1000 });
+  ok("a review left open for days holds nothing", D.holdsMerge("acme/app").length === 0);
+  const rv = join(HOME, "work", "app2"); mkdirSync(join(rv, ".symbiot"), { recursive: true });
+  D.saveReview(rv, { "A page": { rounds: 1, at: Date.now() } });
+  ok("saving a review is what records it (no remote here: nothing to hold)", existsSync(join(CFG, "ui-open.json")) && D.holdsMerge("").length === 0);
 } catch (e) { ok("ran", false, String((e && e.stack) || e)); }
 finally { rmSync(HOME, { recursive: true, force: true }); }
 console.log(`\n${fail ? "✗" : "✓"} design: ${pass} passed, ${fail} failed`);

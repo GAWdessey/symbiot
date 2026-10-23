@@ -13,6 +13,7 @@
 //   at most; then it says honestly that it still doesn't pass.
 // Verdicts and rounds are kept in the folder's .symbiot/ui-review.json.
 import { join } from "node:path";
+import { homedir } from "node:os";
 import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -31,6 +32,7 @@ function isUiWork(text = "", files = []) {
 
 // The standard, as a brief section: concrete enough to check a screenshot against.
 const CHECKLIST = [
+  "The job first: it does what it's for as well as the best product of its kind does. Name that product (a password vault: 1Password or Bitwarden; a dashboard: Linear or Stripe's) and check the flows people expect of it are all there: finding, adding, changing, removing, undoing, a first use and an empty one, keyboard and phone. A flow that's missing fails it, however tidy the rest looks.",
   "First look: the headline says what this is and for whom; one primary action per view, visibly the strongest thing on it.",
   "Hierarchy and grouping: related things sit together under a plain heading; spacing on a 4/8 px scale, the same everywhere; nothing crammed against an edge.",
   "Type: two or three sizes and two weights at most; body text 14–16 px; numbers that matter big, their labels small.",
@@ -59,7 +61,31 @@ function designBrief({ cli = CLI } = {}) {
 const REVIEW = "ui-review.json", VERDICT = "ui-verdict.json", MAX_ROUNDS = 2;
 const readJson = (f, d) => { try { return JSON.parse(readFileSync(f, "utf8")); } catch { return d; } };
 const reviewOf = (path) => readJson(join(path, ".symbiot", REVIEW), {});
-function saveReview(path, r) { try { mkdirSync(join(path, ".symbiot"), { recursive: true }); writeFileSync(join(path, ".symbiot", REVIEW), JSON.stringify(r, null, 1)); } catch {} }
+function saveReview(path, r) { try { mkdirSync(join(path, ".symbiot"), { recursive: true }); writeFileSync(join(path, ".symbiot", REVIEW), JSON.stringify(r, null, 1)); } catch {} noteOpen(path, r); }
+
+// ---- a merge waits for the critic ------------------------------------------------------------
+// On 23 Oct 2026 a page was merged and shipped while the critic had it back with ten fixes: the
+// card asking "Can I merge it?" was answered after the critic reopened the work, and nothing tied
+// the two. So UI work the critic is still judging, or sent back to be fixed, holds a merge in its
+// repo (guard.mjs, `gh pr merge`) until the critic passes it, or, after MAX_ROUNDS, until it's the
+// user's call (the item waits [~] on them with what still fails). Kept for the guard, by repo, in
+// ui-open.json: { folder: { slug, items, at } }; an entry older than OPEN_MS no longer holds anything.
+const OPEN = (home = homedir()) => join(home, ".config", "symbiot", "ui-open.json"), OPEN_MS = 2 * 86400000;
+function slugOf(url) { const m = String(url || "").trim().match(/github\.com[:/]+([^/\s]+)\/([^/\s]+?)(?:\.git)?\/?$/i); return m ? `${m[1]}/${m[2]}`.toLowerCase() : ""; }
+function folderSlug(folder) { try { return slugOf(spawnSync("git", ["-C", folder, "remote", "get-url", "origin"], { encoding: "utf8", timeout: 5000 }).stdout); } catch { return ""; } }
+function noteOpen(path, review, { now = Date.now(), home = homedir(), slug } = {}) {
+  const items = Object.entries(review || {}).filter(([, v]) => v && v.rounds > 0 && !v.passed && !v.failed).map(([k]) => k);
+  const f = OPEN(home), all = readJson(f, {}) || {};
+  if (items.length) all[path] = { slug: slug ?? folderSlug(path), items, at: now }; else if (all[path]) delete all[path]; else return;
+  try { mkdirSync(join(f, ".."), { recursive: true }); writeFileSync(f, JSON.stringify(all, null, 1), { mode: 0o600 }); } catch {}
+}
+// What holds a merge into this repo (slug "owner/name"): [{ folder, item }], [] when nothing does.
+function holdsMerge(slug, { now = Date.now(), home = homedir() } = {}) {
+  slug = String(slug || "").toLowerCase(); if (!slug) return [];
+  const all = readJson(OPEN(home), {}) || {};
+  const name = (x) => String(x || "").split("/").pop(); // by its name too: a repo that moved owner keeps an old remote (GitHub redirects it)
+  return Object.entries(all).filter(([, v]) => v && v.slug && (v.slug === slug || name(v.slug) === name(slug)) && now - (v.at || 0) < OPEN_MS).flatMap(([folder, v]) => (v.items || []).map((item) => ({ folder, item })));
+}
 const itemKey = (t) => String(t || "").replace(/^\s*[-*+]\s*\[[ xX~]\]\s*/, "").replace(/\s+—\s+UI review \(round \d\).*$/, "").trim().slice(0, 200);
 // Ticked UI items the critic hasn't passed: [{ item }]. files: what the run touched (a task that
 // doesn't name its UI still is one when it changed a page or a stylesheet).
@@ -132,4 +158,4 @@ function shoot(url, { out, sizes = "1440x900,390x844", full = false, bin, now = 
   return failed.length && !shots.length ? { error: "Chrome didn't take the screenshots here.", failed } : { shots, ...(failed.length ? { failed } : {}) };
 }
 
-export { isUiWork, designBrief, CHECKLIST, toReview, criticBrief, CRITIC_PROMPT, settleVerdict, reviewOf, saveReview, itemKey, shoot, REVIEW, VERDICT, MAX_ROUNDS };
+export { slugOf, folderSlug, noteOpen, holdsMerge, OPEN_MS, isUiWork, designBrief, CHECKLIST, toReview, criticBrief, CRITIC_PROMPT, settleVerdict, reviewOf, saveReview, itemKey, shoot, REVIEW, VERDICT, MAX_ROUNDS };

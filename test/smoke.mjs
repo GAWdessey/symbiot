@@ -352,6 +352,9 @@ const calls = [
   ["/api/vault/unlock", "POST"],    // no PIN set -> refused, no unlock
   ["/api/vault/lock", "POST"],      // no token -> nothing to lock
   ["/api/vault/value", "POST"],     // not unlocked -> locked, no value, nothing logged
+  ["/api/vault/add", "POST"],       // not unlocked -> locked, nothing saved
+  ["/api/vault/rename", "POST"],    // not unlocked -> locked, nothing renamed
+  ["/api/vault/delete", "POST"],    // not unlocked -> locked, nothing deleted
   ["/api/desktop", "GET"],         // weekly write-up + start-at-login state
   ["/api/desktop/weekly", "POST"],  // empty body -> schedule unchanged (stays off)
   ["/api/desktop/autostart", "POST"], // empty body -> off: removes nothing outside the isolated HOME

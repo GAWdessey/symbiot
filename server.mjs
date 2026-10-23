@@ -29,7 +29,7 @@ import { addTask, setTaskModel, toggleTask, removeTask, cancelTask, restoreTask,
 import { repoReview, repoSuggest, folderSuggest, taskChat, clearTaskChat, mailState, setMail, sentMail, produce, releaseNotes } from "./writeups.mjs";
 import { denyList } from "./outward.mjs";
 import { listSecrets, getSecret, saveSecret, markUsed, deleteSecret, scrubStored, repairFalseSaves } from "./vault.mjs";
-import { vaultList, vaultValue, vaultLog, setPin, unlock as vaultUnlock, lock as vaultLock } from "./vaultview.mjs";
+import { vaultList, vaultValue, vaultLog, setPin, unlock as vaultUnlock, lock as vaultLock, addEntry as vaultAdd, renameEntry as vaultRename, removeEntry as vaultRemove } from "./vaultview.mjs";
 import { SCREENS_SOCK, sockGate, loadScreens, screenImage, captureScreen, splitScreen, listMonitors, allowScreenshots, importScreen, setRegions, renameScreen, removeScreen, blueprint, clickRegion } from "./screens.mjs";
 import { sessionCookie, mapPage, wholePage, pressRegion, typeRegion, chooseRegion, fillForm, verifyPage, uploadRegion, scrollPage, signIn, keepBrowserOpen, isTrusted, trustedSites, trustSite, untrustSite, openSymbiotBrowser, closeSymbiotBrowser, onBrowserClosed, setBrowserHub, siteUrl, browserHub, windowOpen } from "./headless.mjs";
 import { weeklyState, setWeekly, runWeekly, startWeekly, autostartState, setAutostart, installLauncher, iconSvg, setLauncherLook, desktopNotify } from "./desktop.mjs";
@@ -634,6 +634,10 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       if (u.pathname === "/api/vault/unlock" && req.method === "POST") { const b = await readBody(req); return json(res, vaultUnlock(String(b.pin || ""))); }
       if (u.pathname === "/api/vault/lock" && req.method === "POST") { const b = await readBody(req); return json(res, vaultLock(b.token)); }
       if (u.pathname === "/api/vault/value" && req.method === "POST") { const b = await readBody(req); return json(res, vaultValue(String(b.name || ""), { token: String(b.token || ""), act: b.act === "copy" ? "copy" : "reveal" })); }
+      // Keeping it tidy, on an unlocked page only: add one, rename one, delete one (vaultview.mjs).
+      if (u.pathname === "/api/vault/add" && req.method === "POST") { const b = await readBody(req); return json(res, vaultAdd({ label: b.label, account: b.account, values: Array.isArray(b.values) ? b.values : [], token: String(b.token || "") })); }
+      if (u.pathname === "/api/vault/rename" && req.method === "POST") { const b = await readBody(req); return json(res, vaultRename(String(b.name || ""), { label: b.label, account: b.account, token: String(b.token || "") })); }
+      if (u.pathname === "/api/vault/delete" && req.method === "POST") { const b = await readBody(req); return json(res, vaultRemove(String(b.name || ""), { token: String(b.token || "") })); }
       if (u.pathname === "/api/screens/signin" && req.method === "POST") { const b = await readBody(req); return json(res, await signIn(b.site)); }
       // What Symbiot remembers across the app (mind.mjs), and forgetting it.
       if (u.pathname === "/api/mind") return json(res, mindState());

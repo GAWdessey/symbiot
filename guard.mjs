@@ -21,6 +21,7 @@ import { readFileSync, realpathSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { judgeChrome, seen as seenChrome, openTabs, PREFIX as CHROME } from "./chromegate.mjs";
 import { judgePush } from "./pushgate.mjs";
+import { holdsMerge, slugOf, folderSlug } from "./design.mjs";
 import { judgePhone, letGo as phoneLetGo, phoneAsked } from "./phonegate.mjs";
 
 const SECRET = [".ssh", ".gnupg", ".aws", ".azure", ".kube", ".docker/config.json", ".config/gcloud", ".config/gh/hosts.yml", ".netrc", ".npmrc", ".pypirc", ".git-credentials", ".config/symbiot/secrets.json", ".config/symbiot/vault.json", ".config/symbiot/vault.key", ".config/symbiot/vault-pin.json"];
@@ -139,6 +140,13 @@ function judgeBash(cmd, { cwd, home, branch, session = "" }) {
         // forcing a branch: held for the user's Go on a card, and Symbiot pushes it itself (pushgate.mjs)
         if (args.some((a) => /^(-f|--force|--force-with-lease)(=|$)/.test(a) || /^\+/.test(a))) return judgePush(args.slice(1), at ? expand(at, home, cwd) : cwd, { home, session });
       }
+    }
+    // a merge while Symbiot's design critic still has UI work in that repo sent back, or under review (design.mjs)
+    if (w[0] === "gh" && w[1] === "pr" && w[2] === "merge") {
+      const r = w.indexOf("--repo") >= 0 ? w[w.indexOf("--repo") + 1] : w.indexOf("-R") >= 0 ? w[w.indexOf("-R") + 1] : "", url = w.find((x) => /github\.com\/[^/]+\/[^/]+\/pull\//.test(x));
+      const slug = r ? unquote(r).toLowerCase() : url ? slugOf(unquote(url).replace(/\/pull\/.*$/, "")) : folderSlug(cwd);
+      const held = holdsMerge(slug, { home });
+      if (held.length) return { why: `merging waits for Symbiot's design critic: it hasn't passed “${held[0].item.slice(0, 120)}” in this repo yet (what it wants fixed: .symbiot/UI-REVIEW.md in ${held[0].folder}). Fix what it lists and end your run: the critic looks again, and once it passes, merging is open. Don't ask the user to merge it as it is; after two rounds it's their call, and Symbiot asks them itself` };
     }
     if (/^(npm|yarn|pnpm|bun)$/.test(w[0]) && w[1] === "publish") return { why: "publishing a package is yours to do (Approve ships it)" };
     if (/^(twine|cargo|gem|poetry)$/.test(w[0]) && /\b(upload|publish|push)\b/.test(s)) return { why: "publishing a package is yours to do" };

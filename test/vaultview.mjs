@@ -44,8 +44,8 @@ try {
   const r = V.vaultValue("npm recovery codes", { token: s.token, now: t0 + 1000 });
   ok("unlocked: every value of the entry, and which are used", r.ok && r.values.map((x) => x.v).join() === [C1, C2].join() && r.values.every((x) => x.used === false), r);
   ok("showing it spends nothing and changes nothing", getSecret("npm recovery codes").value === C1 && listSecrets().find((x) => x.name === "npm recovery codes").used === 0);
-  ok("the unlock runs out", V.vaultValue("npm recovery codes", { token: s.token, now: t0 + V.UNLOCK_MS + 1 }).locked === true);
-  ok("…and the list says when it's unlocked till", V.vaultList({ token: s.token, now: t0 + 1000 }).unlocked === t0 + V.UNLOCK_MS && !V.vaultList({ token: s.token, now: t0 + V.UNLOCK_MS + 1 }).unlocked);
+  ok("using it keeps it unlocked: the list says till when, UNLOCK_MS after the last use", V.vaultList({ token: s.token, now: t0 + 2000 }).unlocked === t0 + 1000 + V.UNLOCK_MS && r.until === t0 + 1000 + V.UNLOCK_MS, r.until);
+  ok("…left alone that long, it locks", V.vaultValue("npm recovery codes", { token: s.token, now: t0 + 1000 + V.UNLOCK_MS + 1 }).locked === true && !V.vaultList({ token: s.token, now: t0 + 1000 + V.UNLOCK_MS + 1 }).unlocked);
   const u = V.unlock(PIN, { now: t0 });
   ok("the right PIN unlocks again, with a new token", u.ok && u.token !== s.token);
   V.lock(u.token);
@@ -70,6 +70,30 @@ try {
   const rp = V.resetPin();
   ok("a forgotten PIN is cleared from a terminal: the page asks for a new one, the vault is untouched", rp.ok && rp.had && V.vaultList().pin === false && V.vaultValue("npm recovery codes", { token: k.token, now: t2 + 2 }).locked === true && listSecrets().length === 3);
 
+  console.log("READABLE — names people read, each under its service, and what needs a look");
+  ok("names read as words: short forms in capitals, a brand cased its own way, the email left out", V.labelOf("twilio-account-sid") === "Twilio account SID" && V.labelOf("github token") === "GitHub token" && V.labelOf("acme.io password (jane@example.com)") === "Acme.io password" && V.labelOf("npm recovery codes") === "npm recovery codes");
+  ok("each under its service: a service it names, else its first word, else Other", V.groupOf("twilio-auth-token") === "Twilio" && V.groupOf("my lemon squeezy key") === "Lemon Squeezy" && V.groupOf("acme-portal password") === "Acme" && V.groupOf("token") === "Other" && V.groupOf("password (jane@example.com)") === "Other");
+  ok("…and named under it without the service's name", V.shortOf("Twilio account SID", "Twilio") === "Account SID" && V.shortOf("Token", "Other") === "Token");
+  const iss = V.issuesOf([{ name: "token", count: 1, used: 0 }, { name: "github token", count: 1, used: 0 }, { name: "plan.md password", count: 1, used: 0 }, { name: "old codes", count: 2, used: 2 }], { peek: (n) => ({ values: [{ v: n === "token" || n === "github token" ? "same-value" : "v-" + n }] }) });
+  ok("needs a look: a name that says nothing, a file's name, every code used, and a value saved twice (both ways)", iss.token.some((x) => x.kind === "vague") && iss["plan.md password"][0].kind === "file" && iss["old codes"][0].kind === "spent" && iss.token.some((x) => x.kind === "same" && x.other === "github token") && iss["github token"].some((x) => x.kind === "same" && x.other === "token"), iss);
+  ok("…which says no value", !JSON.stringify(iss).includes("same-value"));
+
+  console.log("KEEPING IT TIDY — add, rename and delete, unlocked only, logged without the value");
+  const t3 = Date.now() + 3600000;
+  ok("locked, none of them does anything", V.addEntry({ label: "x", values: ["y"], now: t3 }).locked && V.renameEntry("npm recovery codes", { label: "z", now: t3 }).locked && V.removeEntry("npm recovery codes", { now: t3 }).locked && listSecrets().length === 3);
+  V.setPin(PIN, { now: t3 }); const tk = V.unlock(PIN, { now: t3 }).token;
+  const ad = V.addEntry({ label: "Acme portal password", account: "jane@example.com", values: ["Tidal5Fern!"], token: tk, now: t3 + 1 });
+  ok("add: saved by what it's for, with the account in brackets as agents read it", ad.ok && ad.name === "Acme portal password (jane@example.com)" && getSecret(ad.name).value === "Tidal5Fern!", ad);
+  ok("…one that's there already is refused, not added to", /already one/.test(V.addEntry({ label: "acme portal password", account: "jane@example.com", values: ["other"], token: tk, now: t3 + 2 }).error || "") && listSecrets().find((x) => x.name === ad.name).count === 1);
+  const rn = V.renameEntry("Example Pay test API key", { label: "Example Pay sandbox key", token: tk, now: t3 + 3 });
+  ok("rename: same value and date under the new name, the old name gone", rn.ok && getSecret("Example Pay sandbox key").value === KEY && !listSecrets().some((x) => x.name === "Example Pay test API key"), rn);
+  ok("…not onto a name that's taken", /already one/.test(V.renameEntry("Example Pay sandbox key", { label: "npm recovery codes", token: tk, now: t3 + 4 }).error || ""));
+  const rm = V.removeEntry(ad.name, { token: tk, now: t3 + 5 });
+  ok("delete: gone", rm.ok && !listSecrets().some((x) => x.name === ad.name));
+  const lg2 = V.vaultLog();
+  ok("each change is in the log, newest first, without its value", lg2[0].act === "delete" && lg2[1].act === "rename" && lg2[1].from === "Example Pay test API key" && lg2[2].act === "add" && !readFileSync(join(CFG, "vault-log.json"), "utf8").includes("Tidal5Fern!"), lg2.slice(0, 3));
+  ok("an agent's socket reaches none of it", !(await import("../screens.mjs")).sockGate("/api/vault/add") && !(await import("../screens.mjs")).sockGate("/api/vault/delete") && !(await import("../screens.mjs")).sockGate("/api/vault/rename"));
+
   console.log("AGENT RUNS — can't read the PIN's file");
   const { judge } = await import("../guard.mjs");
   const g = judge("Read", { file_path: join(HOME, ".config", "symbiot", "vault-pin.json") }, { cwd: join(HOME, "repo"), home: HOME });
@@ -80,13 +104,24 @@ try {
   const { EMBEDDED_UI } = await import("../ui.mjs");
   const uiJs = [...EMBEDDED_UI.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]).join("\n");
   const grab = (name) => { const i = uiJs.indexOf("function " + name + "("); let depth = 0, j = uiJs.indexOf("{", i); for (; j < uiJs.length; j++) { if (uiJs[j] === "{") depth++; else if (uiJs[j] === "}" && --depth === 0) break; } return uiJs.slice(i, j + 1); };
-  const page = new Function(uiJs.match(/var VLT=\{.*\n/)[0] + ["esc", "escQ", "vaultDate", "vaultRow", "vaultClip", "vaultUnclip"].map(grab).join("\n") + "\nreturn {VLT:VLT,VCLIP:VCLIP,VCLIP_MS:VCLIP_MS,vaultRow:vaultRow,vaultClip:vaultClip,vaultUnclip:vaultUnclip};")();
-  const e = { name: "npm recovery codes", kind: "Recovery codes", account: "", saved: Date.now(), count: 2, left: 2 };
-  const hid = page.vaultRow(e);
-  ok("a row shows its name and kind, and dots where the value is", /npm recovery codes/.test(hid) && /Recovery codes/.test(hid) && /vhid/.test(hid) && />Show</.test(hid) && !hid.includes(C1));
+  const grabVar = (name) => (uiJs.match(new RegExp("var " + name + "=[\\s\\S]*?;\\n")) || [""])[0];
+  const fns = ["esc", "escQ", "vaultDate", "vaultHue", "vaultMono", "vaultSub", "vaultFmt", "vaultFind", "vaultField", "vaultListHtml", "vaultIssue", "vaultLast", "vaultDetailHtml", "vaultClip", "vaultUnclip"];
+  const page = new Function("var agoTxt=function(){return 'just now';};" + uiJs.match(/var VLT=\{.*\n/)[0] + grabVar("VIC") + fns.map(grab).join("\n") + "\nreturn {VLT:VLT,VCLIP:VCLIP,VCLIP_MS:VCLIP_MS,vaultField:vaultField,vaultListHtml:vaultListHtml,vaultDetailHtml:vaultDetailHtml,vaultClip:vaultClip,vaultUnclip:vaultUnclip};")();
+  const e = { name: "npm recovery codes", label: "npm recovery codes", group: "npm", short: "Recovery codes", kind: "Recovery codes", account: "", saved: Date.now(), count: 2, left: 1, issues: [] };
+  const tw = { name: "token", label: "Token", group: "Other", short: "Token", kind: "API key or token", account: "", saved: Date.now(), count: 1, left: 1, issues: [{ kind: "vague", text: "Its name doesn't say what it's for." }, { kind: "same", other: "npm recovery codes", text: "Same value as “npm recovery codes”." }] };
+  page.VLT.list = [e, tw]; page.VLT.sel = e.name;
+  const hid = page.vaultField(e);
+  ok("hidden: dots where the value is, Show and Copy, no value", /vhid/.test(hid) && /data-va='show'/.test(hid) && /data-va='copy'/.test(hid) && !hid.includes(C1));
   page.VLT.shown[e.name] = [{ v: C1, used: true }, { v: C2, used: false }];
-  const shown = page.vaultRow(e);
-  ok("shown: its values, which one is used, a copy for each, and Hide", shown.includes(C1) && shown.includes(C2) && /vused/.test(shown) && (shown.match(/class='ghost vone'/g) || []).length === 2 && />Hide</.test(shown));
+  const shown = page.vaultField(e);
+  ok("shown: each code, the used one struck out and last, a Copy for each unused one, and Hide", shown.includes("vcode used") && shown.indexOf(">f<") < shown.indexOf(">0<") && (shown.match(/data-va='copyone'/g) || []).length === 1 && /data-va='hide'/.test(shown));
+  const lst = page.vaultListHtml([e, tw]);
+  ok("the list: each service's name over its entries, the picked one marked, and a dot on one that needs a look", /class='vgh'[^>]*>npm/.test(lst) && /class='vgh'[^>]*>Other/.test(lst) && /aria-selected='true'>[^]*Recovery codes/.test(lst) && (lst.match(/class='vdot'/g) || []).length === 1 && !lst.includes(C1));
+  const det = page.vaultDetailHtml(tw);
+  ok("the detail says what needs a look and offers the fix: rename it, open the other, delete this one", /say what it/.test(det) && /data-va='rename'/.test(det) && /data-va='pick' data-n='npm recovery codes'/.test(det) && /Delete this one/.test(det) && /Agents ask for/.test(det));
+  if (!/Agents ask for/.test(det) || !/data-va=.pick./.test(det)) console.log(det.slice(0, 1500));
+  page.VLT.mode = "delete"; const del = page.vaultDetailHtml(tw); page.VLT.mode = "";
+  ok("Delete asks first, in the page, and says it can be undone", /Delete “Token”\?/.test(del) && /data-va='delyes'/.test(del) && /undo/.test(del));
   ok("the page waits 30 seconds", page.VCLIP_MS === 30000);
   const board = { text: "", focused: true, writeText(t) { if (!this.focused) return Promise.reject(new Error("Document is not focused")); this.text = t; return Promise.resolve(); } };
   const timers = []; const later = (f, ms) => { timers.push({ f, ms, live: true }); return timers.length; }, stop = (id) => { if (timers[id - 1]) timers[id - 1].live = false; };
@@ -102,7 +137,7 @@ try {
   ok("…and wipes it once the window has focus again", board.text === "" && page.VCLIP.pend === false);
   ok("…the page does that on focus", /addEventListener\('focus',function\(\)\{if\(VCLIP\.pend/.test(uiJs));
   ok("no clipboard: Copy says so instead of pretending", (await page.vaultClip(KEY, { clip: {}, later, stop })) === false);
-  ok("leaving the page or hiding the window locks it", /if\(tab==='vault'\)\{[^}]*\}else if\(VLT\.token\|\|Object\.keys\(VLT\.shown\)\.length\)vaultLockNow\(\)/.test(uiJs) && /document\.hidden&&VLT\.token\)vaultLockNow\(\)/.test(uiJs));
+  ok("leaving the page or hiding the window locks it", /if\(tab==='vault'\)\{[^}]*\}else\{if\(VLT\.del\)vaultFlush\(\);if\(VLT\.token\|\|Object\.keys\(VLT\.shown\)\.length\)vaultLockNow\(\)/.test(uiJs) && /document\.hidden&&VLT\.token\)vaultLockNow\(\)/.test(uiJs));
   ok("Settings links to it, and it's a page by name", /id="openvault"/.test(EMBEDDED_UI) && /vault:'Vault'/.test(uiJs) && (await import("../adapt.mjs")).SHAPES.includes("vault"));
 } finally {
   rmSync(HOME, { recursive: true, force: true });
