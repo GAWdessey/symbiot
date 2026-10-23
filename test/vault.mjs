@@ -117,5 +117,22 @@ try {
   ok("a key saved after the wait began meets a step that asks for it", /^lemon squeezy .*api key/.test(meetsStep(wait, 1)) && !/password/.test(meetsStep(wait, 1)));
   ok("…not one saved before it began", !meetsStep(wait, Date.now() + 60000));
   ok("…and not a step about something else", !meetsStep("You (only you: your phone): say ready and keep it with you", 1) && !meetsStep("paste the Twilio token on Home", 1));
+
+  console.log("INTO THE KEYRING — secrets on disk beside their key move into the keyring once there is one (23 Oct 2026)");
+  {
+    const V = await import("../vault.mjs"), { existsSync: ex, readFileSync: rd } = await import("node:fs");
+    V.saveSecret("kr test password", ["Pebble9-Lantern"]); V.saveSecret("kr test codes", ["c1c1c1c1", "c2c2c2c2"]);
+    const keyFile = join(HOME, ".config", "symbiot", "vault.key");
+    ok("(file mode: on disk, with its key beside it)", ex(keyFile) && /kr test password/.test(rd(join(HOME, ".config", "symbiot", "vault.json"), "utf8")));
+    const store = new Map(), kr = { put: (n, v) => (store.set(n, v), true), get: (n) => (store.has(n) ? store.get(n) : null), del: (n) => store.delete(n) };
+    const broken = { put: () => true, get: () => null, del: () => true };
+    const r0 = V.toKeyring({ kr: broken });
+    ok("a keyring that doesn't give it back: nothing leaves the disk, the key stays", r0.moved === 0 && r0.left > 0 && ex(keyFile), r0);
+    const r = V.toKeyring({ kr });
+    const idx = JSON.parse(rd(join(HOME, ".config", "symbiot", "vault.json"), "utf8"));
+    ok("each read back from the keyring before its copy on disk goes, then the key file goes too", r.moved >= 2 && r.left === 0 && r.keyGone && !ex(keyFile) && Object.keys(idx.blobs || {}).length === 0 && idx.names["kr test password"].where === "keyring", [r, idx.names["kr test password"]]);
+    ok("…and nothing of a value is left on disk", !rd(join(HOME, ".config", "symbiot", "vault.json"), "utf8").includes("Pebble9") && JSON.parse(store.get("kr test password")).values[0].v === "Pebble9-Lantern");
+    ok("no keyring: nothing to do", V.toKeyring({ kr: null }) === null);
+  }
 } finally { rmSync(HOME, { recursive: true, force: true }); }
 console.log(`\n${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0);
