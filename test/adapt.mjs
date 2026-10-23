@@ -527,6 +527,21 @@ try {
     ok("its lane's run ended without ticking it: flagged, not started again and again", why(6).stuck && why(6).ended && /ended without finishing/.test(why(6).text), why(6));
     ok("a free lane, waiting past a few minutes: flagged as stuck with nothing in its way", why(7).stuck && /Not started after \d+ min/.test(why(7).text) && sc.stuckCount === 2, [why(7), sc.stuckCount]);
     ok("a lane Symbiot can't find a folder for: blocked, saying so", why(8).kind === "blocked" && /can't find nowhere's folder/.test(why(8).text), why(8));
+    // its agent marked it [~]: waiting on that, not "didn't start", and never started again and again (22 Oct 2026)
+    {
+      const wmap = { ...map, sts: "/w" }, wt = [{ id: "w1", text: "Rebuild the coach avatars", repo: "sts", ts: old }, { id: "w2", text: "Write the changelog", repo: "sts", ts: old }];
+      const wb = { ...base, repos: () => wmap, tasks: () => wt, agents: () => [], brief: (p) => (p === "/w" ? { at: 5, tasks: ["Rebuild the coach avatars"] } : { at: 0, tasks: [] }), lastRun: () => 1,
+        waiting: (p, text) => (p === "/w" && text === "Rebuild the coach avatars" ? "ops, run act-c1d2e3f4, which holds the key" : "") };
+      const wf = { sts: { at: old, note: "Not started: every task on sts's list is done or waiting on something" } };
+      const sw = workScene({ deps: { ...wb, fails: wf } }), ww = (id) => (sw.waiting.find((w) => w.id === "task:" + id) || {}).why || {};
+      ok("a task its agent marked waiting says what on, plainly, not blocked, and counts for no Go", ww("w1").kind === "waiting" && ww("w1").noGo && !ww("w1").stuck && /^Waiting on ops, run act-c1d2e3f4, which holds the key\. sts's agent carries on once that's in$/.test(ww("w1").text), ww("w1"));
+      ok("…a refused start says why in plain words, not twice 'not started'", ww("w2").kind === "blocked" && /^Blocked: sts's agent didn't start: every task on sts's list/.test(ww("w2").text), ww("w2"));
+      const wran = []; workTick({ deps: { ...wb, tasks: () => wt.slice(0, 1), fails: {}, push: ({ repo }) => ({ written: [{ name: repo, path: wmap[repo] }] }), run: (p) => (wran.push(p), { blocked: true, note: "x" }) } });
+      ok("…and the tick doesn't start the lane on it every few minutes", !wran.includes("/w"), wran);
+      const { goLane } = await import("../home.mjs"); let pushedWith = null;
+      const gl = goLane("sts", wmap, { push: (f) => (pushedWith = f, { written: [{ name: "sts", path: "/w" }] }), run: () => ({ id: "j" }) });
+      ok("Start for one lane opens what its agent marked waiting, and starts it", gl.ok && gl.job === "j" && pushedWith && pushedWith.reopen === true && pushedWith.repo === "sts", [gl, pushedWith]);
+    }
     const ws0 = workScene({ deps: { ...base, cmd: () => "", fails: {} } });
     ok("no agent set: every one says it's blocked on that", ws0.waiting.filter((w) => w.why.kind !== "you").every((w) => /no coding agent/.test(w.why.text)), ws0.waiting.map((w) => w.why.kind));
     const pushed = [], ran = [], acted = [], fails = {};
@@ -585,7 +600,7 @@ try {
   ok("no TASKS.md: not started, not even Start it anyway, and the note says why", n1 && n1.blocked && n1.idle && !n1.id && /^Not started: idle has no \.symbiot\/TASKS\.md/.test(n1.note), n1);
   writeFileSync(join(is, "TASKS.md"), "## Tasks\n- [x] Done already\n");
   const n2 = runHandoff(idir);
-  ok("every task ticked: not started either", n2 && n2.blocked && n2.idle && /every task .* is ticked/.test(n2.note), n2);
+  ok("every task ticked: not started either", n2 && n2.blocked && n2.idle && /every task .* is done or waiting/.test(n2.note), n2);
   writeFileSync(join(is, "agent.log"), `\n=== idle ${new Date(Date.now() - 60000).toISOString()} ===\n$ true\n`);
   writeFileSync(join(is, "ANSWERS.md"), "# Answers\n\n### Approved: drafts/post.md\nPost it.\n");
   const n3 = runHandoff(idir, { force: true });

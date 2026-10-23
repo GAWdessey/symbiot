@@ -691,6 +691,24 @@ function repoPathMap() {
 // The lanes a task can go to: every repo and project folder, and Marketing, a lane of
 // its own for marketing across products (marketing.mjs). A repo of yours called
 // marketing keeps the name. Counting your repos is repoPathMap's job, not this.
+// A name that's nearly a lane's (a typo, a word more or less: "symbio", "robin lane", "Quartz-app")
+// is that lane, when only one fits; "" when none does (lanes.mjs laneTarget, tasks.mjs laneOfRepo).
+const slug = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+function editDistance(a, b) {
+  const m = a.length, n = b.length; if (!m || !n) return m + n;
+  let prev = Array.from({ length: n + 1 }, (_, j) => j);
+  for (let i = 1; i <= m; i++) { const cur = [i]; for (let j = 1; j <= n; j++) cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)); prev = cur; }
+  return prev[n];
+}
+function nearLane(lane, names) {
+  const k = slug(lane); if (!k) return "";
+  const exact = names.find((n) => slug(n) === k); if (exact) return exact;
+  const within = names.filter((n) => { const s = slug(n); return s.length >= 4 && (k.includes(s) || (k.length >= 4 && s.includes(k))); });
+  if (within.length === 1) return within[0];
+  if (within.length > 1) return "";
+  const close = names.filter((n) => { const s = slug(n); return s.length >= 5 && k.length >= 5 && editDistance(k, s) <= Math.max(1, Math.floor(Math.min(k.length, s.length) / 5)); });
+  return close.length === 1 ? close[0] : "";
+}
 function laneMap() { const m = repoPathMap(); if (!Object.keys(m).some((n) => n.toLowerCase() === MARKETING)) m[MARKETING] = MARKETING_DIR; return m; }
 
 // The SAME repo set the Map uses — reuse its cached scan when present, else do
@@ -700,4 +718,4 @@ function discoveredRepos() {
   return findAllRepos();
 }
 
-export { aboutLine, laneAbouts, refreshRepos, reposState, REPO_STATE, laneMap, SCAN, SCAN_TIMEOUT_MS, setScanOptions, scanBegin, scanPhase, scanTick, scanExpired, scanEnd, me, authorship, authorArgs, folderFiles, readmeInfo, repoShape, houseRules, reportFooter, expandRoot, scanHome, scanBase, storageBlocked, prootDistros, prootHomes, scanRoots, addScanRoot, removeScanRoot, commits, openWork, findAllRepos, detectRepo, findProjectFolders, detectFolder, claudeProjects, buildMap, mapNow, lastMap, nodeDetail, repoPathMap, discoveredRepos };
+export { nearLane, aboutLine, laneAbouts, refreshRepos, reposState, REPO_STATE, laneMap, SCAN, SCAN_TIMEOUT_MS, setScanOptions, scanBegin, scanPhase, scanTick, scanExpired, scanEnd, me, authorship, authorArgs, folderFiles, readmeInfo, repoShape, houseRules, reportFooter, expandRoot, scanHome, scanBase, storageBlocked, prootDistros, prootHomes, scanRoots, addScanRoot, removeScanRoot, commits, openWork, findAllRepos, detectRepo, findProjectFolders, detectFolder, claudeProjects, buildMap, mapNow, lastMap, nodeDetail, repoPathMap, discoveredRepos };

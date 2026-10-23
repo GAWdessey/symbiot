@@ -16,9 +16,9 @@ import { join, basename } from "node:path";
 import { homedir } from "node:os";
 import { readFileSync, writeFileSync, mkdirSync, statSync } from "node:fs";
 import { watchBoard, draftReply, draftCards, draftAnswer } from "./watch.mjs";
-import { pendingReview, pushTasks, addTask, taskType, releaseNotIn } from "./tasks.mjs";
+import { pendingReview, pushTasks, addTask, taskType, releaseNotIn, unplacedTasks } from "./tasks.mjs";
 import { estimate, estimateWords } from "./estimate.mjs";
-import { agentQuestions, answerQuestions, heldAsk, grantCard, cardIsPermission, onCardGone, setHandoffCmd, agentsList, agentsNow, forgetAgents, runHandoff, runningHandoff, handoffCmd, loadRuns, connectorsInfo, parkedPaths, agentMissing, settleNeeds, closeAsk, pickAgent, detectHandoffs, linkReach, unchangedStep, whereOf, claudePause, parkLane } from "./agents.mjs";
+import { agentQuestions, answerQuestions, heldAsk, grantCard, cardIsPermission, onCardGone, setHandoffCmd, agentsList, agentsNow, forgetAgents, runHandoff, runningHandoff, handoffCmd, loadRuns, connectorsInfo, parkedPaths, agentMissing, settleNeeds, closeAsk, pickAgent, detectHandoffs, linkReach, unchangedStep, whereOf, claudePause, parkLane, waitingTask } from "./agents.mjs";
 import { stallCards, loadStall, saveStall } from "./stall.mjs";
 import { isDone, recordDone, doneList, asksBack, askBackNote, wantsReport, closesAsk, heldBy, reportsSince, talkOf, addTalk, talkText, YES, asksQ, saysDone, wantsToRead } from "./asksdone.mjs";
 import { captureSecrets } from "./vault.mjs";
@@ -70,6 +70,16 @@ const reportLink = (r) => (r && r.id ? { report: { id: r.id, title: plain(r.titl
 // a step your answer left you) with what to check first, and a run that ended in an
 // error. Each is answered on its blob (homeAnswer), on Home and on its lane in
 // Tasks. repo: its lane ("" for an ops run).
+// Tasks under a name that's no lane, and stands for none (tasks.mjs laneOfRepo: an ops run's title):
+// nothing picks them up, so you're asked where they go. A card per name; it opens the Workdesk on
+// them, where each has its lane picker (16 Oct 2026: three sat queued for days, unseen).
+function unplacedCards(tasks, names) {
+  return Object.entries(unplacedTasks(tasks, names)).map(([name, ts]) => {
+    const n = ts.length, short = plain(String(name).replace(/^Agent:\s*/i, "").replace(/\*+/g, ""), 50);
+    return { kind: "lane", id: "lane:" + name, repo: name, name: short, title: `${n > 1 ? n + " tasks are" : "A task is"} under “${short}”, which is no lane`,
+      sub: `so nothing picks ${n > 1 ? "them" : "it"} up: “${plain(ts[0].text, 70)}”${n > 1 ? ` and ${n - 1} more` : ""}. Pick ${n > 1 ? "their" : "its"} lane on the Workdesk`, shape: "tasks" };
+  });
+}
 function troubles({ stuck = [], list = [], map = {}, named = displayName, now = Date.now(), drafts = [], stalls = [] } = {}) {
   const out = [], seen = new Set();
   // an agent that stalled twice (stall.mjs): Symbiot stopped it, restarted it once, and paused its lane; one urgent card
@@ -266,7 +276,7 @@ function homeNext(id, deps = {}) {
 // A lane's waiting tasks to its agent, the way Go does for one project.
 function goLane(repo, map, { push = pushTasks, run = runHandoff } = {}) {
   if (!map[repo]) return { error: `${repo} isn't one of your projects any more.` };
-  const p = (push || pushTasks)({ repo, later: true }); if (!p || !p.written || !p.written.length) return { error: `Nothing of ${repo}'s is waiting to start.` };
+  const p = (push || pushTasks)({ repo, later: true, reopen: true }); if (!p || !p.written || !p.written.length) return { error: `Nothing of ${repo}'s is waiting to start.` }; // your Start: what its agent marked waiting opens too
   const e = (run || runHandoff)(map[repo]); if (!e) return { error: "The agent didn't start. Check its command in Settings → Handoff." };
   if (e.parked) return { error: `${repo} is parked: unpark it to start its agent.` };
   if (e.blocked && !e.busy) return { error: `${repo}'s agent didn't start: ${e.note || "it's waiting on something"}` }; // queued only behind a run that's really going
@@ -468,10 +478,11 @@ function homeState({ now = Date.now(), fresh = false, deps = {}, tick = false } 
     const pa = plainAsk(a.path, q), done = finished(a.path, q.q), opts = (q.options || []).slice(0, 2);
     const closed = done ? { done, options: [`Close it: ${done.lane} has done this already (${done.text}). Check that it's so, and carry on without asking again. (recommended)`, opts[0]].filter(Boolean),
       labels: ["Close it: it's done", ...(opts[0] ? [blobLabel(pa.labels ? pa.labels[0] : opts[0])] : [])] } : {};
+    // its line under the title is the question as the card asks it (plain.mjs): a sign-in ask that was really a setting names the setting
     // the user answered another agent on this work: it has that answer, and is checking whether it settles this (lanes.mjs shareAnswer)
     const sh = sharedTo(a.path), shared = sh && (a.status === "running" || Date.parse(sh.at) > (a.startedAt || 0)) ? { shared: sh } : {}; // and not once it has asked again since
     you.push({ kind: "ask", id: "ask:" + a.path, path: a.path, repo, ...shared, name: repo ? named(lane ? map[lane] : a.path, repo) : plain(String(a.name || "an agent").replace(/^Agent:\s*/, "").replace(/^New job:\s*/i, ""), 60), // the card's header is narrow: no "New job:" in it
-      title: `${a.name} asks`, sub: String(q.q || "").slice(0, 90), ...(q.task ? { task: q.task } : {}), ...(q.talk ? { talk: q.talk } : {}), ...pa, options: opts, ...closed, ...(qs.length > 1 ? { more: qs.length - 1 } : {}), ...signInCard([q.q, ...opts]), ...reportLink(q.report), shape: "agents" });
+      title: `${a.name} asks`, sub: String(pa.q || q.q || "").slice(0, 90), ...(q.task ? { task: q.task } : {}), ...(q.talk ? { talk: q.talk } : {}), ...pa, options: opts, ...closed, ...(qs.length > 1 ? { more: qs.length - 1 } : {}), ...signInCard([q.q, ...opts]), ...reportLink(q.report), shape: "agents" });
   }
   // What stopped and can't go on without you, as a question too: a handover that
   // couldn't start (lanes.mjs stuckHandovers: "Allow this run access to ~/Company?"),
@@ -479,6 +490,7 @@ function homeState({ now = Date.now(), fresh = false, deps = {}, tick = false } 
   const drafts = deps.drafts || (() => { try { return draftCards(); } catch { return []; } });
   const stalls = deps.stalls || (() => { try { return stallCards(loadRuns().map((r) => r.path)); } catch { return []; } });
   you.push(...troubles({ stuck: stuck(), list, map, named, now, drafts: drafts(), stalls: stalls() }));
+  if (Object.keys(map).length) try { you.push(...unplacedCards((deps.tasks || loadTasks)() || [], [...Object.keys(map), "ops"])); } catch {} // no lanes read: none is known to be wrong
   // what the user asked for, followed through (goals.mjs): one waiting on them with no card of its own,
   // stalled, a follow-up to send, done or not finished; and an email that's waited a week for its reply
   { let gc = []; try { gc = (deps.goalCards || ((o) => goalCards(o)))({ waits: waits(), now }); } catch {}
@@ -1212,7 +1224,10 @@ function waitWhy({ map, named, running, held, ready, isParked, deps = {} }) {
     const h = held[lane];
     if (h) return h.approve ? { kind: "approve", noGo: true, text: `Waiting on your OK for ${name}'s last run, on the Workdesk`, path: h.path } : h.step ? { kind: "step", noGo: true, text: `Waiting on a step only you can do for ${name}: its card is under Needs you`, path: h.path } : { kind: "asks", noGo: true, text: `Waiting on your answer to ${name}'s question, on the Workdesk`, path: h.path };
     if (inBrief && ready.has(lane)) return { kind: "approve", noGo: true, text: `Waiting on your OK for ${name}'s work, on the Workdesk`, path };
-    if (fail) return { kind: "blocked", failAt: fail.at, text: `Blocked: ${name}'s agent didn't start (${fail.note})` };
+    // its agent marked it [~]: it waits on something outside the run, and an answer coming in starts the lane again
+    const on = inBrief ? (deps.waiting || waitingTask)(path, t.text) : "";
+    if (on) return { kind: "waiting", noGo: true, text: `Waiting on ${on.replace(/^(?:waits|waiting) (?:on|for):?\s*/i, "").replace(/[.\s]+$/, "")}. ${name}'s agent carries on once that's in` };
+    if (fail) return { kind: "blocked", failAt: fail.at, text: `Blocked: ${name}'s agent didn't start: ${String(fail.note).replace(/^Not started:\s*/i, "")}` };
     if (inBrief && lastRun(path) >= b.at) return { ...flag(`${name}'s last run ended without finishing it: Go starts it again`), ended: true };
     return age > STUCK_AFTER ? flag(`Not started after ${minutes(age)}, with nothing in its way`) : { kind: "next", text: `Next: starts on its own, ${name}'s lane is free` };
   };
@@ -1402,4 +1417,4 @@ function setOnboarding({ step, skip, unskip, skipRest, done, restart } = {}) {
   return onboarding();
 }
 
-export { updateAsk, cardTalk, homeTick, HOME_LOOKED, WORK_KEEP, FIRST_RUN, troubles, agentDigest, garthLedger, plainAsk, dismissCard, cardKey, loadDismissed, DISMISSED_FILE, reportIdeasAdd, reportAsk, reportDraftAnswer, workTick, waitWhy, AUTO_GRACE, STUCK_AFTER, marketingState, marketingGo, marketingDraftAnswer, marketingTask, moveToMarketing, goLane, homeState, homeContext, homeAsk, homeAnswer, homeNext, nextUp, laneNamed, NEXT_FILE, workScene, forgetWork, workGo, displayName, firstSteps, onboarding, setOnboarding, startOnboarding, ONB_STEPS, ONB_STEPS_PHONE, onbSteps, phoneBits, phoneSetupFirst, finishedState, handedState, noteHanded, phoneChat, isPeak, reportIdeasDismiss, settleAsks, settleFromChat };
+export { updateAsk, cardTalk, homeTick, HOME_LOOKED, WORK_KEEP, FIRST_RUN, troubles, agentDigest, garthLedger, plainAsk, dismissCard, cardKey, loadDismissed, DISMISSED_FILE, reportIdeasAdd, reportAsk, reportDraftAnswer, workTick, waitWhy, AUTO_GRACE, STUCK_AFTER, marketingState, marketingGo, marketingDraftAnswer, marketingTask, moveToMarketing, goLane, homeState, homeContext, homeAsk, homeAnswer, homeNext, nextUp, laneNamed, NEXT_FILE, workScene, forgetWork, workGo, displayName, firstSteps, onboarding, setOnboarding, startOnboarding, ONB_STEPS, ONB_STEPS_PHONE, onbSteps, phoneBits, phoneSetupFirst, finishedState, handedState, noteHanded, phoneChat, isPeak, reportIdeasDismiss, settleAsks, settleFromChat, unplacedCards };

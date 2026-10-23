@@ -151,6 +151,8 @@ const calls = [
   ["/api/tasks/model", "POST"],
   ["/api/tasks/remove", "POST"],
   ["/api/tasks/cancel", "POST"],   // no id -> "isn't there any more", nothing changes
+  ["/api/tasks/lanes", "GET"],   // the lanes a task can be re-filed in (its lane picker)
+  ["/api/tasks/lane", "POST"],    // no id -> "isn't open any more", nothing moves
   ["/api/tasks/restore", "POST"],
   ["/api/tasks/live", "POST"],
   ["/api/drift?ci=0&fetch=0", "GET"],
@@ -463,9 +465,26 @@ try {
 
   console.log("THE SYMBIOT BROWSER — it opens on its own page, served by this app");
   const sb = await fetch(base + "/api/browser/open", { method: "POST", headers: H, body: "{}" }).then((r) => r.json(), () => ({}));
-  ok("the app knows the Symbiot Browser's page (/browser on its own port), so it never opens blank", String(sb.page || "").startsWith(base + "/browser?t="), sb);
+  ok("the app knows the Symbiot Browser's page (/browser on its own port), so it never opens blank", String(sb.page || "") === base + "/browser", sb);
   const sbPage = await fetch(base + "/browser").then((r) => r.text(), () => "");
-  ok("…and serves it", /<title>Symbiot Browser<\/title>/.test(sbPage));
+  ok("…and serves it", /<title>Symbiot Browser<\/title>/.test(sbPage) && !sbPage.includes(token));
+
+  console.log("A WINDOW OPENS WITH A ONE-USE PASS, NOT THE KEY — its address is on Chrome's command line, which any program here can read (21 Oct 2026)");
+  const pass = () => fetch(base + "/api/pass", { headers: H }).then((r) => r.json(), () => ({}));
+  ok("a pass comes only with the key", (await fetch(base + "/api/pass").then((r) => r.status, () => 0)) === 403);
+  const p1 = (await pass()).pass || "", page1 = await fetch(`${base}/?p=${p1}`).then((r) => r.text(), () => "");
+  ok("the page opened with a pass is handed the key, and isn't the key itself", /^[0-9a-f]{32}$/.test(p1) && p1 !== token && page1.includes(`window.SYMBIOT_T=${JSON.stringify(token)}`), p1);
+  ok("…a pass works once", !(await fetch(`${base}/?p=${p1}`).then((r) => r.text(), () => "")).includes(token));
+  ok("…a made-up one never", !(await fetch(`${base}/?p=${"0".repeat(32)}`).then((r) => r.text(), () => "")).includes(token));
+  ok("…nor does a pass open the API", (await fetch(`${base}/api/ping?t=${(await pass()).pass}`).then((r) => r.status, () => 0)) === 403);
+  const p2 = (await pass()).pass || "";
+  ok("the Symbiot Browser's page, opened with a pass, is handed the key too", (await fetch(`${base}/browser?p=${p2}`).then((r) => r.text(), () => "")).includes(`window.SYMBIOT_T=${JSON.stringify(token)}`));
+  {
+    const S = await import("../server.mjs"), q = S.newPass(1000);
+    ok("a pass not used within a minute has gone", !S.takePass(q, 1000 + 61000) && !S.takePass(q, 1000), q);
+    const r = S.newPass(5000);
+    ok("…one used in time works, then not again", S.takePass(r, 5000 + 30000) && !S.takePass(r, 5000 + 30000));
+  }
 
   console.log("MAIL — a website typed into the mail box points to Trusted sites, and trusts nothing by itself");
   const mailAdd = (add) => fetch(base + "/api/mail/set", { method: "POST", headers: H, body: JSON.stringify({ add }) }).then((r) => r.json(), () => ({}));

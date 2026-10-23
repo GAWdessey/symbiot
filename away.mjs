@@ -63,7 +63,7 @@ function grantProfile(dir, origin) {
   if (!missing) return;
   try { mkdirSync(join(dir, "Default"), { recursive: true }); const tmp = `${f}.${process.pid}.tmp`; writeFileSync(tmp, JSON.stringify(p)); renameSync(tmp, f); } catch {}
 }
-// Opens a window per screen on the app's url (http://127.0.0.1:port/?t=token), the
+// Opens a window per screen on the app's url (http://127.0.0.1:port/?p=pass, or a function giving one: a pass per window), the
 // i-th told it's for screen i (si). Each has a profile of its own under Symbiot's
 // config, so its flags take (a window for a profile already open would join that
 // browser and ignore them).
@@ -73,12 +73,12 @@ function openAway(url, { chrome = chromeBinary(), scr = placeable() ? screens() 
   if (process.env.SYMBIOT_NO_OPEN === "1") return { open: false, note: "Windows are off here (SYMBIOT_NO_OPEN): tests, and runs that mustn't open any." };
   closeAway();
   const qs = awayQueries(scr.list, now);
-  const origin = (String(url).match(/^https?:\/\/[^/?#]+/) || [""])[0];
+  const at = () => String(typeof url === "function" ? url() : url), origin = (at().match(/^https?:\/\/[^/?#]+/) || [""])[0];
   qs.forEach((q, i) => {
     const s = scr.list[i], dir = join(CONFIG_DIR, "away", String(i)); grantProfile(dir, origin);
     const args = ["--user-data-dir=" + dir, "--no-first-run", "--no-default-browser-check", "--disable-session-crashed-bubble", "--hide-crash-restore-bubble", "--noerrdialogs", "--kiosk"];
     if (s) args.push(`--window-position=${s.x},${s.y}`, `--window-size=${s.w},${s.h}`); // X places it on its screen
-    args.push(url + (url.includes("?") ? "&" : "?") + q + `&si=${i}`);
+    const u = at(); args.push(u + (u.includes("?") ? "&" : "?") + q + `&si=${i}`);
     try { const k = spawn(chrome, args, { detached: true, stdio: "ignore", env: { ...process.env, ...(s && scr.display ? { DISPLAY: scr.display } : {}) } }); k.on("exit", () => {}); k.unref(); KIDS.push(k); } catch {}
   });
   return { open: KIDS.length > 0, screens: Math.max(1, scr.list.length) };

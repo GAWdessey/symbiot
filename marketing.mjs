@@ -279,7 +279,15 @@ function setDraftStatus(rel, status, { dir = MARKETING_DIR, now = Date.now(), ur
   const all = draftStatuses(dir), prev = all[rel], was = stateOf(prev);
   // posted is the end of it; superseded can still be marked posted (what went out, said)
   if (was === "posted" && status === "posted") {
-    if (!prev.url && /^https?:\/\/\S+$/i.test(String(url || "").trim())) { prev.url = String(url).trim(); try { writeFileSync(join(dir, STATUS), JSON.stringify(all, null, 2)); } catch {} } // its link, said late
+    let changed = false;
+    if (!prev.url && /^https?:\/\/\S+$/i.test(String(url || "").trim())) { prev.url = String(url).trim(); changed = true; } // its link, said late
+    // a post still waiting in the platform's scheduler can be moved there: the new time replaces the old
+    if (at && Number(prev.posted) > now) {
+      const moved = typeof at === "number" ? at : Date.parse(String(at).replace(" ", "T"));
+      if (!Number.isFinite(moved)) return { error: `"${at}" isn't a date (YYYY-MM-DD HH:MM).` };
+      if (moved !== prev.posted) { prev.posted = moved; changed = true; }
+    }
+    if (changed) try { writeFileSync(join(dir, STATUS), JSON.stringify(all, null, 2)); } catch {}
     return { ok: true, status, already: true, draft: d, rel, said: finalSay(prev) };
   }
   if (was === "posted" || (was === "superseded" && status !== "posted" && status !== "superseded")) return { error: finalSay(prev) };

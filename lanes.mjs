@@ -25,10 +25,10 @@ import { createHash, randomBytes } from "node:crypto";
 import { execFile } from "node:child_process";
 import { CONFIG_DIR, loadTasks, clipWords, loadConfig, readState, writeJsonAtomic, sameTask } from "./core.mjs";
 import { runRecord } from "./jobs.mjs";
-import { runHandoff, runningHandoff, waitingFor, autoStart, settleRecord, agentQuestions, findOrcaCli, installAllowlist, writeTasks, workOf, loadRuns, allAnswers } from "./agents.mjs";
+import { runHandoff, runningHandoff, waitingFor, runOpen, autoStart, settleRecord, agentQuestions, findOrcaCli, installAllowlist, writeTasks, workOf, loadRuns, allAnswers } from "./agents.mjs";
 import { addTask, removeTask, pushTasks, pendingReview, approveChanges, workingDiff, setHandedLookup } from "./tasks.mjs";
 import { actNow, actBrief } from "./mind.mjs";
-import { laneMap } from "./scan.mjs";
+import { laneMap, nearLane } from "./scan.mjs";
 import { parseRun, lastRunText, readRunLog, runStarted } from "./work.mjs";
 import { OPS, parseHandoffs } from "./handover.mjs";
 import { laneReach, unreachable, serverOnly } from "./reach.mjs";
@@ -71,22 +71,6 @@ function projectOf(path, { map = laneMap(), ledger = loadLedger() } = {}) {
 // lane's (a typo, a word more or less: "symbio", "robin lane", "Quartz-app") is that lane
 // (nearLane), when only one fits. null when none does: dispatch sends it to ops, told the name,
 // rather than erroring (one errored and sat for 8 days, 16 Oct 2026).
-const slug = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
-function editDistance(a, b) {
-  const m = a.length, n = b.length; if (!m || !n) return m + n;
-  let prev = Array.from({ length: n + 1 }, (_, j) => j);
-  for (let i = 1; i <= m; i++) { const cur = [i]; for (let j = 1; j <= n; j++) cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)); prev = cur; }
-  return prev[n];
-}
-function nearLane(lane, names) {
-  const k = slug(lane); if (!k) return "";
-  const exact = names.find((n) => slug(n) === k); if (exact) return exact;
-  const within = names.filter((n) => { const s = slug(n); return s.length >= 4 && (k.includes(s) || (k.length >= 4 && s.includes(k))); });
-  if (within.length === 1) return within[0];
-  if (within.length > 1) return "";
-  const close = names.filter((n) => { const s = slug(n); return s.length >= 5 && k.length >= 5 && editDistance(k, s) <= Math.max(1, Math.floor(Math.min(k.length, s.length) / 5)); });
-  return close.length === 1 ? close[0] : "";
-}
 function laneTarget(lane, map) {
   if (lane.toLowerCase() === OPS) return { lane: OPS, path: "" };
   const name = Object.keys(map).find((n) => n.toLowerCase() === lane.toLowerCase()) || nearLane(lane, Object.keys(map));
@@ -114,7 +98,7 @@ const NOT_A_REWRITE = /\b(new|separate|another|different) (job|task|handover)\b|
 function supersedes(h, from, ledger, { running, tasks }) {
   if (NOT_A_REWRITE.test(firstLine(h.text))) return null;
   return ledger.handoffs.slice().reverse().find((x) => x.from.path === from.path && x.to.lane.toLowerCase() === h.lane.toLowerCase() && !x.reportedAt && (x.status === "started" || x.status === "held" || x.status === "blocked") && x.text !== h.text && alike(x.text, h.text)
-    && (x.to.lane === OPS ? !!x.to.path && !!running(x.to.path) : !!x.task && tasks().some((t) => t.id === x.task && !t.done && !t.archived && !t.review))) || null;
+    && (x.to.lane === OPS ? !!x.to.path && !!runOpen(x.to.path, { running }) : !!x.task && tasks().some((t) => t.id === x.task && !t.done && !t.archived && !t.review))) || null;
 }
 function resupply(e, text, { now, title, context }) {
   const p = e.to.path;
@@ -132,23 +116,37 @@ function resupply(e, text, { now, title, context }) {
 // handover rewritten (alike). They took turns texting the user sign-in PINs,
 // overwrote each other's sections of one audit file, and one credited the user
 // with a nameserver switch the other had made. So: a handover to ops that names
-// a run of the same asker that's still going (its folder, act-…, which HANDOFF.md's
-// Sent list gives) is an addition to that run, never a second one. It waits in that
-// run's folder and lands when the run ends, resuming the same conversation (the
-// way a rewritten one does), with a note in its ANSWERS.md. One that names none
-// starts a run of its own, whose brief lists the ops runs already going (opsGoing).
+// a run that's still on its job (its folder, act-…, which HANDOFF.md's Sent list gives),
+// running or waiting (runOpen), is an addition to that run, never a second one. It waits in that
+// run's folder and lands when the run ends (at once, for one that waits), resuming the same
+// conversation (the way a rewritten one does), with a note in its ANSWERS.md. One that names
+// none and isn't about the same job (relatedTo) starts a run of its own, whose brief lists the
+// ops runs already going (opsGoing).
 const runName = (p) => basename(p || ""), HELD = "TASKS.next.md"; // agents.mjs writeTasks's held brief
 // …and a handover that names a run of the same asker that has ended goes back into that run's folder
 // too, not a new one: "Add to run act-c10094d4 (do not start a second copy)" opened act-0f535f70, and
 // "Add to run act-0f535f70" opened act-f3aa65f5, a chain of three folders on one job (22 Oct 2026).
 // ended: true on such a row; the caller starts its run there.
-function addsTo(h, from, ledger, { running, exists = existsSync }) {
+function addsTo(h, from, ledger, { running, open = (p) => runOpen(p, { running }), exists = existsSync }) {
   if (h.lane.toLowerCase() !== OPS) return null;
-  const named = (x) => x.to.lane === OPS && x.from.path === from.path && /^act-[0-9a-f]+$/.test(runName(x.to.path)) && new RegExp(`\\b${runName(x.to.path)}\\b`).test(h.text);
-  const live = ledger.handoffs.slice().reverse().find((x) => named(x) && !x.reportedAt && (x.status === "started" || x.status === "held") && !!running(x.to.path));
+  const names = new Set(String(h.text).match(/\bact-[0-9a-f]+\b/g) || []); if (!names.size) return null;
+  const named = (x) => x.to.lane === OPS && x.from.path === from.path && /^act-[0-9a-f]+$/.test(runName(x.to.path)) && names.has(runName(x.to.path));
+  const live = ledger.handoffs.slice().reverse().find((x) => named(x) && !x.reportedAt && (x.status === "started" || x.status === "held") && !!open(x.to.path));
   if (live) return live;
   const back = ledger.handoffs.slice().reverse().find((x) => named(x) && x.to.path && exists(x.to.path)); // already reported back: still its folder, never a second one beside it
-  return back ? Object.assign(back, { ended: !running(back.to.path) }) : null;
+  if (back) return Object.assign(back, { ended: !running(back.to.path) });
+  // a run another lane handed over, or one started from Home or a chat: it's still that run's, under a row of the asker's own (dispatch)
+  const p = [...names].map((n) => join(ACT_DIR, n)).find((d) => !ledger.handoffs.some((x) => x.to.path === d && x.from.path === from.path) && !!open(d));
+  return p ? { fresh: true, to: { lane: OPS, path: p } } : null;
+}
+// A handover to ops that names no run, about the job one of the asker's ops runs is still on (fewer of
+// its words in common than a rewrite, supersedes): an addition to that run. "Re-run the phone code check
+// on the user's Galaxy A26" started a run of its own beside the one waiting on that check (21 Oct 2026).
+// A job of its own says so ("New job:", NOT_A_REWRITE), and starts one.
+function relatedTo(h, from, ledger, { running, open = (p) => runOpen(p, { running }) }) {
+  if (h.lane.toLowerCase() !== OPS || NOT_A_REWRITE.test(firstLine(h.text))) return null;
+  return ledger.handoffs.slice().reverse().find((x) => x.to.lane === OPS && x.from.path === from.path && !x.reportedAt && (x.status === "started" || x.status === "held")
+    && !!x.to.path && x.text !== h.text && alike(x.text, h.text, 0.4) && !!open(x.to.path)) || null;
 }
 // What a brief already waiting in that folder asks (actBrief quotes it), so a second
 // addition before the run ends joins the first rather than replacing it.
@@ -244,17 +242,18 @@ function dispatch(path, { map = laneMap(), act = actNow, run = runHandoff, add =
   for (const h of asked) {
     const key = keyOf(path, h);
     if (ledger.handoffs.some((x) => x.key === key || (x.was || []).includes(key) || (x.adds || []).includes(key))) continue;
-    const into = addsTo(h, from, ledger, { running });
+    const named = addsTo(h, from, ledger, { running }), prior = !named && supersedes(h, from, ledger, { running, tasks }), into = named || (!prior && relatedTo(h, from, ledger, { running }));
     if (into) {
       const ended = !!into.ended; delete into.ended;
-      const r = more(into, h.text, { now, running, title: `handed over by ${from.lane}`, context: `${from.lane}'s agent (in ${path}) handed this over, and carries on once it's done.` });
+      const r = more(into.fresh ? { from, to: into.to } : into, h.text, { now, running, title: `handed over by ${from.lane}`, context: `${from.lane}'s agent (in ${path}) handed this over, and carries on once it's done.` });
+      // a run of someone else's: a row of the asker's own, so the run's report comes back to it too
+      if (!r.error && into.fresh) { const e = { id: randomBytes(4).toString("hex"), key, from, to: into.to, text: h.text, at: now, chain, ...(parent ? { parent: parent.id } : {}), status: "started", adds: [key], added: 1 }; ledger.handoffs.push(e); started.push(e); continue; }
       if (!r.error) {
         Object.assign(into, { adds: [...(into.adds || []), key], at: now, added: (into.added || 0) + 1 });
         if (ended) { delete into.reportedAt; into.status = "started"; const s = run(into.to.path) || {}; Object.assign(into, startedAs(s)); } // its run had ended: it carries on in its own folder
         started.push(into); continue;
       }
     }
-    const prior = supersedes(h, from, ledger, { running, tasks });
     if (prior) {
       const was = [...(prior.was || []), prior.key];
       if (prior.to.lane === OPS) {

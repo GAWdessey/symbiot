@@ -32,6 +32,9 @@ try {
   console.log("THE DENY LIST — what's yours alone, from your lanes, memory, keys and servers");
   ok("your lanes, people, accounts, sites, projects, providers and servers", ["bookly", "sunco", "vocal_agent", "pat", "remy", "smsportal", "twilio", "paystack", "prod-box", "north star"].every((x) => terms.includes(x)), terms);
   ok("not the product's own (symbiot-mobile, symbiot.co.za), the platforms it works with (Gmail, WhatsApp), English, a preference or a word-like key prefix", !["symbiot", "symbiot-mobile", "symbiot.co.za", "gmail", "whatsapp", "sandboxed", "account", "home", "orbs", "sms", "resend"].some((x) => terms.includes(x)), terms);
+  // the README is a short newcomer's page now: the full guide's words count as English too
+  const guideOnly = o.nodeTerms({ kind: "thing", name: "Knowledge folders index" });
+  ok("a word only the full guide uses (knowledge) is English, not yours", !guideOnly.includes("Knowledge"), guideOnly);
 
   console.log("THE 0.66.6 NOTES — every line of them is caught");
   const old = [

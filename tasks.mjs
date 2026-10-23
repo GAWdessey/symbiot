@@ -20,7 +20,7 @@ import { gitDefaultBranch } from "./drift.mjs";
 import { publicItems, leaksIn } from "./outward.mjs";
 import { readRunLog, briefPlan } from "./work.mjs";
 import { changesBy, originLine } from "./origin.mjs";
-import { repoPathMap, laneMap, openWork, detectRepo } from "./scan.mjs";
+import { repoPathMap, laneMap, nearLane, openWork, detectRepo } from "./scan.mjs";
 import { afterShip } from "./deploy.mjs";
 import { ruleLines } from "./overrides.mjs";
 import { MARKETING_DIR, ensureMarketing, marketingBrief } from "./marketing.mjs";
@@ -39,16 +39,44 @@ function leadOf(text) {
   const m = text.slice(0, LEAD_MAX + 1).match(/^.*[.!?](?=\s)/s);
   return m && m[0].length >= LEAD_MAX / 3 ? m[0] + " …" : clipWords(text, LEAD_MAX);
 }
-// A task given an ops run's folder name as its lane (act-304032d6: an ops report's ideas took the
-// folder's name) belongs to ops: no lane has that name, so it sat "Blocked: Symbiot can't find its
-// folder" (16 Oct 2026). syncTasks puts one already on the list right too.
-const OPS_FOLDER = /^act-[0-9a-f]{6,}$/i;
-const laneOfRepo = (repo) => (OPS_FOLDER.test(String(repo || "")) ? "ops" : repo || "");
+// A task filed under a name that's no lane sat queued, and nothing picked it up: an ops run's
+// folder (act-304032d6: an ops report's ideas took the folder's name, "Blocked: Symbiot can't find
+// its folder"), a copy of a repo's folder (f3440e9ee59f under "symbiot-825733") and an ops run's
+// title ("Agent: **Resume the dailify.co.za jobs…": 3a7c3f92ebe9 and 81cc1e7f7528), 16 Oct 2026.
+// The lane a name stands for: ops for an ops folder, a lane's own name in any case, the lane of a
+// copy of its repo (its folder name and -<6 hex>, agents.mjs whereOf), or the lane it nearly names
+// (lanes.mjs nearLane: a typo, a word more). "" when it stands for none: the task keeps the name,
+// and Home asks you where it goes (home.mjs unplacedCards). names: the lanes there are (laneNames).
+const OPS_FOLDER = /^act-[0-9a-f]{6,}$/i, OPS_LANE = "ops";
+const laneNames = () => { let m = {}; try { m = laneMap(); } catch {} return [...Object.keys(m), ...(OPS_LANE in m ? [] : [OPS_LANE])]; };
+function laneOfRepo(repo, names = laneNames) {
+  const r = String(repo || "").trim(); if (!r) return "";
+  if (OPS_FOLDER.test(r) || r.toLowerCase() === OPS_LANE) return OPS_LANE;
+  const all = typeof names === "function" ? names() : names, same = (n) => all.find((x) => x.toLowerCase() === n.toLowerCase()) || "";
+  return same(r) || same(r.replace(/-[0-9a-f]{6}$/i, "")) || (/\s/.test(r) ? "" : nearLane(r, all));
+}
+// Re-file a task in another lane (the lane picker on its Workdesk row): its agent takes it from
+// then on. Not one waiting for your OK: approve it or send it back where it is first.
+function refileTask(id, lane, { load = loadTasks, save = saveTasks, names = laneNames } = {}) {
+  const all = load(), t = all.find((x) => x.id === String(id || ""));
+  if (!t || t.done || t.archived) return { error: "That task isn't open any more." };
+  if (t.review) return { error: "It waits for your OK where it is: approve it or send it back first." };
+  const to = laneOfRepo(lane, names); if (!to) return { error: `There's no lane called ${String(lane || "").slice(0, 60)}.` };
+  if (to === t.repo) return { ok: true, id: t.id, repo: to, same: true };
+  t.refiled = { from: t.repo || "", at: Date.now() }; t.repo = to; save(all);
+  return { ok: true, id: t.id, repo: to };
+}
+// The open tasks filed under a name that's no lane, by that name: { name: [task, …] }.
+function unplacedTasks(tasks = loadTasks(), names = laneNames()) {
+  const out = {}; if (names.length < 2) return out; // no lanes read but ops: none is known to be wrong
+  for (const t of tasks) if (t && !t.done && !t.archived && !t.review && t.repo && !names.includes(t.repo)) (out[t.repo] = out[t.repo] || []).push(t);
+  return out;
+}
 // said: what the user said for it, when Symbiot's chat wrote the task (agents.mjs routedModel
 // measures that); later: it waits on the Workdesk for Go, started by nothing else (a fix to
 // Symbiot noted from chat, mind.mjs actIn). later: false starts one that was waiting.
 function addTask(text, repo, { after = "", finding = false, said = "", later } = {}) {
-  repo = laneOfRepo(repo);
+  repo = laneOfRepo(repo) || String(repo || "").trim();
   const raw = String(text || "").trim(), tail = String(after || "").trim();
   text = raw.replace(/\s+/g, " ");
   if (!text) return { error: "empty" };
@@ -172,7 +200,7 @@ function applyDrops(t, map) {
 const FROM_REPORT = /\(from the report "/, FINDING_NOTE = "a finding, not a job: it says what's so, with nothing to do";
 function syncTasks() {
   const t = loadTasks(); const map = laneMap(); let review = 0, archived = 0, started = 0; const checkedByRepo = {};
-  for (const x of t) if (x && !x.archived && OPS_FOLDER.test(String(x.repo || ""))) x.repo = "ops"; // an ops folder's name as a lane: ops (addTask)
+  const refiled = Object.keys(map).length ? placeTasks(t, [...Object.keys(map), ...(OPS_LANE in map ? [] : [OPS_LANE])]) : 0;
   const dropped = applyDrops(t, map);
   for (const x of t) {
     if (x.archived || x.done || x.review || !x.repo) continue;
@@ -184,7 +212,28 @@ function syncTasks() {
   for (const x of t) { if (x.done && !x.archived) { x.archived = true; x.archivedAt = Date.now(); archived++; } }
   const removed = applyRemovals(t);
   saveTasks(t);
-  return { review, archived, started, removed, dropped };
+  return { review, archived, started, removed, dropped, ...(refiled ? { refiled } : {}) };
+}
+// Tasks already on the list under a name that stands for a lane (laneOfRepo) go to that lane. One
+// that lane already has a task for (it names this one's id, as a handover of it does, or says the
+// same) is merged into that one, as an approved Merge does (applyRemovals): its job is done there.
+// A name that stands for none: merged into a lane's task that hands it on (names its id, carries its words),
+// open or done since.
+function placeTasks(t, names, now = Date.now()) {
+  let n = 0;
+  for (const x of t) {
+    if (!x || x.done || x.archived || x.review || !x.repo || names.includes(x.repo)) continue;
+    // a handover of it names its id and carries its words; a task that only mentions the id (as an example) doesn't
+    const words = (s) => String(s || "").replace(/\s+/g, " ").toLowerCase(), head = words(x.full || x.text).slice(0, 50);
+    const to = laneOfRepo(x.repo, names), namesIt = (y) => { const w = words(y.full || y.text); return w.includes(x.id) && w.includes(head); };
+    const has = t.find((y) => y !== x && !y.archived && (to ? y.repo === to && (namesIt(y) || sameTask(y.text, x.text)) : names.includes(y.repo) && namesIt(y)))
+      || t.find((y) => y !== x && y.archived && !y.cancelled && !y.dropped && !y.removedBy && names.includes(y.repo) && namesIt(y)); // handed on and done there since
+    if (!to && !has) continue;
+    if (has) Object.assign(x, { done: true, archived: true, archivedAt: now, removedBy: has.id, merged: true, refiled: { from: x.repo, at: now } });
+    else Object.assign(x, { repo: to, refiled: { from: x.repo, at: now } });
+    n++;
+  }
+  return n;
 }
 // git with an argv (task text goes into commit messages — never through a shell)
 function git(repo, args, timeout = 30000) {
@@ -1073,14 +1122,22 @@ async function sendBranch(path, s) {
   const why = r.conflicts ? "conflicts" : r.testsFailed ? "tests" : r.pushed ? "pr" : "push";
   let fix = s.fix || null, fresh = false; // fresh: added (or found open again) now, so the caller starts the run; one carried from an earlier try isn't restarted
   if (why === "conflicts" && s.opts.repo) {
-    const t = addTask(rebaseTask(r.branch, s.base), s.opts.repo);
-    if (!t.error) { fix = { id: t.id, text: t.text }; fresh = true; r.note = (r.note || "") + (t.duplicate ? " The agent's task to rebase it is still open, so it starts on it again." : " Symbiot added a task for the agent to rebase it, and starts it now."); }
+    const t = addTask(rebaseTask(r.branch, s.base, { merges: branchMerges(path, "origin/" + s.base, r.branch) }), s.opts.repo);
+    if (!t.error) { fix = { id: t.id, text: t.text }; fresh = true; r.note = (r.note || "") + (t.duplicate ? " The agent's task to bring it up to date is still open, so it starts on it again." : " Symbiot added a task for the agent to bring it up to date, and starts it now."); }
   }
   const headline = unsentHeadline(why, { fix, note: r.note });
   noteUnsent(path, { at: Date.now(), branch: r.branch, commit: r.commit, subject: s.subject, body: s.body, note: r.note || "", headline, why, ...(r.pushed ? { pushed: true } : {}), ...(fix ? { fix } : {}) });
   return { ...r, unsent: why, headline, ...(fix ? { fix: fresh ? { ...fix, fresh: true } : fix } : {}) };
 }
-const rebaseTask = (branch, base) => `Rebase ${branch} onto origin/${base} (git fetch origin ${base}, then git rebase origin/${base} ${branch}). Resolve each conflict so this branch's change and ${base}'s both land, git rebase --continue until it's done, run the tests, then tick this item. Don't push and don't commit anything else: Symbiot pushes it and opens the PR when you tick.`;
+// The merge commits on a branch that aren't on the tip: they carry what a rebase would drop (syncBranch).
+const branchMerges = (path, tip, branch) => Number(git(path, ["rev-list", "--count", "--merges", `${tip}..${branch}`]).out) > 0;
+// merges: the branch has merge commits of its own, so it's brought up to date by a merge (a
+// rebase dropped what one carried, 23 Oct 2026), with the tip's commit id: the guard holds a
+// merge that names origin/<base>.
+const DONT_PUSH = "Don't push and don't commit anything else: Symbiot pushes it and opens the PR when you tick.";
+const rebaseTask = (branch, base, { merges = false } = {}) => merges
+  ? `Bring ${branch} up to date with origin/${base} by merging it in, not by rebasing: the branch has merge commits, and a rebase drops what they carry (git fetch origin ${base}, then git merge the commit id git rev-parse origin/${base} prints). Resolve each conflict so this branch's change and ${base}'s both land, commit the merge, run the tests, then tick this item. ${DONT_PUSH}`
+  : `Rebase ${branch} onto origin/${base} (git fetch origin ${base}, then git rebase origin/${base} ${branch}). If git log --merges origin/${base}..${branch} lists a merge commit, merge origin/${base} in instead: a rebase drops what a merge commit carries. Resolve each conflict so this branch's change and ${base}'s both land, git rebase --continue until it's done, run the tests, then tick this item. ${DONT_PUSH}`;
 // The lane's run on that task, once the ship has let go of the folder (runHandoff
 // refuses while one ships). { started } or why not, on r.fix.
 function startFix(path, repo, r) {
@@ -1107,7 +1164,12 @@ function startFix(path, repo, r) {
 // top of a merged PR's branch and its PR #209 opened clashing with main in package.json,
 // CHANGELOG.md and tasks.mjs, while the card said it was done. A clash counts as one
 // here (the agent's to resolve); git too old to tell (no --write-tree) lets it go up.
-// { ok } once the branch is on the tip (rebased: tip when it moved), or { conflicts }.
+// A branch with merge commits of its own (main merged in by an agent, or a merge Approve
+// finished) has the tip merged in, never a rebase: a rebase replays only the plain commits,
+// so whatever a merge commit carried (its clash fixes, work committed with it) was dropped.
+// symbiot/2-tasks-2026-10-21-2, 23 Oct 2026: the merge held the browser, lane re-file and
+// Workdesk fixes, the rebase after it left them all out, and nothing said so.
+// { ok } once the branch is on the tip (rebased: tip when it moved; merged when by a merge), or { conflicts }.
 async function syncBranch(path, branch, base) {
   const tip = "origin/" + base;
   if (!git(path, ["rev-parse", "-q", "--verify", "refs/remotes/" + tip]).ok || git(path, ["merge-base", "--is-ancestor", tip, branch]).ok) return { ok: true };
@@ -1118,22 +1180,23 @@ async function syncBranch(path, branch, base) {
   const dirty = (await gitAsync(path, ["status", "--porcelain", "-z", "-uno", ...NOT_SYMBIOT], gitTimeout())).out.length > 0;
   const unmerged = () => git(path, ["diff", "--name-only", "--diff-filter=U"]).out.split("\n").filter(Boolean);
   const conflicts = (note = "") => ({ conflicts: true, note });
-  if (!dirty) {
+  const merges = branchMerges(path, tip, branch), moved = { ok: true, rebased: tip, ...(merges ? { merged: true } : {}) };
+  if (!dirty && !merges) {
     const rb = await gitAsync(path, ["rebase", tip, branch], 120000);
     if (!rb.ok || unmerged().length || /resulted in conflicts/i.test(rb.err)) { await gitAsync(path, ["rebase", "--abort"]); return conflicts(); }
-    return { ok: true, rebased: tip };
+    return moved;
   }
   const wt = join(path, ".symbiot", "ship-wt"), drop = async () => { await gitAsync(path, ["worktree", "remove", "--force", wt], 60000); git(path, ["worktree", "prune"]); };
   if (existsSync(wt)) await drop(); // one a crashed ship left
   const add = await gitAsync(path, ["worktree", "add", "-q", "--detach", wt, branch], 120000);
   if (!add.ok) return conflicts(`it couldn't be brought up to date beside the uncommitted changes here (${add.err.split("\n").filter(Boolean).pop() || "git worktree add failed"})`);
-  const rb = await gitAsync(wt, ["rebase", tip], 120000), moved = rb.ok ? git(wt, ["rev-parse", "HEAD"]).out : "";
-  if (!rb.ok) await gitAsync(wt, ["rebase", "--abort"]);
+  const rb = await gitAsync(wt, merges ? ["merge", "-q", "--no-edit", "-m", `Merge ${tip} into ${branch}`, tip] : ["rebase", tip], 120000), to = rb.ok ? git(wt, ["rev-parse", "HEAD"]).out : "";
+  if (!rb.ok) await gitAsync(wt, [merges ? "merge" : "rebase", "--abort"]);
   await drop();
-  if (!moved) return conflicts();
-  const keep = await gitAsync(path, ["reset", "-q", "--keep", moved], 120000); // the branch is checked out: this moves it, keeping the uncommitted files
+  if (!to) return conflicts();
+  const keep = await gitAsync(path, ["reset", "-q", "--keep", to], 120000); // the branch is checked out: this moves it, keeping the uncommitted files
   if (!keep.ok) return conflicts(`${base} changed a file that's also changed, uncommitted, here (${keep.err.split("\n").find((l) => /not uptodate|would be overwritten/i.test(l)) || keep.err.split("\n")[0]})`);
-  return { ok: true, rebased: tip };
+  return moved;
 }
 async function pushAndOpen(path, { base, subject, body, out, opts, newBranch, said = "", net = {} }) {
   let branch = out.branch;
@@ -1144,7 +1207,7 @@ async function pushAndOpen(path, { base, subject, body, out, opts, newBranch, sa
   await fetchBase(path, base, net);
   const tip = "origin/" + base, sync = await syncBranch(path, branch, base);
   if (sync.conflicts) return { ...noted(`Committed, but not pushed: it conflicts with ${base} as GitHub has it now${sync.note ? ": " + sync.note : ""}, so no PR was opened.`), conflicts: true, behind: true };
-  if (sync.rebased) { out.rebased = sync.rebased; out.commit = git(path, ["rev-parse", "--short", branch]).out; }
+  if (sync.rebased) { out.rebased = sync.rebased; if (sync.merged) out.merged = true; out.commit = git(path, ["rev-parse", "--short", branch]).out; }
   if (opts.verify !== false) {
     shipStep(path, "running its tests");
     const v = await (typeof opts.verify === "function" ? opts.verify : repoTests)(path);
@@ -1387,11 +1450,14 @@ function pushTasks(filter) {
       // held: an agent is still running there, so it lands when that one exits
       // Marketing's brief says what the lane is, the products its tasks name and where they are
       const about = path === MARKETING_DIR ? marketingBrief(list, { map: byName }) : [];
-      const held = writeTasks(path, buildTasksMd(name, { branch: st.branch, commits, open, drift: risk, stack, lanes: Object.keys(byName), reach, connectors, about }, list));
+      // queued since the lane's last brief: new work, open even beside a waiting item like it (agents.mjs carryWaiting)
+      let briefAt = 0; try { briefAt = Number(JSON.parse(readFileSync(join(path, ".symbiot", "handed.json"), "utf8")).at) || 0; } catch {}
+      const fresh = briefAt ? groups[name].filter((t) => (Number(t.ts) || 0) > briefAt).map((t) => t.text) : []; // no brief on record: its waits stand
+      const held = writeTasks(path, buildTasksMd(name, { branch: st.branch, commits, open, drift: risk, stack, lanes: Object.keys(byName), reach, connectors, about }, list), { fresh, reopen: !!(filter && filter.reopen) });
       written.push({ name, file: join(path, ".symbiot", "TASKS.md"), path, count: list.length, held });
     } catch (e) { unresolved.push({ name, count: list.length, error: String((e && e.message) || e) }); }
   }
   return { empty: false, written, unresolved, handoff: handoffCmd() };
 }
 
-export { unsentHeadline, setHandedLookup, setTaskModel, MODEL_PICKS, holdShip, SHIP_STALE, shipping, shippingPaths, shipJob, shipJobOf, SHIP_WAIT, workingChangesAsync, rebaseTask, sendAgain, forgetUnsent, unsentOf, readUnsent, unsentCard, repoTests, localRefused, forgetReview, gitFailed, taskPaths, addTask, toggleTask, setTaskDone, removeTask, cancelTask, restoreTask, FINDING_NOTE, completedInRepo, removalOf, applyRemovals, applyDrops, syncTasks, workingChanges, workingDiff, publishesOnMerge, unreleased, bumpOffer, learnNpm, releaseNeeded, releaseNotIn, withReleases, setVersion, changelogEntry, changelogSection, noteChangelog, releaseInput, shipWithBump, runSummary, saidFinished, pendingReview, commitSubject, shipChanges, autoMergeRepos, setAutoMerge, approveRepo, approveChanges, sendBack, TASK_ORDER, taskType, buildTasksMd, pushTasks, mergeWhenGreen, changelogItems, changelogLeaks, commitText };
+export { laneOfRepo, laneNames, refileTask, unplacedTasks, placeTasks, unsentHeadline, setHandedLookup, setTaskModel, MODEL_PICKS, holdShip, SHIP_STALE, shipping, shippingPaths, shipJob, shipJobOf, SHIP_WAIT, workingChangesAsync, rebaseTask, sendAgain, forgetUnsent, unsentOf, readUnsent, unsentCard, repoTests, localRefused, forgetReview, gitFailed, taskPaths, addTask, toggleTask, setTaskDone, removeTask, cancelTask, restoreTask, FINDING_NOTE, completedInRepo, removalOf, applyRemovals, applyDrops, syncTasks, workingChanges, workingDiff, publishesOnMerge, unreleased, bumpOffer, learnNpm, releaseNeeded, releaseNotIn, withReleases, setVersion, changelogEntry, changelogSection, noteChangelog, releaseInput, shipWithBump, runSummary, saidFinished, pendingReview, commitSubject, shipChanges, autoMergeRepos, setAutoMerge, approveRepo, approveChanges, sendBack, TASK_ORDER, taskType, buildTasksMd, pushTasks, mergeWhenGreen, changelogItems, changelogLeaks, commitText };

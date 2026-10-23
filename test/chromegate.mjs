@@ -38,7 +38,7 @@ try {
   ok("tabs, navigate, read_page, find, a screenshot: all go ahead", ["tabs_context_mcp", "read_page", "find", "get_page_text"].every((t) => judge(C + t, { tabId: 1 }, o) === null) && judge(C + "navigate", { tabId: 1, url: "https://ap.www.namecheap.com/domains" }, o) === null && judge(C + "computer", { action: "screenshot", tabId: 1 }, o) === null);
 
   console.log("ACTING — only where the user switched it on");
-  ok("off by default: a click on a site the user hasn't switched on is refused, reading is fine", /acting on ap\.www\.namecheap\.com in the user's own Chrome is off/.test((click(1, "Clicks Next") || {}).why || ""), click(1, "Clicks Next"));
+  ok("off by default: a click on a site the user hasn't switched on is refused, reading is fine", /acting on ap\.www\.namecheap\.com in the user's own Chrome is switched off/.test((click(1, "Clicks Next") || {}).why || ""), click(1, "Clicks Next"));
   ok("a tab no navigate named: refused, nothing acts on a site no one named", /doesn't know which site this tab is on/.test((click(9, "Clicks Next") || {}).why || ""));
   ok("scripts in their Chrome: never", /isn't allowed/.test((judge(C + "javascript_tool", { tabId: 1, text: "x" }, o) || {}).why || ""));
   ok("switched on for a site (its subdomains too)", G.setActSite("https://namecheap.com", true, { load: loadConfig, save: saveConfig }).sites.join() === "namecheap.com");
@@ -69,7 +69,7 @@ try {
   ok("after a click or an Enter with no result read yet, the next act waits until it's known where the tab is", /may have left ap\.www\.namecheap\.com/.test((click(1, "Clicks Next") || {}).why || ""));
   G.seen(C + "tabs_context_mcp", [{ type: "text", text: JSON.stringify({ availableTabs: [{ tabId: 1, title: "Domains", url: NC }], tabGroupId: 5 }) }], o);
   ok("…tabs_context_mcp's list says it's still there: acting carries on", click(1, "Clicks Next") === null && click(1, "Clicks Next") === null);
-  ok("a click that followed a link to another site: the result says so, and acting there is refused", click(1, "Clicks the partner link", {}, "https://evil.example/pay") === null && /acting on evil\.example in the user's own Chrome is off/.test((click(1, "Clicks Next") || {}).why || ""), click(1, "Clicks Next"));
+  ok("a click that followed a link to another site: the result says so, and acting there is refused", click(1, "Clicks the partner link", {}, "https://evil.example/pay") === null && /acting on evil\.example in the user's own Chrome is switched off/.test((click(1, "Clicks Next") || {}).why || ""), click(1, "Clicks Next"));
   ok("…and back is somewhere unknown until a result says where", judge(C + "navigate", { tabId: 1, url: "back" }, o) === null && /may have left/.test((judge(C + "form_input", { tabId: 1, ref: "r", value: "x", action_summary: "Fills in the name" }, o) || {}).why || ""));
   ok("a fill or a typed word doesn't leave the page: the next act goes ahead without a result", judge(C + "navigate", { tabId: 2, url: NC }, o) === null && judge(C + "form_input", { tabId: 2, ref: "r", value: "x", action_summary: "Fills in the name" }, o) === null && judge(C + "computer", { action: "type", text: "pat", tabId: 2, action_summary: "Types the name" }, o) === null);
   ok("a result that isn't Chrome's, or names no tab, notes nothing", G.seen("Bash", result(2, "https://evil.example"), o) === 0 && G.seen(C + "find", "Found 1 matching element", o) === 0);
@@ -107,7 +107,7 @@ try {
     const on = judge(C + "computer", { action: "left_click", coordinate: [1, 1], tabId: 901, action_summary: "Open the settings tab" }, o);
     G.seen(C + "navigate", `Navigated\n\nTab Context:\n- Available tabs:\n  • tabId 901: "Example" ("https://www.example.org/x")`, o);
     const send = judge(C + "computer", { action: "left_click", coordinate: [1, 1], tabId: 901, action_summary: "Send the message to the team" }, o);
-    ok("off for a site it's never been switched on for; with every site on, a click goes through", before && off && /is off/.test(off.why) && on === null, [before, off, on]);
+    ok("off for a site it's never been switched on for; with every site on, a click goes through", before && off && /is (switched )?off/.test(off.why) && /any site in your Chrome/.test(off.why) && on === null, [before, off, on]);
     ok("…and a send there still waits for the user's Go", send && /waits for their Go/.test(send.why), send);
     ok("…the brief says any site", /On any site the user also lets you ACT/.test((await import("../browserfails.mjs")).browserBrief(true, ["*"]).join("\n")));
     G.setActAll(false, { load: loadConfig, save: saveConfig });
@@ -145,6 +145,35 @@ try {
     ok("the group's list without it (closed some other way): not open any more", G.openTabs("tabs1", t).length === 0, G.openTabs("tabs1", t));
     ok("…and nothing open: it ends", hook({ hook_event_name: "Stop", session_id: "tabs1" }).status === 0);
   }
+
+  // 21 Oct 2026: refused acting on linkedin.com, a run asked the user to "sign LinkedIn back in"; they signed in twice,
+  // with LinkedIn's feed open signed in in two of the runs' tab groups, and were still asked
+  console.log("A SIGN-IN THAT ISN'T ONE — the setting that's really in the way, named; a site signed in, not asked for");
+  const LI = "https://www.linkedin.com/feed/", lo = { session: "s7", home: HOME }, lane = join(HOME, "lane"), lq = { ...lo, cwd: lane, branch: "x" };
+  const tabsSay = (tabId, url, title) => [{ type: "text", text: `Navigated\n\nTab Context:\n- Executed on tabId: ${tabId}\n- Available tabs:\n  • tabId ${tabId}: "${title}" ("${url}")` }];
+  const ask = "Can you sign LinkedIn back in so I can schedule the two approved posts?";
+  judge(C + "navigate", { tabId: 7, url: LI }, lo);
+  G.seen(C + "computer", tabsSay(7, "https://www.linkedin.com/login/?session_redirect=x", "LinkedIn Login, Sign in | LinkedIn"), lo);
+  ok("its sign-in page seen last, a sign-in ask there is a real one", G.signInNotNeeded(ask, { home: HOME }) === null);
+  G.seen(C + "computer", tabsSay(7, LI, "(2) Feed | LinkedIn"), lo);
+  const off = judge(C + "computer", { tabId: 7, action: "left_click", coordinate: [1, 1], action_summary: "Opens the LinkedIn post composer" }, lo);
+  ok("acting refused there names the exact setting, says it isn't a sign-in, and gives the card to ask for it", off && /not a sign-in: don't ask the user to sign in/.test(off.why) && /Settings → Connections, the Reads button on linkedin\.com's row/.test(off.why) && /\{#chrome-act-linkedin\.com\}/.test(off.why) && /🤖 Agent: switch it on for linkedin\.com/.test(off.why), off);
+  ok("…so asking to sign LinkedIn back in, or in to linkedin.com, is asking for that switch", ["Can you sign LinkedIn back in so I can schedule the two approved posts?", "Please sign in to linkedin.com again", "log in to LinkedIn"].every((t) => (G.signInNotNeeded(t, { home: HOME }) || {}).host === "linkedin.com" && G.signInNotNeeded(t, { home: HOME }).off === true));
+  ok("…while another site's sign-in, or words that only mention one, aren't", G.signInNotNeeded("Can you sign in to domains.co.za?", { home: HOME }) === null && G.signInNotNeeded("This isn't a sign-in problem on LinkedIn", { home: HOME }) === null && G.signInNotNeeded("LinkedIn's posts are scheduled", { home: HOME }) === null);
+  const w = judge("Write", { file_path: join(lane, ".symbiot", "QUESTIONS.md"), content: `## Questions\n\n### ${ask} {#linkedin-signin}\nLinkedIn is signed out.\n- 🤖 Agent: once you've signed LinkedIn in, schedule both (recommended)\n` }, lq);
+  ok("the membrane won't let a run write that ask, and says what to ask instead", w && /signing in isn't what's in the way/.test(w.why) && /\{#chrome-act-linkedin\.com\}/.test(w.why), w);
+  const py = judge("Bash", { command: `python3 - <<'E'\ns=open('QUESTIONS.md').read()\nq='''### ${ask} {#linkedin-signin}'''\nopen('QUESTIONS.md','w').write(s+q)\nE` }, lq);
+  ok("…nor through the shell", py && /signing in isn't what's in the way/.test(py.why), py);
+  ok("…while reading QUESTIONS.md, and asking for the switch, go ahead", judge("Bash", { command: "grep -n 'sign LinkedIn back in' QUESTIONS.md" }, lq) === null && judge("Write", { file_path: join(lane, ".symbiot", "QUESTIONS.md"), content: `### ${G.actAsk("linkedin.com").q}\nTwo approved posts wait.\n- ${G.actAsk("linkedin.com").option}\n` }, lq) === null);
+  const P = await import("../plain.mjs"), L = await import("../links.mjs");
+  const card = P.plainAsk(lane, { q: ask, context: "LinkedIn is signed out in the browser I can reach.", options: ["🤖 Agent: once you've signed LinkedIn in, schedule both and move the displaced posts (recommended)", "Skip this part"] }, { max: 2 });
+  ok("an ask written before reads, on its card, as the switch, with the setting named and Switch it on first", /^Should agents click and type on linkedin\.com in your Chrome\?/.test(card.q) && /Settings → Connections, the Reads button/.test(card.q) && card.labels[0] === "Switch it on for linkedin.com (recommended)" && card.labels[1] === "Skip this part" && card.raw === ask && card.context === "", card);
+  ok("…with no Sign in button, while a real sign-in ask keeps one", L.signInAsked(`${ask}\n🤖 Agent: once you've signed LinkedIn in, schedule both`) === null && (L.signInAsked("Can you sign in to domains.co.za?") || {}).name === "domains.co.za");
+  ok("the user's yes switches it on, only for a site the gate refused lately", G.switchOnAct("linkedin.com", { load: loadConfig, save: saveConfig, home: HOME }) && G.actSites(HOME).includes("linkedin.com") && !G.switchOnAct("never-refused.example", { load: loadConfig, save: saveConfig, home: HOME }));
+  ok("…and the click goes ahead", judge(C + "computer", { tabId: 7, action: "left_click", coordinate: [1, 1], action_summary: "Opens the LinkedIn post composer" }, lo) === null);
+  const inCard = P.plainAsk(lane, { q: ask, options: ["🤖 Agent: once you've signed in, schedule both"] });
+  ok("switched on and open signed in: a sign-in ask there is still not needed, and its card says it was signed in", (G.signInNotNeeded(ask, { home: HOME }) || {}).off === false && /No sign-in needed: linkedin\.com was open signed in in your Chrome/.test(inCard.q) && /it's signed in/.test((judge("Write", { file_path: join(lane, ".symbiot", "QUESTIONS.md"), content: `### ${ask}\n` }, lq) || {}).why || ""), inCard);
+
 } catch (e) { ok("ran", false, String((e && e.stack) || e)); }
 finally { rmSync(HOME, { recursive: true, force: true }); }
 console.log(`\n${fail ? "✗" : "✓"} chromegate: ${pass} passed, ${fail} failed`);

@@ -30,7 +30,7 @@ import { realpathSync, readFileSync, mkdirSync, openSync, rmSync, existsSync, st
 import { createInterface } from "node:readline";
 import { request as httpRequest } from "node:http";
 import { fileURLToPath } from "node:url";
-import { VERSION, CONFIG_PATH, CONFIG_DIR, loadConfig, saveConfig, repoState, semverGt, chromeBinary } from "./core.mjs";
+import { VERSION, CONFIG_PATH, CONFIG_DIR, loadConfig, saveConfig, repoState, semverGt, chromeBinary, lockPath, alive } from "./core.mjs";
 import { shoot } from "./design.mjs";
 import { jobsText } from "./jobs.mjs";
 import { HANDOFF_PROMPT, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, fillHandoff, runHandoff, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, parseQuestions, agentQuestions } from "./agents.mjs";
@@ -376,6 +376,25 @@ async function viaApp(path, body) {
     return r.ok ? await r.json() : { error: `Symbiot's app answered ${r.status}.` };
   } catch (e) { return { error: "Lost Symbiot's app mid-way: " + ((e && e.message) || e) }; }
 }
+// A command that changes a page (type, press, choose, upload, fill) goes through the app, whose tab
+// holds the page as the last command left it, or not at all while the app is up: a browser of the
+// command's own opens the page again from its address, which closes a post editor and loses what
+// was typed. On 21 Oct 2026 the app didn't answer a lane for five minutes, and a LinkedIn post lost
+// its text, then its new date, at each step. So it waits for the app (an update or a restart takes
+// a minute or so) and then says it couldn't reach it, with nothing done. No app: a browser of its own.
+const NOT_REACHED = "Symbiot's app is running but didn't answer this command for a minute (it may be updating or restarting), so nothing was typed, chosen or pressed: a browser of this command's own would open the page again from its address and lose what's open on it. Run it again in a minute. If the app restarted since the page was mapped, map it again first.";
+function appUp() {
+  if (existsSync(SCREENS_SOCK)) return true;
+  try { const o = JSON.parse(readFileSync(lockPath(Number(process.env.SYMBIOT_PORT || loadConfig().appPort) || 7391), "utf8")); return !!o && alive(Number(o.pid)); } catch { return false; }
+}
+async function viaAppKept(path, body, { wait = Number(process.env.SYMBIOT_APP_WAIT_MS) || 60000 } = {}) {
+  for (const until = Date.now() + wait; ;) {
+    const r = await viaApp(path, body); if (r) return r;
+    if (!appUp()) return null;
+    if (Date.now() >= until) return { error: NOT_REACHED };
+    await new Promise((ok) => setTimeout(ok, 2000));
+  }
+}
 // symbiot away: Symbiot full screen on every screen (again: closes it). --shortcut:
 // Super+` runs it (on COSMIC it's set up; elsewhere it says how).
 async function cmdAway() {
@@ -406,7 +425,7 @@ async function cmdOpen() {
   const { askRunningApp, openApp } = await import("./server.mjs");
   const cfg = loadConfig(), port = Number(process.env.SYMBIOT_PORT || cfg.appPort) || 7391;
   const p = cfg.appToken ? await askRunningApp("ping", { port, token: cfg.appToken, ms: 1500 }) : null;
-  if (p && p.version) { openApp(`http://127.0.0.1:${port}/?t=${cfg.appToken}`); return; }
+  if (p && p.version) { const pass = await askRunningApp("pass", { port, token: cfg.appToken, ms: 1500 }); openApp(`http://127.0.0.1:${port}/?${pass && pass.pass ? "p=" + pass.pass : "t=" + cfg.appToken}`); return; } // a one-use pass, not the key, on Chrome's command line (server.mjs newPass)
   // app.log is yours only (0600; it was 0664) and rotated at 2 MB; the app stamps each line (SYMBIOT_STAMP_LOG) (15 Oct 2026)
   let fd = "ignore"; try { mkdirSync(CONFIG_DIR, { recursive: true }); const log = join(CONFIG_DIR, "app.log"); try { if (statSync(log).size > 2 * 1024 * 1024) renameSync(log, log + ".1"); } catch {} fd = openSync(log, "a", 0o600); try { chmodSync(log, 0o600); } catch {} } catch {}
   const env = { ...process.env, SYMBIOT_STAMP_LOG: "1" }; delete env.SYMBIOT_NO_OPEN;
@@ -583,7 +602,7 @@ async function cmdScreens() {
     if (!fields.length) return out({ error: 'Give the fields as label="text" pairs.' });
     const pressQ = flag("press", ""), btn = pressQ ? pick(pressQ) : null; if (pressQ && !btn) return out({ error: `No region "${pressQ}" on that screen to press.` });
     const body = { id: s.id, fields, press: btn ? btn.id : "", confirmed: has("yes"), noSend: !!process.env.SYMBIOT_DRAFT, who };
-    const done = (await viaApp("/api/screens/fill", body)) || await H.fillForm(s.id, fields, { press: body.press, confirmed: body.confirmed, noSend: body.noSend, who });
+    const done = (await viaAppKept("/api/screens/fill", body)) || await H.fillForm(s.id, fields, { press: body.press, confirmed: body.confirmed, noSend: body.noSend, who });
     if (done && /answered 404/.test(done.error || "")) return out({ error: "The Symbiot app that's running is older than this command and can't fill a form: restart it (symbiot app), then try again." });
     if (done && done.confirm) return out({ error: `${done.error} Add --yes to go ahead, or list ${done.host} under Trusted sites in Symbiot's Settings.` });
     return out(screenJson(done));
@@ -599,7 +618,7 @@ async function cmdScreens() {
     // type --replace "old" "new": only that part of the field typed over
     const part = sub === "type" && has("replace") ? { replace: String(a3 == null ? "" : a3), text: String(more[0] == null ? "" : more[0]) } : null;
     const body = { id: s.id, region: r.id, confirmed: has("yes"), noSend: !!process.env.SYMBIOT_DRAFT, who, ...(sub === "type" ? (part || { text: a3 }) : {}), ...(sub === "type" ? { enter: has("enter") } : {}), ...(sub === "choose" ? { option: a3 } : {}), ...(f ? { files: f.files } : {}) };
-    const done = (await viaApp("/api/screens/" + (part ? "replace" : sub), body)) || alone(sub === "press" ? await H.pressRegion(s.id, r.id, { confirmed: body.confirmed, noSend: body.noSend, who }) : sub === "type" ? await H.typeRegion(s.id, r.id, body.text, { enter: body.enter, confirmed: body.confirmed, noSend: body.noSend, who, ...(part ? { replace: part.replace } : {}) }) : sub === "choose" ? await H.chooseRegion(s.id, r.id, a3, { confirmed: body.confirmed, who }) : await H.uploadRegion(s.id, r.id, f.files, { confirmed: body.confirmed, who }));
+    const done = (await viaAppKept("/api/screens/" + (part ? "replace" : sub), body)) || alone(sub === "press" ? await H.pressRegion(s.id, r.id, { confirmed: body.confirmed, noSend: body.noSend, who }) : sub === "type" ? await H.typeRegion(s.id, r.id, body.text, { enter: body.enter, confirmed: body.confirmed, noSend: body.noSend, who, ...(part ? { replace: part.replace } : {}) }) : sub === "choose" ? await H.chooseRegion(s.id, r.id, a3, { confirmed: body.confirmed, who }) : await H.uploadRegion(s.id, r.id, f.files, { confirmed: body.confirmed, who }));
     if ((f || part || sub === "choose") && done && /answered 404/.test(done.error || "")) return out({ error: `The Symbiot app that's running is older than this command and can't ${f ? "upload" : part ? "replace part of a field" : "choose"}: restart it (symbiot app), then try again.` });
     // not a trusted site: say how to go ahead (only you can trust a site, in the app's Settings)
     if (done && done.confirm) return out({ error: `${done.error} Add --yes to go ahead, or list ${done.host} under Trusted sites in Symbiot's Settings.` });

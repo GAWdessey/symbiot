@@ -239,7 +239,7 @@ try {
 }
 // a task marked [~] waits: it isn't deleted, and a new brief keeps the mark (21 Oct 2026)
 {
-  const { writeTasks, droppedTasks } = await import("../agents.mjs");
+  const { writeTasks, droppedTasks, waitingTask } = await import("../agents.mjs");
   const H2 = mkdtempSync(join(tmpdir(), "symbiot-wait-")), repo = join(H2, "lane"); mkdirSync(repo, { recursive: true });
   try {
     const brief = "## Tasks\n- [ ] alpha the first thing\n- [ ] beta the delivered count\n\n## When you finish an item\n";
@@ -250,6 +250,14 @@ try {
     writeTasks(repo, brief);
     const md = readFileSync(f, "utf8");
     ok("the next brief keeps it waiting, note and all, and the open one open", /^- \[~\] beta the delivered count \(waits on: ops reading the report\)$/m.test(md) && /^- \[ \] alpha the first thing$/m.test(md), md);
+    ok("what it waits on reads from the lane's list; an open task waits on nothing", waitingTask(repo, "beta the delivered count") === "ops reading the report" && waitingTask(repo, "alpha the first thing") === "", waitingTask(repo, "beta the delivered count"));
+    // a task queued since the last brief is new work: open, though a waiting one reads like it (22 Oct 2026)
+    writeTasks(repo, brief, { fresh: ["beta the delivered count"] });
+    ok("a newly queued task goes in open beside a wait like it", /^- \[ \] beta the delivered count$/m.test(readFileSync(f, "utf8")), readFileSync(f, "utf8"));
+    writeFileSync(f, readFileSync(f, "utf8").replace("- [ ] beta the delivered count", "- [~] beta the delivered count (waits on: ops, run act-c1d2e3f4 (it holds the key))"));
+    ok("…a nested bracket in the note is kept whole", waitingTask(repo, "beta the delivered count") === "ops, run act-c1d2e3f4 (it holds the key)", waitingTask(repo, "beta the delivered count"));
+    writeTasks(repo, brief, { reopen: true });
+    ok("Start on the lane opens the wait, the agent's note kept for it", /^- \[ \] beta the delivered count \(waits on: ops, run act-c1d2e3f4 \(it holds the key\)\)$/m.test(readFileSync(f, "utf8")) && !/\[~\]/.test(readFileSync(f, "utf8")), readFileSync(f, "utf8"));
   } finally { rmSync(H2, { recursive: true, force: true }); }
 }
 // one state per run in the Agents view

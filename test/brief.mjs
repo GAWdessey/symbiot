@@ -40,7 +40,7 @@ try {
   ok("the Symbiot Browser's close-it rule once", count(md, /close or click Done in the Symbiot Browser|Never ask them to close the Symbiot Browser/g) === 1);
   ok("ask-only-for-passwords-money-or-undo once", count(md, /Ask only for (\(1\) )?passwords/g) === 1);
   ok("the plain-words rule once", count(md, /in plain words for someone who doesn't code/g) === 1);
-  ok("the user-only rules stay short (a third shorter than before, plus the CLI-login, no-clicking, card-title and no-made-up-setting rules)", ONLY_YOU.length < 7800, ONLY_YOU.length);
+  ok("the user-only rules stay short (a third shorter than before, plus the CLI-login, no-clicking, card-title and no-made-up-setting and real-object-title rules)", ONLY_YOU.length < 8100, ONLY_YOU.length);
   const ab = actBrief("Find a JDK 17", { lanes: ["atlas"], reach: null });
   ok("an ops brief still has the clerk rules (they were only in the user-only block there)", /capable clerk/.test(ab) && /Never name a provider you haven't confirmed/.test(ab));
 
