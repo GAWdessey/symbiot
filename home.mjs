@@ -45,6 +45,7 @@ import { laneCap, verdict, peel, inflight, inflightIds, parallelLane, openTasksO
 import { licenceState, isPro } from "./licence.mjs";
 import { PHONE, ANDROID_APP, computerView, phoneApprovals, linkState, ask as askComputer } from "./phone.mjs";
 import { draftPreview, MARKETING, MARKETING_DIR, aboutMarketing, displayName, productNames, productOf, untagged, tagged, draftFiles, setDraftStatus, postedCmd } from "./marketing.mjs";
+import { noteCardWords } from "./triage.mjs";
 
 const KEEP = 15000; // the slower reads (git per repo awaiting review) are cached this long
 let cached = null;
@@ -946,6 +947,7 @@ async function cardTalk(path, answers, { ask, deps = {}, extra = "", force = fal
   if (!ask && !resolveProvider()) return null; // no AI here: it's taken as before (asked back, its run writes it up)
   let map = {}; try { map = laneMap(); } catch {}
   const lane = laneOfPath(path, map), name = lane || "this run", said = String(one.a).trim();
+  try { noteCardWords(path, q.q, said); } catch {} // "who makes these cards?": a question that wasn't the user's (triage.mjs)
   const before = talkOf(path, q.q); addTalk(path, q.q, { from: "you", text: said });
   let rec = null; try { rec = runRecord(path); } catch {}
   const open = read("TASKS.md").split("\n").filter((l) => /^\s*-\s*\[[ ~]\]/.test(l)).slice(0, 12).join("\n");
@@ -1398,6 +1400,7 @@ const FIRST_RUN = {
   "Knowledge folders": "docs",
   "Your phone": "phone",
   "What Symbiot remembers": "done",
+  "How well it asks you": "later: it counts the questions that reached you and shouldn't have, once agents have asked some",
   "Secrets": "done",
   "Trusted sites for Screens": "later: asked the first time an agent wants a site that isn't trusted yet",
   "Weekly write-up and start at login": "later: the write-up is made from a week of work, which a new Symbiot doesn't have yet",

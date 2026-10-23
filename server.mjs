@@ -59,6 +59,7 @@ import { listReports, readReport, reportImage, markAllRead, phoneReports, phoneR
 import { heardCode, setCodeRelay, computerCopy, relaunchEnv, phoneState, setPhoneLink, startPhoneLink, freePhonePort, usePhonePort, newCode, unpairPhone, setRelay, findComputers, pairComputer, forgetComputer, pollComputer, queueChange, dismissNote, setPhoneApprove, startPhone } from "./phone.mjs";
 import { knowledgeState, addKnowledgeFolder, removeKnowledgeFolder, indexKnowledge, knowledgeTick, searchKnowledge } from "./knowledge.mjs";
 import { runChecks, checksState, markClashesSeen } from "./checks.mjs";
+import { triageStats } from "./triage.mjs";
 
 // The in-app update installs the EXACT newest version (not the `latest` tag, which
 // npm's cache/propagation can resolve stale — that caused an update loop where the
@@ -648,6 +649,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       if (u.pathname === "/api/secrets/delete" && req.method === "POST") { const b = await readBody(req); return json(res, deleteSecret(String(b.name || ""))); }
       if (u.pathname === "/api/secrets/scrub" && req.method === "POST") { const r = scrubStored({ force: true }); return json(res, { found: r.found || [], files: (r.files || []).map((f) => f.replace(CONFIG_DIR + "/", "")) }); }
       // The Vault page (vaultview.mjs): the list never holds a value; one is given only to a page unlocked with the vault PIN, for a short while.
+      if (u.pathname === "/api/triage/stats") return json(res, triageStats()); // how often a question reached the user that wasn't theirs (triage.mjs)
       if (u.pathname === "/api/vault" && req.method === "POST") { const b = await readBody(req); return json(res, { ...vaultList({ token: String(b.token || "") }), log: vaultLog() }); }
       if (u.pathname === "/api/vault/pin" && req.method === "POST") { const b = await readBody(req); return json(res, setPin(String(b.pin || ""), { old: String(b.old || ""), token: String(b.token || "") })); }
       if (u.pathname === "/api/vault/unlock" && req.method === "POST") { const b = await readBody(req); return json(res, vaultUnlock(String(b.pin || ""))); }
@@ -1016,6 +1018,9 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       notify: (t, b) => desktopNotify(t, b), map: () => laneMap(), actIn: (req, lane, o) => actIn(req, lane, o), actNow: (req, o) => actNow(req, o), autoStart, dismissed: () => Object.keys(loadDismissed()) };
   };
   onRunEnd(() => { try { intuitionNudge(); } catch {} });
+  // an Approve from the phone that met an agent still at work (or an Approve already going): it goes once that's done (phone.mjs)
+  { let busy = false; const retry = () => { if (busy) return; busy = true; import("./phone.mjs").then((p) => p.retryApprovals()).catch(() => {}).finally(() => { busy = false; }); };
+    setInterval(retry, 60000).unref(); onRunEnd(() => { const t = setTimeout(retry, 3000); if (t.unref) t.unref(); }); }
   // the user's customisations (overrides.mjs): their triggers feed intuition's events (each minute,
   // and "run" ones when a run ends), and friction becomes proposed rules (every half hour)
   const triggerState = () => { try { const d = intuitionDigest({ jobs: () => loadJobs(), waits: () => { try { return awaitingState().waits; } catch { return []; } } }); return { digest: d.text }; } catch { return {}; } };
