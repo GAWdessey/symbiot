@@ -84,6 +84,26 @@ try {
     writeFileSync(join(check, ".symbiot", "triage.json"), JSON.stringify(S.TRIAGE()));
     ok("the phone check's own question comes judged the user's, so it's a card at once", T.verdictOf(check, S.QUESTION).verdict === "user" && A.agentQuestions(check, "").questions.some((q) => q.q === S.QUESTION) && listed().includes(check), T.verdictOf(check, S.QUESTION));
   }
+
+  console.log("HOW OFTEN IT'S WRONG — the questions that reached the user and weren't theirs, counted (23 Oct 2026)");
+  {
+    const p2 = join(HOME, "work", "shop"); mkdirSync(join(p2, ".symbiot"), { recursive: true });
+    const said = ["who makes these cards? is it not you?", "how must i know if you havent given me the login?", "its in the vault", "I already answered this", "you should know this"];
+    ok("what the user types that says a question wasn't theirs", said.every((x) => T.needless(x)) && !T.needless("yes, send it") && !T.needless("skip it") && !T.needless("the second one, but shorter"), said.filter((x) => !T.needless(x)));
+    const now = Date.now();
+    T.saveVerdict(p2, "Which login should I use for the registrar?", { verdict: "user", why: "a sign-in" }, now - 1000);
+    T.saveVerdict(p2, "Which plan should the page show first?", { verdict: "user", why: "a choice" }, now - 900);
+    T.saveVerdict(p2, "Should the invoice go out today?", { verdict: "user", why: "a send" }, now - 800);
+    ok("a card the user said wasn't theirs is a miss, once", T.noteCardWords(p2, "Which login should I use for the registrar?", "its in the vault") && !T.noteCardWords(p2, "Which login should I use for the registrar?", "you should know this") && !T.noteCardWords(p2, "Which plan should the page show first?", "the cheaper one"));
+    const gone = T.sweepGone(p2, ["Which login should I use for the registrar?"], { answers: "### Which plan should the page show first?\nthe cheaper one\n" });
+    ok("a card gone with its answer isn't a miss; one its agent took back unanswered is", gone === 1 && T.verdictOf(p2, "Should the invoice go out today?").gone === "withdrawn" && T.verdictOf(p2, "Which plan should the page show first?").gone === "answered", [gone, T.loadVerdicts(p2)]);
+    ok("…counted once", T.sweepGone(p2, [], { answers: "" }) === 1 && T.sweepGone(p2, [], { answers: "" }) === 0);
+    const st = T.triageStats({ now: now + 1000 });
+    ok("this week: how many came to the user, how many shouldn't have, and the share", st.week.shown >= 3 && st.week.needless === 1 && st.week.withdrawn >= 1 && st.week.misses === st.week.needless + st.week.withdrawn && st.week.rate > 0 && st.week.rate <= 1 && st.before.shown === 0, st);
+    ok("…and a week later it's last week's", T.triageStats({ now: now + 8 * 86400000 }).before.misses === st.week.misses && T.triageStats({ now: now + 8 * 86400000 }).week.shown === 0);
+    let sys = ""; await T.judge({ q: "Which account is the domain in?" }, {}, { write: async (s) => { sys = s; return { text: '{"verdict":"agent","why":"w"}' }; } });
+    ok("the newest ones the user said weren't theirs are shown to the judge, as what not to put to them", /said weren't theirs to answer/.test(sys) && sys.includes("Which login should I use for the registrar?") && sys.includes("its in the vault"), sys.slice(-400));
+  }
 } catch (e) { ok("ran", false, String((e && e.stack) || e)); }
 finally { rmSync(HOME, { recursive: true, force: true }); }
 console.log(`\n${fail ? "✗" : "✓"} triage: ${pass} passed, ${fail} failed`);

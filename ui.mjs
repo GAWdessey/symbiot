@@ -1605,6 +1605,11 @@ body.lq-light .btip .bta button:not(.quiet){background:#151A21;color:#FFFFFF}
 <div class="note muted" id="linksnote">For a whole team, one <b>links.json</b> in Symbiot's config folder adds your company's own sites and hides the ones you don't use, so everyone gets the same buttons.</div>
 </div>
 <div class="sset">
+<h3 class="ssh">How well it asks you</h3>
+<div class="note muted" style="margin-top:2px">Every question an agent puts to you is checked first, so only what's truly yours reaches you. This counts the ones that got through and shouldn't have: you said so on the card ("you should know this"), or its agent answered it itself. Those are shown to the checker as what not to ask again.</div>
+<div id="triagestats"></div>
+</div>
+<div class="sset">
 <h3 class="ssh">What Symbiot remembers</h3>
 <div class="note muted" style="margin-top:2px">Every chat in the app is the same Symbiot. What's worth knowing on another page (who someone is, which account is what, what you decided) is kept here, on this computer only, and each chat gets just the parts its question touches.</div>
 <div id="mindlist"></div>
@@ -1698,7 +1703,7 @@ var isMap=tab==='map',isSet=tab==='settings',isTasks=tab==='tasks',isDrift=tab==
 $('panel-map').classList.toggle('hidden',!isMap);
 $('panel-board').classList.toggle('hidden',!isBoard);if(isBoard){loadBoard();loadLinks();}
 $('panel-run').classList.toggle('hidden',!isRun);
-$('panel-settings').classList.toggle('hidden',!isSet);if(isSet){loadFirstSteps();licLoad();langLoad();intuLoad();ovrLoad();loadAgentCfg();loadScanRoots();loadKnowledge();loadLinks();loadMind();loadSecrets();loadTrusted();loadMail();loadDesktop();loadPhoneLink();}
+$('panel-settings').classList.toggle('hidden',!isSet);if(isSet){loadFirstSteps();licLoad();langLoad();intuLoad();ovrLoad();loadAgentCfg();loadScanRoots();loadKnowledge();loadLinks();loadMind();loadSecrets();triLoad();loadTrusted();loadMail();loadDesktop();loadPhoneLink();}
 $('panel-tasks').classList.toggle('hidden',!isTasks);
 $('panel-drift').classList.toggle('hidden',!isDrift);
 $('panel-reports').classList.toggle('hidden',tab!=='reports');if(tab==='reports')loadReports();
@@ -2314,7 +2319,7 @@ wireAsks(el);restoreDrafts(el);});}
 function loadAgents(){loadLanes();loadParked(agentsDraw);phoneApprovedNote();}
 // What was approved from your phone today (phone.mjs), above the agents: it wasn't you at this desk.
 function phoneApprovedNote(){var el=$('phoneappr');if(!el)return;var ap=(LQ.home&&LQ.home.phoneApproved)||[];
-el.innerHTML=ap.map(function(a){return "<div class='note "+(a.status==='failed'?'err':'ok')+"'>"+(a.status==='failed'?"Approving <b>"+esc(a.repo)+"</b> from "+esc(a.phone)+" failed: "+esc(a.error||''):(a.status==='approving'?"Approving ":"&#10003; Approved ")+"<b>"+esc(a.repo)+"</b> from "+esc(a.phone)+", "+agoTxt(a.at)+(a.pr?" &middot; <a href='"+esc(okUrl(a.pr))+"' target='_blank' rel='noopener'>its PR</a>":""))+"</div>";}).join('');}
+el.innerHTML=ap.map(function(a){return "<div class='note "+(a.status==='failed'?'err':'ok')+"'>"+(a.status==='waiting'?"Approving <b>"+esc(a.repo)+"</b> from "+esc(a.phone)+" as soon as "+esc(a.why||'it can')+".":a.status==='failed'?"Approving <b>"+esc(a.repo)+"</b> from "+esc(a.phone)+" failed: "+esc(a.error||''):(a.status==='approving'?"Approving ":"&#10003; Approved ")+"<b>"+esc(a.repo)+"</b> from "+esc(a.phone)+", "+agoTxt(a.at)+(a.pr?" &middot; <a href='"+esc(okUrl(a.pr))+"' target='_blank' rel='noopener'>its PR</a>":""))+"</div>";}).join('');}
 // Agents, in order: what needs you (a question, a step of yours), what's at work, and
 // what's finished, folded away (open stays open across refreshes). A run whose handover
 // hasn't gone to its lane yet stays out with what's at work, not folded away.
@@ -2523,7 +2528,7 @@ aps.forEach(function(a,i){h+="<div class='pcq' data-ap='"+i+"'><div class='qn'>"
 needs.forEach(function(n){h+="<div class='task'><span class='t'>"+esc(n.title)+" <span class='muted' style='font-size:12px'>"+esc(n.sub)+" &middot; on your computer</span></span></div>";});
 h+="</div>";}
 if(LQ.phone)h+="<div class='phyouslot'></div>"; // on a phone's Home: what this phone needs, after what the computer does
-(c.recent||[]).slice(-3).forEach(function(r){h+="<div class='note "+(r.status==='failed'?'err':'ok')+"'>"+(r.status==='approving'?"Approving "+esc(r.repo)+" (from "+esc(r.phone)+")&hellip;":r.status==='failed'?"Approving "+esc(r.repo)+" from "+esc(r.phone)+" failed: "+esc(r.error||''):"&#10003; "+esc(r.repo)+" approved from "+esc(r.phone)+(r.pr?" &middot; <a href='"+esc(okUrl(r.pr))+"' target='_blank' rel='noopener'>its PR</a>":""))+"</div>";});
+(c.recent||[]).slice(-3).forEach(function(r){h+="<div class='note "+(r.status==='failed'?'err':'ok')+"'>"+(r.status==='approving'?"Approving "+esc(r.repo)+" (from "+esc(r.phone)+")&hellip;":r.status==='waiting'?"Approving "+esc(r.repo)+" (from "+esc(r.phone)+") as soon as "+esc(r.why||'it can')+".":r.status==='failed'?"Approving "+esc(r.repo)+" from "+esc(r.phone)+" failed: "+esc(r.error||''):"&#10003; "+esc(r.repo)+" approved from "+esc(r.phone)+(r.pr?" &middot; <a href='"+esc(okUrl(r.pr))+"' target='_blank' rel='noopener'>its PR</a>":""))+"</div>";});
 var open=(c.tasks||[]).filter(function(t){return !t.done;}),done=(c.tasks||[]).filter(function(t){return t.done;}),repos=[];(c.tasks||[]).forEach(function(t){if(t.repo&&repos.indexOf(t.repo)<0)repos.push(t.repo);});
 h+="<div class='pshead' style='margin-top:14px'><span>Tasks &middot; "+open.length+" open</span><small>on "+esc(d.name)+"</small></div>";
 h+="<form class='pcadd'><input id='pctask' placeholder='Add a task' maxlength='4000' autocomplete='off'><select id='pcrepo' aria-label='Which project'><option value=''>No project</option>"+repos.sort().map(function(r){return "<option value='"+escQ(r)+"'>"+esc(r)+"</option>";}).join('')+"</select><button class='act' type='submit'>Add</button></form>";
@@ -2796,6 +2801,11 @@ var s=$('vaultsearch');if(s&&s.addEventListener)s.addEventListener('input',funct
 if(window.addEventListener)window.addEventListener('resize',function(){if(current==='vault')vaultDraw();});
 var o=$('openvault');if(o&&o.addEventListener)o.addEventListener('click',function(){if(typeof lqPool==='function'&&document.body.classList.contains('lq-liquid'))lqPool('vault');else setTab('vault');});})();
 // Settings: how many are saved and what needs a look; the Vault is where they're looked up and kept tidy
+// How well it asks you (triage.mjs triageStats): this week's questions, the misses, and the week before's
+function triLoad(){api('/api/triage/stats').then(function(d){var box=document.getElementById('triagestats');if(!box||!d||!d.week)return;var w=d.week,b=d.before,pc=function(r){return r===null?'':Math.round(r*100)+'%';};
+var line=w.shown?("<b>"+w.shown+"</b> question"+(w.shown===1?'':'s')+" came to you this week; <b>"+w.misses+"</b> shouldn't have"+(w.misses?" ("+[w.needless?w.needless+" you said weren't yours":"",w.withdrawn?w.withdrawn+" its agent answered itself":""].filter(Boolean).join(", ")+")":"")+(w.rate!==null?" · "+pc(w.rate):"")):"No questions came to you this week.";
+var prev=b.shown?" Last week: "+b.misses+" of "+b.shown+(b.rate!==null?" ("+pc(b.rate)+")":"")+".":"";
+box.innerHTML="<div style='font-size:13.5px;line-height:1.5;margin-top:8px'>"+line+"."+esc(prev)+"</div>"+(d.recent&&d.recent.length?"<div class='muted' style='font-size:12.5px;margin-top:8px'>Lately:</div>"+d.recent.map(function(x){return "<div style='font-size:12.5px;margin-top:4px'>“"+esc(String(x.q).slice(0,110))+"”"+(x.said?" <span class='muted'>— you said “"+esc(String(x.said).slice(0,80))+"”</span>":" <span class='muted'>— its agent answered it</span>")+"</div>";}).join(''):"");}).catch(function(){});}
 function loadSecrets(){api('/api/vault',{}).then(function(d){var box=document.getElementById('secretslist');if(!box)return;var s=(d&&d.entries)||[],look=s.filter(function(e){return e.issues&&e.issues.length;}).length;
 box.innerHTML="<div class='muted' style='font-size:13px'>"+(s.length?s.length+' saved'+(look?' · '+look+' need'+(look===1?'s':'')+' a look':''):'None saved yet.')+"</div>";});}
 function addTrustedUI(){var i=document.getElementById('newtrusted');var v=(i.value||'').trim();if(!v)return;var n=document.getElementById('trustednote');
@@ -3971,7 +3981,7 @@ else if((d.kind==='you'||d.kind==='feed')&&at[d.shape]!=null)links.push([at[d.sh
 function lqHomeLine(h){var el=$('lqline'),b=document.body,t='',pc=h.computer,ap=(h.phoneApproved||[]).slice(-1)[0];
 if(pc&&pc.away)t="<b>"+esc(pc.name)+" is out of reach.</b> Showing what it sent "+(pc.heard?"at "+esc(pcTime(pc.heard)):"last")+(pc.queued?" · "+pc.queued+" change"+(pc.queued>1?"s":"")+" waiting to send":"")+".";
 else if(pc&&pc.old)t="<b>Pair this phone with "+esc(pc.name)+" again:</b> the link between them is sealed now.";
-else if(ap)t=ap.status==='failed'?"<b>Approving "+esc(ap.repo)+" from "+esc(ap.phone)+" failed:</b> "+esc(ap.error||''):(ap.status==='approving'?"Approving ":"Approved ")+esc(ap.repo)+" from "+esc(ap.phone)+" at "+esc(pcTime(ap.at))+".";
+else if(ap)t=ap.status==='waiting'?"Approving "+esc(ap.repo)+" from "+esc(ap.phone)+" as soon as "+esc(ap.why||'it can')+".":ap.status==='failed'?"<b>Approving "+esc(ap.repo)+" from "+esc(ap.phone)+" failed:</b> "+esc(ap.error||''):(ap.status==='approving'?"Approving ":"Approved ")+esc(ap.repo)+" from "+esc(ap.phone)+" at "+esc(pcTime(ap.at))+".";
 if(!t&&qPaused())t='<b>'+esc(qPaused())+'</b>';
 if(!t&&h.browserSince)t="<b>The Symbiot Browser is open</b>, since "+esc(pcTime(h.browserSince))+" ("+esc(agoTxt(h.browserSince))+"). Agents read from a copy of its sign-ins meanwhile, and it closes by itself after "+(h.browserIdle||20)+" minutes unused.";
 if(b&&b.classList)b.classList.toggle('lq-hline',!!t);if(el&&LQ.scene!=='work'&&el.innerHTML!==t)el.innerHTML=t;}

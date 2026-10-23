@@ -2,6 +2,12 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one), for anyone who installs the app: what changed in it, never whose work it was (no projects, people, accounts, services, run ids or task wording of the person who made it). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.87.0 — 2026-10-23
+
+- **An Approve from your phone waits instead of failing.** If an agent is still at work on that project, or another Approve is already running, a phone Approve now waits. It goes ahead by itself as soon as the way is clear, as long as the work is still what your phone showed. Before, it was marked failed and Home kept saying so for a day.
+- **Home only shows a failed phone Approve while it's news:** for two hours, and not once that project has been approved again since.
+- **Symbiot measures how often it asks you something it shouldn't.** A question counts as a miss when you say so on its card ("you should know this", "it's in the vault", "who makes these cards?"), or when its agent takes it back and answers it itself. Settings shows this week's count and share next to last week's. The latest misses are also shown to the check that decides what reaches you, as examples of what not to pass on.
+
 ## 0.86.0 — 2026-10-23
 
 - **"Done" is checked, not just said.** When an agent ticks an item, Symbiot now checks it against what the run actually did before the tick counts:

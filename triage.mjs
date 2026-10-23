@@ -31,7 +31,8 @@ const key = (q) => String(q || "").trim().toLowerCase().replace(/\s+/g, " ");
 
 function loadVerdicts(path) { try { const o = JSON.parse(readFileSync(join(path, ".symbiot", FILE), "utf8")); return o && typeof o === "object" ? o : {}; } catch { return {}; } }
 function saveVerdict(path, q, v, now = Date.now()) {
-  const all = loadVerdicts(path); all[key(q)] = { ...v, at: now };
+  const all = loadVerdicts(path); all[key(q)] = { ...v, q: String(q).slice(0, 300), at: now };
+  if (v && v.verdict === "user") noteTriage("shown", { path, q, now }); // a card the user will see: what the misses are counted against
   try { writeJsonAtomic(join(path, ".symbiot", FILE), all, { indent: 1 }); } catch {}
   return all[key(q)];
 }
@@ -79,7 +80,7 @@ Hiding a real decision from the user is worse than asking them one question too 
 async function judge(q, { answers = "", rules = [], lane = "", known = "" } = {}, { write }) {
   const opts = (q.options || []).map((o) => `- ${o}`).join("\n");
   const prompt = `Agent's lane: ${lane || "unknown"}\n\nThe question:\n### ${q.q}\n${q.context ? q.context + "\n" : ""}${opts}\n\nThe user's standing rules:\n${rules.map((r) => `- ${r}`).join("\n") || "(none)"}${known ? `\n\nWhat Symbiot remembers that may bear on it:\n${known.slice(0, 3000)}` : ""}\n\nThe user's newest answers in this lane (newest last):\n${String(answers || "").slice(-5000) || "(none)"}`;
-  const r = await write(SYSTEM + promptFor("triage"), prompt, { fast: true, kind: "triage" });
+  const r = await write(SYSTEM + promptFor("triage") + missesForPrompt(), prompt, { fast: true, kind: "triage" });
   const text = r && typeof r.text === "string" ? r.text : "";
   const m = text.match(/\{[\s\S]*\}/); if (!m) return null;
   let o; try { o = JSON.parse(m[0]); } catch { return null; }
@@ -88,4 +89,51 @@ async function judge(q, { answers = "", rules = [], lane = "", known = "" } = {}
   return { verdict: o.verdict, why: String(o.why || "").slice(0, 300), ...(o.verdict === "answered" ? { answer: String(o.answer).slice(0, 800) } : {}) };
 }
 
-export { judge, verdictOf, saveVerdict, loadVerdicts, shows, answerFor, recordFault, faults, askedAt, HOLD_MS, VERDICTS, FAULTS };
+// ---- how often it's wrong ------------------------------------------------------------------------
+// Nothing measured it: faults.json held 2 entries while the user asked "who makes these cards? is it
+// not you?" (22 Oct 2026). Each question judged the user's is counted, and so is each sign it wasn't:
+// - needless: what the user typed on its card says it wasn't theirs ("you should know this", "it's in
+//   the vault", "who makes these cards", "I already answered");
+// - withdrawn: its agent took it back with no answer from the user anywhere (it found the answer itself).
+// triage-log.json keeps the events; triageStats gives this week's and last week's rate (Settings), and the
+// newest needless ones go back into the judge's prompt, as what not to put to the user.
+const LOG = () => join(CONFIG_DIR, "triage-log.json"), LOG_KEEP = 3000, WEEK = 7 * 86400000;
+const NEEDLESS = /\b(?:who (?:makes|made|writes|wrote|sends) (?:these|this|the) cards?|why (?:are|do|did) you (?:ask|asking|need me)|you (?:should|must|already|can|could) (?:know|have it|find it|look|check|do (?:it|this|that) yourself)|(?:it'?s|its|they'?re|that'?s) (?:already )?in (?:the|my|your) vault|check (?:the|my|your) vault|find (?:it|that|out) yourself|look it up yourself|i (?:already|have already|'?ve already) (?:answered|told you|said|gave (?:it|you))|stop asking|not my job|you have (?:the|my|its) (?:login|password|details|access|key)|how (?:must|should|would|do) i know|isn'?t (?:that|this) your job|you did (?:this|it) before)\b/i;
+const needless = (said) => NEEDLESS.test(String(said || ""));
+function readLog() { return readState(LOG(), Array.isArray) || []; }
+function noteTriage(kind, { path = "", q = "", said = "", now = Date.now() } = {}) {
+  const log = readLog(); log.push({ at: now, kind, path: String(path).slice(0, 300), q: String(q).slice(0, 300), ...(said ? { said: String(said).slice(0, 300) } : {}) });
+  try { writeJsonAtomic(LOG(), log.slice(-LOG_KEEP), { indent: 0, mode: 0o600 }); } catch {}
+}
+// The user's words on a card: counted when they say it wasn't theirs to answer (once per card).
+function noteCardWords(path, q, said, now = Date.now()) {
+  if (!needless(said)) return false;
+  if (readLog().some((e) => e.kind === "needless" && e.path === path && key(e.q) === key(q))) return false;
+  noteTriage("needless", { path, q, said, now }); return true;
+}
+// Cards judged the user's that are gone from their agent's questions: answered (ANSWERS.md, or settled
+// for every agent: answeredElsewhere) or taken back unanswered, which is a miss. Each once.
+function sweepGone(path, open = [], { answers = "", answeredElsewhere = () => false, now = Date.now() } = {}) {
+  const all = loadVerdicts(path), still = new Set(open.map(key)), ans = String(answers || "").toLowerCase(); let n = 0;
+  for (const [k, v] of Object.entries(all)) {
+    if (!v || v.verdict !== "user" || v.gone || still.has(k)) continue;
+    const q = v.q || k, answered = ans.includes("### " + k) || ans.includes(k.slice(0, 80)) || answeredElsewhere(q);
+    all[k] = { ...v, gone: answered ? "answered" : "withdrawn", goneAt: now };
+    if (!answered) { noteTriage("withdrawn", { path, q, now }); n++; }
+  }
+  try { writeJsonAtomic(join(path, ".symbiot", FILE), all, { indent: 1 }); } catch {}
+  return n;
+}
+// This week's and the week before's: { shown, needless, withdrawn, misses, rate } each, rate a share (0–1) or null.
+function triageStats({ now = Date.now(), log = readLog() } = {}) {
+  const week = (from, to) => { const e = log.filter((x) => x.at >= from && x.at < to), c = (k) => e.filter((x) => x.kind === k).length;
+    const shown = c("shown"), nl = c("needless"), wd = c("withdrawn"), misses = nl + wd; return { shown, needless: nl, withdrawn: wd, misses, rate: shown ? Math.min(1, misses / shown) : null }; };
+  return { week: week(now - WEEK, now + 1), before: week(now - 2 * WEEK, now - WEEK), recent: log.filter((x) => x.kind !== "shown").slice(-5).reverse() };
+}
+// The newest questions the user said weren't theirs: shown to the judge as what not to put to them.
+function missesForPrompt(n = 5, log = readLog()) {
+  const m = log.filter((x) => x.kind === "needless").slice(-n);
+  return m.length ? `\n\nQuestions the user was asked lately and said weren't theirs to answer (judge ones like these "agent" or "answered", not "user"):\n${m.map((x) => `- "${x.q}" (they said: "${x.said}")`).join("\n")}` : "";
+}
+
+export { noteTriage, noteCardWords, needless, sweepGone, triageStats, missesForPrompt, LOG as TRIAGE_LOG, judge, verdictOf, saveVerdict, loadVerdicts, shows, answerFor, recordFault, faults, askedAt, HOLD_MS, VERDICTS, FAULTS };

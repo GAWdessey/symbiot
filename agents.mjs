@@ -29,7 +29,7 @@ import { runbookOf, onDeployAnswer } from "./deploy.mjs";
 import { claudeState, resolveProvider, write as aiWrite } from "./ai.mjs";
 import { settleDone, ticked as tickedItems } from "./done.mjs";
 import { toReview, criticBrief, CRITIC_PROMPT, settleVerdict, reviewOf, saveReview, startDesign, settleDesign, dropDesign, specsFor, DESIGNER_PROMPT } from "./design.mjs";
-import { judge as triageJudge, verdictOf, saveVerdict, shows as triageShows, answerFor as triageAnswer, recordFault, HOLD_MS as TRIAGE_HOLD } from "./triage.mjs";
+import { judge as triageJudge, verdictOf, saveVerdict, shows as triageShows, answerFor as triageAnswer, recordFault, HOLD_MS as TRIAGE_HOLD, noteCardWords, sweepGone } from "./triage.mjs";
 import { stalledFor, onStall, loadStall, saveStall, clearStall, STALL_MIN, STALL_PROMPT_TAIL } from "./stall.mjs";
 
 const HANDOFFS = []; // live registry of agents Symbiot has handed work to
@@ -2339,6 +2339,7 @@ async function triageSweep({ write = aiWrite, runs = loadRuns, rules = () => { t
     const map = (() => { try { return laneMap(); } catch { return {}; } })();
     for (const path of [...new Set(runs().map((r) => r.path).filter(Boolean))]) {
       let qs = []; try { qs = agentQuestions(path, "", { raw: true }).questions; } catch { continue; }
+      try { sweepGone(path, qs.map((x) => x.q), { answers: readSymbiot(path, "ANSWERS.md") + readSymbiot(path, "ANSWERS.archive.md"), answeredElsewhere: (q) => { try { return isDone(q); } catch { return false; } } }); } catch {} // a card taken back unanswered: a miss
       for (const q of qs) {
         if (verdictOf(path, q.q) || GO_ID.test(q.id || "")) continue; // a Go on a held action needs no judging: it's the user's
         const lane = Object.keys(map).find((k) => map[k] === path) || (path.includes("/drafts/act-") ? "ops" : basename(path));
@@ -2409,6 +2410,7 @@ function answerQuestions(path, answers, opts = {}) {
   path = String(path || "");
   if (path.startsWith("goal:")) return goalAnswerer ? goalAnswerer(path, answers, opts) : { error: "Goals aren't on here yet." };
   if (!path || !knownRun(path)) return { error: "No agent has run in that folder." };
+  for (const r of Array.isArray(answers) ? answers : []) try { if (r && r.q) noteCardWords(path, r.q, r.a); } catch {} // "you should know this": a question that wasn't the user's (triage.mjs)
   const openQs = agentQuestions(path, "", { raw: true }).questions, open = new Map(openQs.map((x) => [qKey(x.q), x.q]));
   // A card can outlive its question (the agent asked again, worded differently): Allow on it is
   // still a yes to the permission question now open, not a click that finds nothing and says nothing.

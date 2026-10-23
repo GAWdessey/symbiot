@@ -341,7 +341,7 @@ async function snapshot({ now = Date.now(), fresh = false } = {}) {
     .map((r) => ({ repo: r.repo, tasks: (r.tasks || []).map((t) => ({ id: t.id, text: plainText(t.text, 200) })), files: (r.files || []).length, stat: plainText(r.stat, 120), ...(r.untasked ? { untasked: true } : {}), sum: approveSum(r) }));
   const board = watch ? await tryOr(() => watch.watchBoard(24, now), { cards: [] }) : { cards: [] };
   const seen = (board.cards || []).filter((c) => c.count > 0).slice(0, 8).map((c) => ({ name: plainText(c.name, 60), label: plainText(c.label, 60), count: c.count, items: (c.items || []).filter((i) => i.need !== false).slice(0, 3).map((i) => ({ text: plainText(i.text, 140), ts: i.ts })) }));
-  const recent = (readJson(PATHS.applied, {}).approvals || []).filter((a) => now - a.at < 24 * 3600000).slice(-10);
+  const recent = (readJson(PATHS.applied, {}).approvals || []).filter((a) => now - a.at < 24 * 3600000 && a.status !== "gone").slice(-10);
   const reports = await tryOr(() => reportsForPhone(), []);
   const body = { tasks, needs, asks, approves, proofs, watch: seen, recent, reports, relay: linkCfg().relay && relayAllowed() };
   const snap = { v: sha(JSON.stringify(body)).slice(0, 16), name: hostname(), at: now, ...body };
@@ -407,17 +407,13 @@ async function applyOne(o, phone) {
     forgetReview(); // what the phone approves is checked against the tree as it is now, not the cards' cached view (15 Oct 2026)
     const now = pendingReview().find((r) => r.repo === repo && r.path && ((r.tasks || []).length || (r.files || []).length));
     if (!now) return { error: `Nothing in ${repo} is waiting for your Approve any more.` };
-    if (now.running) return { error: `The agent is still working in ${repo}. Approve once it finishes.` };
-    if (now.shipping) return { error: `${repo} is already being approved (${now.shipping.step || "starting"}): it finishes by itself.` };
     if (approveSum(now) !== String(a.sum || "")) return { refused: true, error: `The work in ${repo} changed since your phone showed it, so it wasn't approved. Look at what's there now, then approve that.` };
-    const ap = readJson(PATHS.applied, { ids: {}, approvals: [] }), entry = { id: o.id, repo, phone: phone.name, at: Date.now(), status: "approving" };
+    const ap = readJson(PATHS.applied, { ids: {}, approvals: [] }), entry = { id: o.id, repo, phone: phone.name, at: Date.now(), sum: String(a.sum || ""), status: "approving" };
+    // an agent still at work there, or an Approve already going: it waits for that, and goes then (retryApprovals)
+    if (now.running || now.shipping) { entry.status = "waiting"; entry.why = now.shipping ? "another Approve there finishes" : "its agent finishes"; }
     ap.approvals = [...(ap.approvals || []), entry].slice(-30); writeJson(PATHS.applied, { ...ap, ids: ap.ids || {}, approvals: ap.approvals });
-    // Approve takes a while (a branch, a push, a PR): it carries on here, and the copy says how it went
-    Promise.resolve().then(() => (approveHook || defaultApprove)(repo, !!now.untasked)).then((r) => r || {}, (e) => ({ error: String((e && e.message) || e) })).then((r) => {
-      const cur = readJson(PATHS.applied, { ids: {}, approvals: [] }), x = (cur.approvals || []).find((y) => y.id === o.id);
-      if (x) { x.status = r.error ? "failed" : "approved"; if (r.error) x.error = plainText(r.error, 200); if (r.pr) x.pr = r.pr; x.done = Date.now(); writeJson(PATHS.applied, cur); }
-      snapCache = null;
-    });
+    if (entry.status === "waiting") return { ok: true, waiting: true, note: `Approving ${repo} as soon as ${entry.why}.` };
+    startApprove(entry, !!now.untasked);
     return { ok: true, started: true };
   }
   if (o.op === "code.give") {
@@ -475,7 +471,45 @@ async function applyOps(ops, phone) {
   return { results, state };
 }
 // Approved from a phone, lately: Home and the Workdesk say so.
-function phoneApprovals(now = Date.now()) { return (readJson(PATHS.applied, {}).approvals || []).filter((a) => now - a.at < 24 * 3600000); }
+// Approve takes a while (a branch, a push, a PR): it carries on here, and the copy says how it went. A
+// refusal that's only for now (an agent still at work there, an Approve already going, checks still
+// running) isn't a failure: it waits and goes again (retryApprovals). On 23 Oct 2026 an Approve from the
+// phone met an ops run that ended six minutes later, and "failed" sat on Home all day.
+const BUSY = /\b(still at work|still working|already being approved|already approving|checks are still running|checks haven't started|is approving)\b/i, WAIT_MAX = 6 * 3600000;
+function settleEntry(id, patch) {
+  const cur = readJson(PATHS.applied, { ids: {}, approvals: [] }), x = (cur.approvals || []).find((y) => y.id === id);
+  if (x) { Object.assign(x, patch); writeJson(PATHS.applied, cur); }
+  snapCache = null;
+}
+function startApprove(entry, untasked) {
+  settleEntry(entry.id, { status: "approving", why: undefined });
+  return Promise.resolve().then(() => (approveHook || defaultApprove)(entry.repo, untasked)).then((r) => r || {}, (e) => ({ error: String((e && e.message) || e) })).then((r) => {
+    if (r.error && BUSY.test(r.error)) return settleEntry(entry.id, { status: "waiting", why: "its agent finishes" });
+    settleEntry(entry.id, { status: r.error ? "failed" : "approved", ...(r.error ? { error: plainText(r.error, 200) } : {}), ...(r.pr ? { pr: r.pr } : {}), done: Date.now() });
+  });
+}
+// The waiting ones: gone ahead once nothing's in the way, if the work is still what the phone showed.
+async function retryApprovals({ now = Date.now(), pending = null } = {}) {
+  const ap = readJson(PATHS.applied, { ids: {}, approvals: [] }), waiting = (ap.approvals || []).filter((x) => x.status === "waiting");
+  if (!waiting.length) return [];
+  let list = pending; if (!list) { const { pendingReview, forgetReview } = await import("./tasks.mjs"); forgetReview(); list = pendingReview(); }
+  const out = [];
+  for (const x of waiting) {
+    const cur = list.find((r) => r.repo === x.repo && r.path && ((r.tasks || []).length || (r.files || []).length));
+    if (!cur) { settleEntry(x.id, { status: "gone", done: now }); out.push({ id: x.id, gone: true }); continue; } // approved another way, or nothing left: nothing to say
+    if (x.sum && approveSum(cur) !== x.sum) { settleEntry(x.id, { status: "failed", error: "The work there changed while it waited, so it wasn't approved. Look at what's there now, then approve that.", done: now }); out.push({ id: x.id, changed: true }); continue; }
+    if (cur.running || cur.shipping) { if (now - x.at > WAIT_MAX) { settleEntry(x.id, { status: "failed", error: `It was still busy ${Math.round(WAIT_MAX / 3600000)} hours later, so it wasn't approved. Approve it again when it's free.`, done: now }); out.push({ id: x.id, timedOut: true }); } continue; }
+    startApprove(x, !!cur.untasked); out.push({ id: x.id, started: true });
+  }
+  return out;
+}
+// What Home shows of today's approvals from the phone: a failure only while it's news (two hours, and not
+// once that project was approved again since); one that ended with nothing left to do, not at all.
+const FAIL_SHOWN = 2 * 3600000;
+function phoneApprovals(now = Date.now()) {
+  const all = (readJson(PATHS.applied, {}).approvals || []).filter((a) => now - a.at < 24 * 3600000 && a.status !== "gone");
+  return all.filter((a, i) => a.status !== "failed" || (now - (a.done || a.at) < FAIL_SHOWN && !all.slice(i + 1).some((b) => b.repo === a.repo)));
+}
 
 // ---- saying it's here (mdns.mjs) ----------------------------------------------------------------
 let mdns = null;
@@ -1006,4 +1040,4 @@ const phoneState = () => (PHONE ? computerView() : linkState());
 // While the app runs: the computer listens if it's switched on; the phone asks if it's paired.
 function startPhone() { if (PHONE) startComputerPoll(); else startPhoneLink(); }
 
-export { applyOps, codeAsk, codeIn, siteKey, parseProof, proofOf, PROOF, codeSites, setCodeRelay, heardCode, computerCopy, reportsForPhone, cutReport, PHONE_REPORTS, REPORT_CAP, PORT, PHONE, ANDROID_APP, PHONE_OPS, lanAddresses, mdnsAddresses, linkState, newCode, unpairPhone, setRelay, startPhoneLink, stopPhoneLink, setPhoneLink, setPhoneApprove, phoneApprovals, snapshot, computerUrl, parsePairLink, pairLink, computerState, computerView, waitingNotice, findComputers, pairComputer, forgetComputer, pollComputer, queueChange, dismissNote, startComputerPoll, phoneState, startPhone, newKeys, linkKey, fingerprint, seal, unseal, relayOf, answer, fitRelay, RELAY_MAX, relaunchEnv, adbLink, freePhonePort, usePhonePort, portHolder, ask };
+export { retryApprovals, BUSY as APPROVE_BUSY, approveSum, applyOps, codeAsk, codeIn, siteKey, parseProof, proofOf, PROOF, codeSites, setCodeRelay, heardCode, computerCopy, reportsForPhone, cutReport, PHONE_REPORTS, REPORT_CAP, PORT, PHONE, ANDROID_APP, PHONE_OPS, lanAddresses, mdnsAddresses, linkState, newCode, unpairPhone, setRelay, startPhoneLink, stopPhoneLink, setPhoneLink, setPhoneApprove, phoneApprovals, snapshot, computerUrl, parsePairLink, pairLink, computerState, computerView, waitingNotice, findComputers, pairComputer, forgetComputer, pollComputer, queueChange, dismissNote, startComputerPoll, phoneState, startPhone, newKeys, linkKey, fingerprint, seal, unseal, relayOf, answer, fitRelay, RELAY_MAX, relaunchEnv, adbLink, freePhonePort, usePhonePort, portHolder, ask };
