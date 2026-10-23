@@ -2,6 +2,20 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one), for anyone who installs the app: what changed in it, never whose work it was (no projects, people, accounts, services, run ids or task wording of the person who made it). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.82.1 — 2026-10-23
+
+- **Approve keeps what's yours out of public repos.** Before it pushes a change to a public repository, Approve checks what the change adds, on your computer: the names of your projects, the people you work with, the servers you connect to and this computer's own addresses. A change that names any of them isn't pushed; Approve says what it found and where, so it can be taken out first. Private repos are yours, and aren't checked.
+- **"Merge once checks pass" waits for checks that haven't started.** A pull request opened a moment ago has no checks yet, and that read as "all passed", so it could merge before its checks had run. It now waits for them.
+- **The privacy check covers addresses too.** Symbiot's own tests now fail if any file holds an address of the computer they run on, or of a server it has signed in to.
+
+## 0.82.0 — 2026-10-23
+
+- **The Vault, rebuilt as a proper password manager.** Everything saved is grouped by the service it belongs to, with readable names ("Twilio · Auth token", not "twilio-auth-token"), and the one you pick opens in a panel beside the list, or as its own page on a phone. Search finds names, services and emails, and filters narrow it to passwords, keys or codes. Press / to search, and use the arrow keys to move through the list.
+- **Unlock where you are.** Pressing Show, Copy or any change while it's locked brings up the unlock box over the page, then does what you pressed. It stays unlocked while you use it and locks 5 minutes after you stop. The first time, the same box sets your vault PIN.
+- **Keep it tidy.** Add a login, key or set of codes yourself; rename one (agents then ask for it by its new name); delete one, with a few seconds to undo. "Needs a look" lists what's worth fixing: a name that says nothing ("token"), the same value saved twice (compared on this computer, never shown), a file's name saved as a password, and code sets that are all used. Each comes with its fix.
+- **Values read clearly.** A shown value has its digits and symbols coloured, so 0 and O and 1 and l can't be confused. A set of codes lists the unused ones first, and copying shows "Copied" right on the button.
+- **UI work isn't merged before its design review passes.** While Symbiot's design critic still has a page under review or sent back for fixes, an agent can't merge into that repo; after two rounds the decision is yours. The critic and the builder now also judge whether a page does its whole job (finding, adding, changing, removing, undoing, first use, phone), not only whether it looks tidy.
+
 ## 0.81.2 — 2026-10-23
 
 - **An agent can't restart the Symbiot app it is running under.** Stopping or restarting the app from a run ended that run halfway with nobody told. Now the command is held, and the run asks you to reopen Symbiot instead, then carries on with the rest.

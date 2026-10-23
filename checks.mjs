@@ -172,11 +172,11 @@ function partsOf(file) {
 }
 
 // ---- who's who: people and customers --------------------------------------------------------
-const PERSON_COL = /\b(owner|employee|person|traveller|attendees?|assigned( to)?|assignee|caller|host|presenter|chair|facilitator|on duty|standby|primary|backup|taken over by|release manager|account executive|assigned ae|sdr|writer|designer|subject expert|who|lead|new user|read by|done by|counted by|raised by|reported by|logged by|checked by|approved by|prepared by|requester|requested by|reviewer|action owner|follow up owner|success contact|kestrel contact|people|waiting on|incident lead)\b/;
+const PERSON_COL = /\b(owner|employee|person|traveller|attendees?|assigned( to)?|assignee|caller|host|presenter|chair|facilitator|on duty|standby|primary|backup|taken over by|release manager|account executive|assigned ae|sdr|writer|designer|subject expert|who|lead|new user|read by|done by|counted by|raised by|reported by|logged by|checked by|approved by|prepared by|requester|requested by|reviewer|action owner|follow up owner|success contact|falcon contact|people|waiting on|incident lead)\b/;
 // The person columns that say who does a thing on the row's date (raised by,
 // approved by say who did something else, earlier).
 const DOER_COL = /\b(owner|employee|traveller|attendees?|assigned( to)?|assignee|caller|host|presenter|chair|facilitator|on duty|standby|primary|backup|taken over by|release manager|assigned ae|sdr|writer|designer|who|lead|new user|read by|done by|counted by|action owner|follow up owner)\b/;
-const NOT_DOER_COL = /\b(business owner|internal owner|kestrel owner|account owner|relationship owner|policy owner|owner \(signs off\)|line manager|lead id|lead time)\b/;
+const NOT_DOER_COL = /\b(business owner|internal owner|falcon owner|account owner|relationship owner|policy owner|owner \(signs off\)|line manager|lead id|lead time)\b/;
 const WHEN_COL = /\b(date|dates|due|deadline|planned|booked|scheduled|publish|post date|call( 1)? date|meeting date|when|target|by|travel dates|go live|time or deadline|filming|day|weekend)\b/;
 const NOT_WHEN_COL = /\b(booked on|raised|logged|applied|created|closed|signed|received|approved|submitted|resolved|sent|last|since|purchase|acknowledged|captured|first response|done on|fixed on|completed|reported|opened|start date|end date|renewal|contract|expiry|expires|valid|warranty|replacement|dispatched|delivery|invoice|issue date|bought|effective|discovered|contained|added|reviewed|checked|updated|identified|filing|registration|birth|joined|ends|period|window|notice|scan|customer since|actual|as at|disclosure|confidentiality|response|week commencing|wc)\b/;
 const NAME_TOKEN = "[A-Z](?:[a-z]+|'[A-Z][a-z]+)(?:-[A-Z][a-z]+)?";

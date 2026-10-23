@@ -1,7 +1,7 @@
 // Release notes are for anyone who installs Symbiot: they never name the maker's lanes,
 // people, accounts, providers, run ids or task wording. The 0.66.6 notes (16 Oct 2026)
 // went out in the tasks' own words and every update panel showed them.
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execSync } from "node:child_process";
@@ -47,7 +47,7 @@ try {
   const p = o.publicItems(old, deny);
   ok("with your list: none of them goes out", p.kept.length === 0 && p.dropped.length === 5, p);
   ok("...and each says why: a lane, a run id, a provider (written apart, \"SMS Portal\"), a dated ask, a person", /bookly/.test(p.dropped[0].why + p.dropped[0].text) && /act-2ae1923d/.test(o.leaksIn(old[1]).map((x) => x.term).join()) && o.leaksIn(old[2], deny).some((x) => x.term === "SMSPortal") && /Fri 16 Oct/.test(o.leaksIn(old[3]).map((x) => x.term).join()) && o.leaksIn(old[4], deny).some((x) => x.term === "Pat"), p.dropped);
-  ok("with no list (CI): a run id, a run's copy, a dated ask and who asked still are", o.leaksIn(old[0]).length && o.leaksIn(old[1]).length && o.leaksIn(old[3]).length && o.leaksIn("Sent the invite to pat@example.com").length && o.leaksIn("Fixed the relay on 13.51.104.186").length, "");
+  ok("with no list (CI): a run id, a run's copy, a dated ask and who asked still are", o.leaksIn(old[0]).length && o.leaksIn(old[1]).length && o.leaksIn(old[3]).length && o.leaksIn("Sent the invite to pat@example.com").length && o.leaksIn("Fixed the relay on 10.20.30.40").length, "");
   ok("not a change to the app: deploying it, finding out why, another lane's part of a test", o.internalOnly(old[2]) && o.internalOnly(old[3]) && o.internalOnly("- Publish 0.66.7") && !o.internalOnly("Fixed sign-ins dropping out of the built-in browser."), "");
 
   console.log("WHAT MAY GO OUT — generic notes pass");
@@ -86,6 +86,39 @@ try {
       }
     }
     ok(`no tracked file names a personal mail address${names.length ? `, nor any of the ${names.length} private names` : ""} (${files.length} files)`, !found.length, found);
+  }
+
+  // 23 Oct 2026: the names were checked, but not the addresses. Test fixtures held this computer's own
+  // home-network and Tailscale addresses, the phone's, and two real servers' (one in ssh's known hosts),
+  // copied from real runs. CI on GitHub can't know which addresses are the maker's; this computer can.
+  // So, run here: no tracked file holds an address of this computer, or of a server it has signed in to.
+  {
+    const { execSync, spawnSync } = await import("node:child_process"), os = await import("node:os"), root = new URL("..", import.meta.url).pathname;
+    const realHome = os.userInfo().homedir, kh = join(realHome, ".ssh", "known_hosts");
+    const mine = new Set(Object.values(os.networkInterfaces()).flat().filter((a) => a && a.family === "IPv4" && !a.internal).map((a) => a.address));
+    const files = execSync("git ls-files", { cwd: root, encoding: "utf8" }).split("\n").filter((f) => f && !/\.(png|ico|jpg|jpeg|gif|webp|woff2?|ttf|apk|jar|keystore)$|package-lock\.json$/.test(f));
+    const DOC = /^(127\.|0\.|255\.|192\.0\.2\.|198\.51\.100\.|203\.0\.113\.|224\.)/, seen = new Map();
+    for (const f of files) { let t = ""; try { t = readFileSync(join(root, f), "utf8"); } catch { continue; } for (const m of t.matchAll(/(?<![\d.])(\d{1,3}(?:\.\d{1,3}){3})(?![\d])/g)) if (!DOC.test(m[1]) && m[1].split(".").every((x) => +x < 256) && !seen.has(m[1])) seen.set(m[1], f); }
+    const known = (ip) => { try { return existsSync(kh) && /\S/.test(spawnSync("ssh-keygen", ["-F", ip, "-f", kh], { encoding: "utf8", timeout: 5000 }).stdout || ""); } catch { return false; } };
+    const found = [...seen].filter(([ip]) => mine.has(ip) || known(ip)).map(([ip, f]) => `${f}: an address of ${mine.has(ip) ? "this computer" : "a server this computer has signed in to"}`);
+    ok(`no tracked file holds an address of this computer or of a server it has signed in to (${seen.size} addresses checked)`, !found.length, found);
+  }
+
+  console.log("A PUBLIC REPO — Approve holds a change that names what's yours, before it's pushed (23 Oct 2026)");
+  {
+    const diff = "diff --git a/t.mjs b/t.mjs\n--- a/t.mjs\n+++ b/t.mjs\n@@ -3,0 +4,3 @@\n+const WATCH_GRACE = 1;\n+// the bookly client asked prod-box for it, from 192.168.1.40\n+const ok = 1; // Cloudflare's DNS, 21 Oct\n";
+    const added = o.addedLines(diff);
+    ok("the lines a diff adds, with their file and line", added.length === 3 && added[1].file === "t.mjs" && added[1].line === 5, added);
+    const hits = o.privateIn(added, [...deny, { term: "Grace", why: "a person" }], { mine: ["192.168.1.40"] });
+    ok("a lane, a server and this computer's address are held; a provider, a month and a word inside an identifier aren't", hits.map((h) => h.term).sort().join() === "192.168.1.40,bookly,prod-box" && hits.every((h) => h.line === 5), hits);
+    const rp = join(HOME, "projects", "pub"), bare = join(HOME, "pub.git"); mkdirSync(rp, { recursive: true });
+    const e2 = { cwd: rp, encoding: "utf8", env: { ...process.env, GIT_CONFIG_NOSYSTEM: "1" } };
+    execSync(`git init -q --bare ${bare} && git init -q -b main && git config user.email t@x.co && git config user.name T && git remote add origin ${bare} && printf 'x\\n' > a.js && git add -A && git commit -qm init && git push -q origin main`, e2);
+    writeFileSync(join(rp, "b.js"), "// ask the bookly team\n");
+    const held = await t.shipWithBump(rp, ["Add b"], { bump: false, verify: false, pr: false, publicRepo: true, deny });
+    ok("shipping it to a public repo: committed, not pushed, and it says what and where", held.privacy && held.privacy[0].term === "bookly" && /not pushed: this repo is public/.test(held.note || "") && /b\.js:1/.test(held.note || "") && !execSync(`git -C ${bare} branch --list`, e2).includes("symbiot/"), held);
+    const priv = await t.shipWithBump(rp, ["Add b again"], { bump: false, verify: false, pr: false, publicRepo: false, deny });
+    ok("…a private repo is the user's own: it goes", !priv.privacy && priv.pushed, priv);
   }
 
   console.log("APPROVE — a bump's changelog takes only what may go out, and says what it left out");

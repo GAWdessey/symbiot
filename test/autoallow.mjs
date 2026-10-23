@@ -95,8 +95,8 @@ ok("continued once more on a new task", a.continueLanes({ now: later + 3, run: g
 const a2 = await import("../agents.mjs?restart=1");
 ok("...and after a restart, still not again while nothing more got ticked", a2.continueLanes({ now: later + 4, run: go, runs }).length === 0 && JSON.parse(readFileSync(a.CONTINUED_FILE, "utf8"))[lane].ticked === 1, readFileSync(a.CONTINUED_FILE, "utf8"));
 // ssh to a host this computer already knows is the owner's own machine (agents.mjs toKnownHost)
-const known = (h) => h === "92.4.133.97";
-ok("ssh, scp or rsync to a host this computer already knows is your own machine", ["Bash(ssh ubuntu@92.4.133.97:*)", "Bash(scp:* ubuntu@92.4.133.97:*)", "Bash(ssh -o BatchMode=yes ubuntu@92.4.133.97:*)"].every((r) => a.toKnownHost(r, known)), "");
+const known = (h) => h === "198.51.100.23";
+ok("ssh, scp or rsync to a host this computer already knows is your own machine", ["Bash(ssh ubuntu@198.51.100.23:*)", "Bash(scp:* ubuntu@198.51.100.23:*)", "Bash(ssh -o BatchMode=yes ubuntu@198.51.100.23:*)"].every((r) => a.toKnownHost(r, known)), "");
 ok("...but not a host it has never met, a wildcard host, or a push", !a.toKnownHost("Bash(ssh root@other.example:*)", known) && !a.toKnownHost("Bash(ssh ubuntu@*:*)", known) && !a.toKnownHost("Bash(git push:*)", known), "");
 // a list too wide to turn on goes back to the agent, never to the user
 ask("can I run my build script?");
@@ -145,9 +145,9 @@ ok("...and a long question a phone shows cut short (…) is still found", a.answ
 // matched nothing, and the user was told "Pick or type at least one answer."
 const winQ = "Can I log in to the LoveLink server read-only to check what's actually deployed?";
 const winOpts = ["👤 You (only you: a permission): allow the list in .symbiot/allowlist.proposed.json (recommended)", "skip it, the reply already asks the developer for the commit hash and git status"];
-const winMd = `## Questions\n\n### ${winQ}\nThe live site checks are done. What's left is confirming the commit on 13.51.104.186.\n- ${winOpts.join("\n- ")}\n\n### OK to send the drafted reply to the developer?\nIt's at the end of the report.\n- 🤖 Agent: send it (recommended)\n- hold it for now\n`;
+const winMd = `## Questions\n\n### ${winQ}\nThe live site checks are done. What's left is confirming the commit on 203.0.113.44.\n- ${winOpts.join("\n- ")}\n\n### OK to send the drafted reply to the developer?\nIt's at the end of the report.\n- 🤖 Agent: send it (recommended)\n- hold it for now\n`;
 writeFileSync(join(s, "QUESTIONS.md"), winMd);
-propose(["Bash(ssh ubuntu@13.51.104.186 git log:*)"]);
+propose(["Bash(ssh ubuntu@203.0.113.44 git log:*)"]);
 const winCard = plainAsk(run, a.agentQuestions(run, "").questions[0]);
 ok("5) the LoveLink card shows plain words, and keeps the agent's question to answer it by", winCard.q !== winQ && winCard.raw === winQ && winCard.labels[0] === "Allow (recommended)", winCard);
 const skip = a.answerQuestions(run, [{ q: winCard.raw || winCard.q, a: winOpts[1] }]);
@@ -188,13 +188,13 @@ ok("...while one still open asks as before", live && !live.done && live.labels[0
   const srvQ = "Can I log in to the LoveLink server read-only to check what's actually deployed?";
   writeFileSync(join(s, "ANSWERS.md"), "# Answers\n");
   writeFileSync(join(s, "QUESTIONS.md"), `## Questions\n\n### ${srvQ}\nThe guard blocked the key.\n- 👤 You (only you: a permission): allow the list in .symbiot/allowlist.proposed.json (recommended)\n- skip it\n`);
-  propose(["Bash(ssh -o BatchMode=yes *@13.51.104.186 git -C * log *)", "Bash(ssh -o BatchMode=yes *@13.51.104.186 git -C * status *)"]);
+  propose(["Bash(ssh -o BatchMode=yes *@203.0.113.44 git -C * log *)", "Bash(ssh -o BatchMode=yes *@203.0.113.44 git -C * status *)"]);
   const q = a.agentQuestions(run, "").questions[0];
-  ok("every screen gets it in plain words: no file named, the choice says Allow", q.q === srvQ && !/\.json|\.symbiot/.test(q.shown) && /connect to the computer at 13\.51\.104\.186/.test(q.shown) && q.labels[0] === "Allow (recommended)" && q.labels[1] === "skip it", q);
+  ok("every screen gets it in plain words: no file named, the choice says Allow", q.q === srvQ && !/\.json|\.symbiot/.test(q.shown) && /connect to the computer at 203\.0\.113\.44/.test(q.shown) && q.labels[0] === "Allow (recommended)" && q.labels[1] === "skip it", q);
   const r = a.answerQuestions(run, [{ q: q.q, a: q.options[0] + " Read-only: check the deployed commit, git status and served files." }]);
   const set = JSON.parse(readFileSync(join(run, ".claude", "settings.local.json"), "utf8"));
   const ans = readFileSync(join(s, "ANSWERS.md"), "utf8");
-  ok("Allow with words that sound like git turns the list on", r.ok && (set.permissions.allow || []).some((x) => /13\.51\.104\.186 git -C \* log/.test(x)), [r, set.permissions.allow]);
+  ok("Allow with words that sound like git turns the list on", r.ok && (set.permissions.allow || []).some((x) => /203\.0\.113\.44 git -C \* log/.test(x)), [r, set.permissions.allow]);
   ok("...and never tells the agent the permission is its own git work", !/that git work is yours/.test(ans), ans.slice(-400));
 }
 // An answer that is another open question's option is refused (LinkedIn sign-in, 2026-10-13)

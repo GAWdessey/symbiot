@@ -849,7 +849,7 @@ async function cmdPhone() {
     if (!phone) return onlyPhone();
     // the code may be typed as shown, in two halves: 123 456; or the whole link the QR holds
     const [address, ...code] = rest, link = parsePairLink(address) ? address : "";
-    if (!link && (!address || !code.length)) return fail(`Give the computer's address and the 6-digit code it shows:  ${ask}  (like 192.168.1.21:7392 123456)`);
+    if (!link && (!address || !code.length)) return fail(`Give the computer's address and the 6-digit code it shows:  ${ask}  (like 192.168.1.40:7392 123456)`);
     const body = link ? { link } : { address, code: code.join("") };
     const r = (app && await viaApp("/api/phone/pair", body)) || await pairComputer(body.address, body.code, { link });
     if (r.error || !r.paired) return fail(r.error || "Pairing didn't work.");
@@ -904,7 +904,7 @@ async function cmdPhone() {
   On the phone (Termux):
   symbiot phone                         the computer it's paired with
   symbiot phone pair <address> <code>   pair with your computer, with its address
-                                        (like 192.168.1.21:7392) and the code it shows
+                                        (like 192.168.1.40:7392) and the code it shows
   symbiot phone pair <link>             or with the link its QR holds
   symbiot phone check                   ask it what's new now
   symbiot phone forget                  stop asking it

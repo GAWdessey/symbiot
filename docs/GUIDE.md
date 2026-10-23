@@ -372,7 +372,7 @@ notification too when it's new. Experimental.
 In Termux:
 
 ```bash
-symbiot phone pair 192.168.1.21:7392 123456   # the computer's address and the code it shows
+symbiot phone pair 192.168.1.40:7392 123456   # the computer's address and the code it shows
 symbiot phone pair 'https://symbiot.co.za/pair#a=…'   # or the link its QR holds
 symbiot phone                                 # the computer it's paired with
 symbiot phone check                           # ask it now
