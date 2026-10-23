@@ -2,6 +2,12 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one), for anyone who installs the app: what changed in it, never whose work it was (no projects, people, accounts, services, run ids or task wording of the person who made it). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.90.1 — 2026-10-23
+
+- **Updates only show what you can see and act on.** A note saying something waited on you ("waiting on one yes from you", "the texts wait only for your Go") sent you looking for a question that wasn't on screen. Anything that needs you is already a card on Home, with its buttons, so those notes no longer appear and Symbiot no longer writes them.
+- **Notes that are out of date are no longer shown.** A note stays at most 12 hours, and a newer note about the same project replaces the older one. "Waits for your Go" no longer sits beside "it went out".
+- **A clipped note opens in full when clicked,** and a suggested change to how Symbiot works shows the whole rule.
+
 ## 0.90.0 — 2026-10-23
 
 - **Background work, all in one place.** Symbiot's background jobs used to be about 25 separate timers, each quietly swallowing its own errors: checking the agents, judging questions, following goals, reading your watches and the rest. They're now named jobs in one list. A job never runs twice at once. When one fails, what it said is kept rather than lost. And the state of every job (when it last ran, how long it took, what failed) can be read at `/api/timers`.
