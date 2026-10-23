@@ -2,6 +2,10 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one), for anyone who installs the app: what changed in it, never whose work it was (no projects, people, accounts, services, run ids or task wording of the person who made it). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.82.2 — 2026-10-23
+
+- Read-only: change no code, commit nothing, push nothing, send nothing.
+
 ## 0.82.1 — 2026-10-23
 
 - **Approve keeps what's yours out of public repos.** Before it pushes a change to a public repository, Approve checks what the change adds, on your computer: the names of your projects, the people you work with, the servers you connect to and this computer's own addresses. A change that names any of them isn't pushed; Approve says what it found and where, so it can be taken out first. Private repos are yours, and aren't checked.
