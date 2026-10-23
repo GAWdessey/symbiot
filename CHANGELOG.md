@@ -10,9 +10,10 @@ What each Symbiot release brought, newest first. When Approve bumps the version,
   - a deploy needs a check of the live address after it.
 
   An item without that evidence is reopened, with what's missing, and its agent starts again. After two tries it comes to you, saying what couldn't be confirmed. Investigations, reports and drafts aren't checked this way, and UI work keeps its design critic.
+
 ## 0.85.1 — 2026-10-23
 
-- Read-only: change no code, commit nothing, push nothing, send nothing.
+- **Clearer asks from agents.** A question about spending money now has to say what it's for and why it beats a cheaper route already on the table. A step only you can do says exactly what to do and where, and why it's yours. And agents no longer hand you a report to read as your step: they check it's current, sum it up in a few lines, and ask the one question that's left.
 
 ## 0.85.0 — 2026-10-23
 

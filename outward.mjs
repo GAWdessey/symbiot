@@ -118,7 +118,9 @@ function leaksIn(line, deny = []) {
 }
 // A task that's about the work, not a change to the product: shipping or deploying
 // it, looking into something, another lane's part of a test, a round's report.
-const INTERNAL = /^(?:deploy|publish|release|ship|find out|look into|investigate|ask|tell|email|send|chase|follow up|remind|wait|merge|round done)\b|\b(?:part of the test|still waits on|lane itself|the release run)\b/i;
+// …and a line that's the agent's own instructions, not what changed ("Read-only: change no code, commit
+// nothing…" went out as 0.85.1's whole note, 23 Oct 2026)
+const INTERNAL = /^(?:deploy|publish|release|ship|find out|look into|investigate|ask|tell|email|send|chase|follow up|remind|wait|merge|round done|read-only|change no code|commit nothing|push nothing|do not|don['’]t|never)\b|\b(?:part of the test|still waits on|lane itself|the release run)\b/i;
 const internalOnly = (line) => INTERNAL.test(String(line || "").replace(/^\s*(?:[-*+]|\d+[.)])\s+/, "").trim());
 // The lines that may go out ({ kept }) and those that can't, with why ({ dropped }).
 function publicItems(items = [], deny = []) {
