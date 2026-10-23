@@ -346,7 +346,7 @@ async function frictionTick(deps = {}) {
 function overridesUpdates({ dismissed = new Set() } = {}) {
   if (isOff()) return [];
   return loadProposals().list.filter((p) => p.status === "pending" && !dismissed.has(`ovr:${p.id}`)).slice(-3).reverse()
-    .map((p) => ({ id: `ovr:${p.id}`, key: `ovr:${p.id}`, title: `Change how Symbiot works? ${clip(p.rule, 140)} (${p.why.toLowerCase()})`, lane: "Customisations", overrides: true, accept: { id: p.id, label: "Apply" } }));
+    .map((p) => ({ id: `ovr:${p.id}`, key: `ovr:${p.id}`, title: `Change how Symbiot works? ${clip(p.rule, 600)} (${p.why.toLowerCase()})`, lane: "Customisations", overrides: true, accept: { id: p.id, label: "Apply" } }));
 }
 // Settings → Customisations.
 function overridesState({ cfg } = {}) {

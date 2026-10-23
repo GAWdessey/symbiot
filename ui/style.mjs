@@ -300,7 +300,7 @@ body.lq-light .lqblob .bwhy{color:#5A6470}
 #lqupd .lqans{font-size:12px;line-height:1.4;white-space:pre-wrap;opacity:.9}#lqupd .lqans.err{color:#E88}
 body.lq-light #lqupd .lqmrow button{border-color:rgba(20,30,45,.14);background:rgba(20,30,45,.04)}body.lq-light #lqupd .lqmrow .lqdo{background:#151A21;color:#FFFFFF}body.lq-light #lqupd .lqmv+.lqmv{border-top-color:rgba(20,30,45,.08)}
 #lqupd .lqupi+.lqupi{border-top:1px solid rgba(255,255,255,.06)}
-#lqupd .lqupt{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2}
+#lqupd .lqupt{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2}#lqupd .lqupt{cursor:pointer}#lqupd .lqupt.full{display:block;-webkit-line-clamp:unset;line-clamp:none;overflow:visible}
 #lqupd .lqupt b{color:#ECE9E4;font-weight:600}
 #lqupd .lqupr,#lqupd .lqupx{border:1px solid rgba(255,255,255,.14);background:transparent;color:#ECE9E4;border-radius:8px;padding:4px 9px;font:500 12px var(--sans);cursor:pointer;min-height:28px}
 body.lq-light #lqupd .lqupb{border-color:rgba(20,30,45,.16);background:#FFFFFF;color:#151A21}

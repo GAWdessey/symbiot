@@ -138,7 +138,7 @@ const RULES_TEXT = `Moves, as a JSON list (best first, at most 5):
 [{"kind":"act|prepare|notice|focus","what":"…","why":"…","lane":"…","confidence":0.0,"interrupt":"now|digest|never","event":"…"}]
 - act: work an agent can start: the next step on stalled work, a check, research, a draft, a deploy CHECK after a merge. If it would send, post, pay, delete, merge or deploy, still say it plainly: Symbiot asks the user first.
 - prepare: something they'll need next, written up as a report (a follow-up's draft, a status summary, a plan). Never sent.
-- notice: one line they should know (a risk, a deadline, the same failure again and again).
+- notice: one line they should know (a risk, a deadline, the same failure again and again). Never a notice that something waits on them (a yes, a Go, an answer, a step, a check of theirs): what waits on them is already a card on Home, with its buttons, so a notice saying so only sends them looking for it.
 - focus: an addition to their focus file you'd suggest from a pattern you see ("what": the line to add). They decide.
 - what: one plain sentence. why: one plain sentence, what calls for it. lane: the project if one fits, else "".
 - confidence 0..1; leave out anything under 0.6, anything in hand or done, anything listed as turned down, and anything their focus says to ignore.
@@ -174,7 +174,7 @@ async function intuitionPass(deps = {}, { now = Date.now(), force = false, event
   const shunned = Object.entries(st.weights).filter(([, w]) => w <= SHUN).map(([k]) => k);
   const prompt = `Their focus (focus.md, theirs to edit):\n${focus.trim() || "(empty: they haven't written one)"}\n\n${ask}\n\nAlready done on its own in the last day (don't repeat):\n${recent.length ? recent.map((m) => `- ${m.kind}: ${m.what}`).join("\n") : "- nothing"}\n\nTurned down by the user before (kind|lane):\n${shunned.length ? shunned.map((k) => `- ${k}`).join("\n") : "- nothing"}`;
   const raw = await askMoves(deps.write, system + (() => { try { return promptFor("intuition"); } catch { return ""; } })(), prompt);
-  const { moves, rejected } = choose(Array.isArray(raw) ? raw : [], { st, recent, cfg, now, mode });
+  const { moves, rejected } = choose((Array.isArray(raw) ? raw : []).filter((m) => !asksOfUser(m)), { st, recent, cfg, now, mode });
   const map = val(deps.map, {}) || {};
   for (const mv of moves) carry(mv, { deps, map, st, cfg, mode, now });
   if (events) { st.evAt = now; if (!st.nudged) st.nudged = now; } // something happened: the whole picture again soon
@@ -314,12 +314,26 @@ async function digestDue(st, deps, now) {
   return { file, items: items.length };
 }
 
+// A notice that only says something waits on the user ("waiting on one yes from you", "wait only for
+// your Go", "answer only the ops run"): what waits on them is a card on Home with its buttons, and a
+// line on Updates saying so sent them looking for one they couldn't find (23 Oct 2026).
+const ASKS_USER = /\b(?:wait(?:s|ing)?(?: only)? (?:on|for) (?:one |a |your )?(?:yes|go|ok|answer|approval|reply|step)|(?:only )?for your (?:go|ok|yes)|(?:needs?|wants?) your (?:go|ok|yes|answer|approval)|answer only|check that (?:they|it) arrived|tap each link)\b/i;
+const asksOfUser = (m) => !!m && (m.kind === "notice" || m.does === "notice") && ASKS_USER.test(String(m.what || ""));
+const SHOWN_FOR = 12 * 3600000;
 // ---- where it shows -------------------------------------------------------------------------------
 // Home's Updates: urgent passes and digests from the last two days, focus proposals waiting for an OK.
+// Each pass's moves while they're news: SHOWN_FOR at most, and a move gives way to a newer pass's about the
+// same project (a "waits for your Go" stayed beside a later "it went out", 23 Oct 2026); one that only
+// says something waits on the user never shows (asksOfUser). A pass with nothing left to show goes.
 function intuitionUpdates({ now = Date.now(), dismissed = new Set() } = {}) {
-  const st = load(), out = [];
-  for (const p of st.passes.filter((x) => now - x.at < 2 * DAY && x.title && !dismissed.has(`intu:${x.id}`)).slice(-4).reverse())
-    out.push({ id: `intu:${p.id}`, key: `intu:${p.id}`, title: p.title, lane: p.mode === "watch" ? "Watching" : "On its own", intuition: true, ...(p.report ? { report: p.report } : {}), moves: (p.moves || []).map((m, i) => moveView(m, i)) });
+  const st = load(), out = [], newer = new Set();
+  const passes = st.passes.filter((x) => now - x.at < SHOWN_FOR && x.title && !dismissed.has(`intu:${x.id}`)).slice(-4).reverse();
+  for (const p of passes) {
+    const moves = (p.moves || []).map((m, i) => ({ m, i })).filter(({ m }) => !asksOfUser(m) && !newer.has(m.lane || ""));
+    for (const { m } of moves) newer.add(m.lane || "");
+    if (!moves.length && !p.report && !p.digest) continue;
+    out.push({ id: `intu:${p.id}`, key: `intu:${p.id}`, title: p.digest ? p.title : titleOf(moves.map(({ m }) => m)) || p.title, lane: p.mode === "watch" ? "Watching" : "On its own", intuition: true, ...(p.report ? { report: p.report } : {}), moves: moves.map(({ m, i }) => moveView(m, i)) });
+  }
   for (const f of st.proposals.filter((x) => !x.done && !dismissed.has(`intu:focus:${x.id}`)).slice(-3))
     out.push({ id: `intu:focus:${f.id}`, key: `intu:focus:${f.id}`, title: `Add to your focus? ${f.line}`, lane: "On its own", intuition: true, accept: { id: f.id, label: "Add it" } });
   return out;
@@ -391,4 +405,4 @@ async function intuitionTick(deps = {}, { now = Date.now() } = {}) {
   return { events: ev, pass: await intuitionPass(deps, { now }) };
 }
 
-export { moveView, doMove, markMove, moveContext, noteChange, askMoves, SYSTEM as INTUITION_SYSTEM, EVENT_SYSTEM, digest, newEvents, intuitionPass, intuitionTick, choose, carry, learn, tierOf, modeOf, channelOf, digestDue, intuitionUpdates, intuitionState, intuitionLines, acceptFocus, revoke, readFocus, writeFocus, nudge, line, SOURCES, TIERS, FILE as INTUITION_FILE, FOCUS as FOCUS_FILE, EVERY, NUDGE_GAP, BUDGET, PROMOTE_AFTER, WATCH_FIRST, FOCUS_START };
+export { asksOfUser, SHOWN_FOR, moveView, doMove, markMove, moveContext, noteChange, askMoves, SYSTEM as INTUITION_SYSTEM, EVENT_SYSTEM, digest, newEvents, intuitionPass, intuitionTick, choose, carry, learn, tierOf, modeOf, channelOf, digestDue, intuitionUpdates, intuitionState, intuitionLines, acceptFocus, revoke, readFocus, writeFocus, nudge, line, SOURCES, TIERS, FILE as INTUITION_FILE, FOCUS as FOCUS_FILE, EVERY, NUDGE_GAP, BUDGET, PROMOTE_AFTER, WATCH_FIRST, FOCUS_START };

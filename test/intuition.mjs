@@ -146,6 +146,20 @@ try {
     ok("…and it shows as done, and isn't done twice", I2.intuitionUpdates().find((x) => x.id === "intu:pu1").moves[0].state === "done" && /already under way/.test(I2.doMove("pu1", 0, {}).said));
     ok("Not useful marks it and counts that kind down", I2.markMove("pu1", 1).ok && I2.intuitionUpdates().find((x) => x.id === "intu:pu1").moves[1].state === "not useful" && JSON.parse(readFileSync(F, "utf8")).weights["notice|"] < 0);
     ok("the Ask box gets the moves as context", /Pick up the stalled recheck/.test(I2.moveContext("pu1")) && /\[done\]/.test(I2.moveContext("pu1"))); }
+
+  console.log("WHAT UPDATES SHOW — only what's still news, and never a line that something waits on you (23 Oct 2026)");
+  { const F = join(CFG, "intuition.json"), st = JSON.parse(readFileSync(F, "utf8")), now = Date.now();
+    st.passes = [
+      { id: "old1", at: now - 13 * 3600000, title: "t", moves: [{ kind: "notice", what: "A thing from yesterday", lane: "shop", does: "notice" }] },
+      { id: "p1", at: now - 3600000, title: "t", moves: [{ kind: "notice", what: "The test texts went out; the 300 broker texts wait only for your Go.", lane: "shop", does: "notice" }, { kind: "notice", what: "The cafe page is slow again", lane: "cafe", does: "notice" }] },
+      { id: "p2", at: now - 600000, title: "t", moves: [{ kind: "notice", what: "Batch 2 went out: all 300 were sent.", lane: "shop", does: "notice" }, { kind: "notice", what: "The Workspace run is waiting on one yes from you.", lane: "ops", does: "notice" }] },
+    ];
+    writeFileSync(F, JSON.stringify(st));
+    const u = I.intuitionUpdates({ now }), all = u.flatMap((x) => (x.moves || []).map((m) => m.line));
+    ok("a line that only says something waits on the user never shows (its card on Home has the buttons)", !all.some((l) => /wait(?:s|ing)? (?:only )?(?:on|for)/.test(l)), all);
+    ok("a project's newer news replaces its older; another project's stays", all.some((l) => /Batch 2 went out/.test(l)) && all.some((l) => /cafe page is slow/.test(l)) && !all.some((l) => /test texts went out/.test(l)), all);
+    ok("…and nothing older than 12 hours", !all.some((l) => /from yesterday/.test(l)) && !u.some((x) => x.id === "intu:old1"), u.map((x) => x.id));
+    ok("the same check stops a new pass writing one", I.asksOfUser({ kind: "notice", what: "Answer only the ops run." }) && !I.asksOfUser({ kind: "act", what: "Check the deploy answers" })); }
 } catch (e) { ok("ran", false, String((e && e.stack) || e)); }
 finally { rmSync(HOME, { recursive: true, force: true }); }
 console.log(`\n${fail ? "✗" : "✓"} intuition: ${pass} passed, ${fail} failed`);
