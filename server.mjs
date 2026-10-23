@@ -25,7 +25,7 @@ import { computeDrift } from "./drift.mjs";
 import { afterShip, markLive, deployTick } from "./deploy.mjs";
 import { quotaState } from "./quota.mjs";
 import { laneCap, mergeEnded, DEFAULT_CAP } from "./parallel.mjs";
-import { noteLaneIds, addTask, setTaskModel, refileTask, laneNames, toggleTask, removeTask, cancelTask, restoreTask, syncTasks, taskType, pushTasks, pendingReview, workingDiff, learnNpm, withReleases, releaseInput, approveRepo, approveChanges, sendBack, setAutoMerge, mergeWhenGreen, shipJob, shipJobOf, sendAgain, forgetUnsent, shippingPaths } from "./tasks.mjs";
+import { noteLaneIds, closeUnchanged, addTask, setTaskModel, refileTask, laneNames, toggleTask, removeTask, cancelTask, restoreTask, syncTasks, taskType, pushTasks, pendingReview, workingDiff, learnNpm, withReleases, releaseInput, approveRepo, approveChanges, sendBack, setAutoMerge, mergeWhenGreen, shipJob, shipJobOf, sendAgain, forgetUnsent, shippingPaths } from "./tasks.mjs";
 import { repoReview, repoSuggest, folderSuggest, taskChat, clearTaskChat, mailState, setMail, sentMail, produce, releaseNotes } from "./writeups.mjs";
 import { denyList } from "./outward.mjs";
 import { listSecrets, getSecret, saveSecret, markUsed, deleteSecret, scrubStored, repairFalseSaves } from "./vault.mjs";
@@ -805,7 +805,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       if (u.pathname === "/api/phone/link" && req.method === "POST") { const b = await readBody(req); return json(res, await setPhoneLink(b.on === true)); }
       if (u.pathname === "/api/phone/free" && req.method === "POST") return json(res, await freePhonePort());
       if (u.pathname === "/api/phone/port" && req.method === "POST") { const b = await readBody(req); return json(res, await usePhonePort(b.port)); }
-      if (u.pathname === "/api/phone/code" && req.method === "POST") { await startPhoneLink(); return json(res, newCode()); } // a port that was taken may be free now
+      if (u.pathname === "/api/phone/code" && req.method === "POST") { await startPhoneLink(); return json(res, newCode({ usb: true })); } // a port that was taken may be free now; the user pressed it, so a cable's phone gets it too
       if (u.pathname === "/api/phone/unpair" && req.method === "POST") { const b = await readBody(req); return json(res, unpairPhone(String(b.id || ""))); }
       if (u.pathname === "/api/phone/relay" && req.method === "POST") { const b = await readBody(req); return json(res, setRelay(b.on === true)); }
       if (u.pathname === "/api/phone/pair" && req.method === "POST") { const b = await readBody(req); return json(res, await pairComputer(b.address, b.code, { link: String(b.link || "") })); }
@@ -990,6 +990,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
   // an agent's allow list that stays inside your work is turned on by itself, and the agent carries on
   every("allow lists", 20000, () => autoAllowSweep(), { first: 4000 });
   every("triage", 15000, () => triageSweep()); // every question an agent writes is judged before it can be a card (triage.mjs)
+  every("unchanged runs", 60000, () => closeUnchanged()); // a run that changed nothing waits on no Approve (tasks.mjs)
   // what the user asked for, followed through to done or "not finished", never dropped (goals.mjs)
   const goalDeps = () => {
     let cardPaths = new Set(); try { cardPaths = new Set(onUser().map((c) => c.path).filter(Boolean)); } catch {}

@@ -23,9 +23,26 @@ const WRAP = /^(timeout|nice|nohup|env|time|command|exec)$/, GLOBAL_VALUE = /^-[
 // what on a phone's shell opens an app or acts on its screen
 const FRONTS = /\b(?:am\s+(?:start\b|start-activity\b)|cmd\s+activity\s+start-activity\b|monkey\b|input\s+(?:tap|swipe|text|keyevent|press|roll|draganddrop|motionevent|keycombination)\b)/;
 
+// what in a script's own words opens an app on a phone or acts on its screen: the shell's
+// words, or an exec's array ("am", "start" / "input", "tap")
+const FRONTS_IN = new RegExp(FRONTS.source + "|[\"'`](?:am|monkey)[\"'`]\\s*,\\s*[\"'`](?:start|start-activity|-p)\\b|[\"'`]input[\"'`]\\s*,\\s*[\"'`](?:tap|swipe|text|keyevent|press)[\"'`]");
+// A script this command runs (node x.mjs, bash x.sh, python x.py, ./x.sh), read from cwd: a launch inside
+// one is the same launch. Checked 23 Oct 2026, when the open-on-the-phone guard turned out to see only
+// adb typed on the line: `bash -c "adb shell am start …"`, `node -e …` or a script calling adb went by.
+const SCRIPT = /\.(?:m?js|cjs|sh|bash|py)$/;
+function scriptFronts(cmd, cwd) {
+  if (!cwd) return false;
+  for (const w of String(cmd || "").split(/\s+/).map((x) => x.replace(/^['"(]+|['");]+$/g, ""))) {
+    if (!SCRIPT.test(w) || /(?:^|\/)tests?\//.test(w)) continue; // (a test's fake adb opens nothing)
+    let t = ""; try { t = readFileSync(w.startsWith("/") ? w : join(cwd, w), "utf8").slice(0, 512 * 1024); } catch { continue; }
+    if (/\badb\b/.test(t) && FRONTS_IN.test(t)) return true;
+  }
+  return false;
+}
 // The adb commands in a shell command line, each as { sub, rest }: what it asks of adb, and what follows.
 // A run of Symbiot's phone check (scripts/phone-codes-check.mjs) counts as one too: it uses the phone.
-function adbCalls(cmd) {
+// adb inside another program's words (bash -c "…", node -e "…") or in a script it runs counts as well.
+function adbCalls(cmd, { cwd = "" } = {}) {
   const out = [];
   for (const part of String(cmd || "").split(/&&|\|\||;|\n|\|/)) {
     const w = part.trim().split(/\s+/).map((x) => x.replace(/^['"(]+|['")]+$/g, "")); let i = 0;
@@ -39,14 +56,19 @@ function adbCalls(cmd) {
   }
   // `adb shell "am start …"` split above at a pipe or ; inside its quotes: what's on the line still counts
   if (out.some((x) => x.sub === "shell") && FRONTS.test(cmd) && !out.some((x) => FRONTS.test(x.rest))) out.find((x) => x.sub === "shell").rest += " " + String(cmd);
+  // adb wrapped in another program's words, or in a script it runs: a launch there is still one
+  else if (!out.some((x) => x.sub === "shell" && FRONTS.test(x.rest))) {
+    if (/\badb\b/.test(cmd) && FRONTS_IN.test(cmd)) out.push({ sub: "shell", rest: String(cmd) });
+    else if (scriptFronts(cmd, cwd)) out.push({ sub: "shell", rest: String(cmd), script: true });
+  }
   return out;
 }
-const fronts = (calls) => calls.some((x) => x.sub === "shell" && FRONTS.test(x.rest));
+const fronts = (calls) => calls.some((x) => x.sub === "shell" && (x.script || FRONTS_IN.test(x.rest)));
 const onPhone = (calls) => calls.some((x) => x.sub && !HOUSEKEEPING.test(x.sub));
 
 // judge(cmd, { session, cwd, home, now }) → null (go ahead) or { why, held? }.
 function judgePhone(cmd, { session = "", cwd = "", home = homedir(), now = Date.now() } = {}) {
-  const calls = adbCalls(cmd); if (!onPhone(calls)) return null;
+  const calls = adbCalls(cmd, { cwd }); if (!onPhone(calls)) return null;
   const lock = readJson(LOCK(home), {}), mine = String(session || cwd || "");
   if (lock.who && lock.who !== mine && now - (lock.at || 0) < LOCK_MS) {
     const mins = Math.max(1, Math.round((now - lock.at) / 60000));

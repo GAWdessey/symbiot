@@ -116,9 +116,15 @@ function unreachable(text, lane, reach) {
 // lane, which could only hand it on, and that handover errored: the job stalled (16 Oct 2026).
 const SERVER_WORK = /\b(deploy\w*|restart\w*|reload\w*|live|status|logs?|check\w*|read[- ]only|ssh|server|pm2|systemctl|docker|nginx|migrat\w*)\b|\.env\b/i;
 const CODE_WORK = /\b(code|commit\w*|branch\w*|pull request|PR|refactor\w*|implement\w*|tests?|bug\w*|patch\w*|repo|function|component|endpoint)\b/i;
+// A deploy that names no server runs on one all the same: a "go ahead" on the next batch went to a
+// sandboxed repo lane, which can't deploy, so nothing moved (23 Oct 2026). ops does it, by the
+// lane's runbook (deploy.mjs).
+const DEPLOYS = /\b(?:deploy\w*|put (?:it |them |this |that )?live|go(?:es)? live|push (?:it |them )?to (?:prod|production))\b/i;
+const MAKES = /\b(?:fix|build|add|chang|writ|mak|updat|rewrit)\w*\b/i; // work for the lane before the deploy
 function serverOnly(text, lane, reach) {
   const far = unreachable(text, lane, reach), t = String(text || "");
-  return far.length && SERVER_WORK.test(t) && !CODE_WORK.test(t) ? far : [];
+  if (far.length) return SERVER_WORK.test(t) && !CODE_WORK.test(t) ? far : [];
+  return reach && reach.sandboxed && String(lane).toLowerCase() !== "ops" && DEPLOYS.test(t) && !CODE_WORK.test(t) && !MAKES.test(t) ? ["the server it deploys to"] : [];
 }
 
 export { vaultKeys, mappedSites, laneReach, keyedSites, linkedHosts, sshHosts, envProviders, laneKeys, reposSandboxed, unreachable, serverOnly };

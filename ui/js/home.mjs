@@ -124,6 +124,7 @@ else if((d.kind==='you'||d.kind==='feed')&&at[d.shape]!=null)links.push([at[d.sh
 function lqHomeLine(h){var el=$('lqline'),b=document.body,t='',pc=h.computer,ap=(h.phoneApproved||[]).slice(-1)[0];
 if(pc&&pc.away)t="<b>"+esc(pc.name)+" is out of reach.</b> Showing what it sent "+(pc.heard?"at "+esc(pcTime(pc.heard)):"last")+(pc.queued?" · "+pc.queued+" change"+(pc.queued>1?"s":"")+" waiting to send":"")+".";
 else if(pc&&pc.old)t="<b>Pair this phone with "+esc(pc.name)+" again:</b> the link between them is sealed now.";
+else if(h.phoneUsbFail)t="<b>Your phone didn&rsquo;t pair over the cable.</b> "+esc(h.phoneUsbFail.why)+" Nothing more is sent to it: pair it from Settings &rarr; Your phone when you&rsquo;re ready.";
 else if(ap)t=ap.status==='waiting'?"Approving "+esc(ap.repo)+" from "+esc(ap.phone)+" as soon as "+esc(ap.why||'it can')+".":ap.status==='failed'?"<b>Approving "+esc(ap.repo)+" from "+esc(ap.phone)+" failed:</b> "+esc(ap.error||''):(ap.status==='approving'?"Approving ":"Approved ")+esc(ap.repo)+" from "+esc(ap.phone)+" at "+esc(pcTime(ap.at))+".";
 if(!t&&qPaused())t='<b>'+esc(qPaused())+'</b>';
 if(!t&&h.browserSince)t="<b>The Symbiot Browser is open</b>, since "+esc(pcTime(h.browserSince))+" ("+esc(agoTxt(h.browserSince))+"). Agents read from a copy of its sign-ins meanwhile, and it closes by itself after "+(h.browserIdle||20)+" minutes unused.";

@@ -18,7 +18,7 @@ import { readFileSync, writeFileSync, mkdirSync, statSync } from "node:fs";
 import { watchBoard, draftReply, draftCards, draftAnswer } from "./watch.mjs";
 import { pendingReview, pushTasks, addTask, taskType, releaseNotIn, unplacedTasks } from "./tasks.mjs";
 import { estimate, estimateWords } from "./estimate.mjs";
-import { launchFault, ensureRunnable, agentQuestions, answerQuestions, heldAsk, grantCard, cardIsPermission, onCardGone, setHandoffCmd, agentsList, agentsNow, forgetAgents, runHandoff, runningHandoff, handoffCmd, loadRuns, connectorsInfo, parkedPaths, agentMissing, settleNeeds, closeAsk, pickAgent, detectHandoffs, linkReach, unchangedStep, whereOf, claudePause, parkLane, waitingTask, namedBlocker, autoStart } from "./agents.mjs";
+import { launchFault, ensureRunnable, agentQuestions, answerQuestions, heldAsk, grantCard, cardIsPermission, onCardGone, setHandoffCmd, agentsList, agentsNow, forgetAgents, runHandoff, runningHandoff, handoffCmd, loadRuns, connectorsInfo, parkedPaths, agentMissing, settleNeeds, closeAsk, sameSubject, pickAgent, detectHandoffs, linkReach, unchangedStep, whereOf, claudePause, parkLane, waitingTask, namedBlocker, autoStart } from "./agents.mjs";
 import { stallCards, loadStall, saveStall } from "./stall.mjs";
 import { isDone, recordDone, doneList, asksBack, askBackNote, wantsReport, closesAsk, heldBy, reportsSince, talkOf, addTalk, talkText, YES, asksQ, saysDone, wantsToRead } from "./asksdone.mjs";
 import { captureSecrets } from "./vault.mjs";
@@ -33,7 +33,7 @@ import { goalCards } from "./goals.mjs";
 import { folderSlug, reviewHolds, heldMergeCard } from "./design.mjs";
 import { intuitionUpdates, intuitionLines } from "./intuition.mjs";
 import { overridesUpdates } from "./overrides.mjs";
-import { splitNeeds, applyText, loadCardText, blankAsk, blankText } from "./needs.mjs";
+import { moneyNote, splitNeeds, applyText, loadCardText, blankAsk, blankText } from "./needs.mjs";
 import { converse, actIn, actNow, taskIn, loadMind, dayMark } from "./mind.mjs";
 import { repoPathMap, laneMap, reposState, scanRoots } from "./scan.mjs";
 import { resolveProvider, PROVIDERS, claudeState } from "./ai.mjs";
@@ -547,7 +547,7 @@ function homeState({ now = Date.now(), fresh = false, deps = {}, tick = false } 
   try { const gone = new Set(Object.keys((deps.dismissed || loadDismissed)())); updates.unshift(...(deps.intuition || intuitionUpdates)({ now, dismissed: gone })); } catch {}
   // a change to how Symbiot works, proposed from what the user kept pushing back on (overrides.mjs): Apply / Not now
   try { const gone = new Set(Object.keys((deps.dismissed || loadDismissed)())); updates.unshift(...(deps.overrides || overridesUpdates)({ dismissed: gone })); } catch {}
-  { let ct = {}; try { ct = (deps.cardText || loadCardText)(); } catch {} you = split.you.map((y) => { try { return applyText(y, ct); } catch { return y; } }); }
+  { let ct = {}; try { ct = (deps.cardText || loadCardText)(); } catch {} you = split.you.map((y) => { try { return moneyNote(applyText(y, ct)); } catch { return y; } }); } // adding a card says money up front (needs.mjs moneyNote)
   // a merge or publish card for work the design critic hasn't passed (design.mjs heldMergeCard): none while it's
   // being judged or fixed, and "isn't ready: still missing …" once it has failed. After the card writer, so its
   // labels ("I've merged it myself") can't bring a merge back.
@@ -566,11 +566,22 @@ function homeState({ now = Date.now(), fresh = false, deps = {}, tick = false } 
 
 // Cards the chat says your message answered: only a question that's really on Home counts (the
 // model can't close one by inventing it). Each goes in the shared record, so the card leaves and no agent asks it again.
-function settleFromChat(h, said, answer) {
+// A card their chat message answered: closed on Home, and its agent gets the message as its answer.
+// It used to be closed only, so "send the 100" in chat hid the Send card, sent nothing, and they
+// were told to tap Send after all (23 Oct 2026). A plain yes takes the card's agent option.
+const CHAT_YES = /^\W*(?:yes|yep|yeah|ya|ok(?:ay)?|sure|go(?: ahead)?|do it|send (?:it|them|the|that|this)|approve(?:d)?|confirm(?:ed)?|please do|go for it)\b/i;
+const plainYes = (t) => CHAT_YES.test(t) && t.length <= 60 && !/\b(?:but|instead|not|later|tomorrow|wait|hold|change|only|except|unless)\b|n't\b/i.test(t); // "send it tomorrow" is their words, not the option
+function settleFromChat(h, said, answer, { reply = answerQuestions } = {}) {
   const key = (t) => String(t || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
   const shown = ((h && h.you) || []).filter((y) => y.kind === "ask" && y.q);
   let n = 0;
-  for (const q of said || []) { const y = shown.find((x) => key(x.q) === key(q)); if (y && recordDone(y.q, `answered in chat: ${String(answer || "").slice(0, 120)}`)) n++; }
+  for (const q of said || []) {
+    const y = shown.find((x) => key(x.q) === key(q)); if (!y) continue;
+    if (recordDone(y.q, `answered in chat: ${String(answer || "").slice(0, 120)}`)) n++;
+    if (!y.path || !String(y.id || "").startsWith("ask:")) continue; // an agent's own question: the rest close as they did
+    const go = plainYes(String(answer || "").trim()) && (y.options || []).find((o) => /^\W*🤖\s*Agent:/u.test(String(o)));
+    try { reply(y.path, [{ q: y.raw || y.q, a: go || `Answered in chat: "${String(answer || "").replace(/\s+/g, " ").trim().slice(0, 600)}"` }], { rerun: true }); } catch {}
+  }
   return n;
 }
 // Asks that never belong on Home: "close the Symbiot Browser" is an agent's wait-and-retry, not
@@ -580,11 +591,14 @@ const CLOSE_BROWSER = /\b(?:close|quit|shut)\b[^.?]{0,40}\bSymbiot Browser\b|\bS
 // steps over, with no security-key tap or code in them, isn't a card for Home.
 const HAND_CLICKS = /\b(?:click|press|tap|hit)\b[^.?]{0,60}\b(?:Edit|Delete|Remove|Save|Done|Submit|Continue|Next|Allow|Confirm|Update|Add|Create|Revoke|Disable|Enable)\b/i;
 const NEEDS_THEM = /\b(?:security key|passkey|hardware key|2fa|sms|one-time|verification code|recovery code|authenticator)\b/i;
+// Two runs asking about one decision in their own words (two runs on the same invite: one "I'll send
+// it", one "send it yourself", 23 Oct 2026) are one card: the one where the agent does it, else the first.
+const agentFirst = (y) => /^\W*🤖/u.test(String((y.options || [])[0] || ""));
 function settleAsks(you) {
-  const seen = new Map();
+  const seen = [], drop = new Set();
   // "Already covered?" (a standing rule that shared words with the card) is gone from cards: it
   // matched on words, not meaning, and put unrelated rules under the user's questions (22 Oct 2026).
-  return you.filter((y) => {
+  const kept = you.filter((y) => {
     if (y.kind !== "ask") return true;
     if (isDone(y.q)) return false; // already answered, for any agent
     const said = `${y.q || ""} ${(y.options || []).join(" ")}`;
@@ -592,16 +606,16 @@ function settleAsks(you) {
     if (HAND_CLICKS.test(said) && !NEEDS_THEM.test(said)) return false;
     const k = String(y.q || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
     if (!k) return true;
-    // the same human step worded two ways ("Trusted Publisher … security key" twice) is one card
+    // the same human step worded two ways ("Trusted Publisher … security key" twice) is one card,
+    // and so is one decision two runs ask about in their own words (sameSubject)
     const w = new Set(k.split(" ").filter((t) => t.length > 3));
-    for (const [sk, sw] of seen) {
-      if (sk === k) return false;
-      const both = [...w].filter((t) => sw.has(t)).length;
-      if (w.size >= 5 && sw.size >= 5 && both / Math.min(w.size, sw.size) >= 0.8) return false;
-    }
-    seen.set(k, w);
+    const twin = seen.find((x) => !drop.has(x.y) && (x.k === k || (w.size >= 5 && x.w.size >= 5 && [...w].filter((t) => x.w.has(t)).length / Math.min(w.size, x.w.size) >= 0.8) ||
+      (x.y.path && y.path && x.y.path !== y.path && sameSubject(x.y.q, y.q))));
+    if (twin) { if (!(agentFirst(y) && !agentFirst(twin.y))) return false; drop.add(twin.y); }
+    seen.push({ k, w, y });
     return true;
   });
+  return kept.filter((y) => !drop.has(y));
 }
 
 // An answer on a stuck handover's, a waiting run's or a failed run's blob. pick: the
@@ -790,7 +804,7 @@ function phoneBits(now = Date.now()) {
   try {
     if (!PHONE) {
       const a = phoneApprovals(now), l = linkState(), phones = l.on ? (l.phones || []).map((p) => ({ name: p.name, ...(p.seen ? { seen: p.seen } : {}), ...(p.via ? { via: p.via } : {}), ...(p.old ? { old: true } : {}) })) : [];
-      return { ...(phones.length ? { phones } : {}), ...(a.length ? { phoneApproved: a.map((x) => ({ repo: x.repo, phone: x.phone, at: x.at, status: x.status, ...(x.pr ? { pr: x.pr } : {}), ...(x.error ? { error: x.error } : {}) })) } : {}) };
+      return { ...(phones.length ? { phones } : {}), ...(l.on && l.usbFail ? { phoneUsbFail: l.usbFail } : {}), ...(a.length ? { phoneApproved: a.map((x) => ({ repo: x.repo, phone: x.phone, at: x.at, status: x.status, ...(x.pr ? { pr: x.pr } : {}), ...(x.error ? { error: x.error } : {}) })) } : {}) };
     }
     const v = computerView(); if (!v.paired) return {};
     const c = v.copy || {}, asks = (c.asks || []).filter((x) => !x.waiting).length, approves = (c.approves || []).filter((x) => !x.waiting).length;
@@ -912,7 +926,7 @@ async function homeAsk(question, { ask, now = Date.now(), state, images = [], ac
   let open = []; try { open = loadTasks().filter((t) => t && !t.done && !t.archived && !t.review).map((t) => ({ id: t.id, text: t.text, repo: t.repo })); } catch {}
   const r = await converse({ where: "Home", role, nav: true, settle: true, control: true, tasks: open, context: homeContext(h), question: question + (pics.length ? `\n(The user attached ${pics.length} screenshot${pics.length > 1 ? "s" : ""}: you can see ${pics.length > 1 ? "them" : "it"}.)` : ""), map, now, images: pics.map(({ mime, data, path }) => ({ mime, data, path })), ...(ask ? { ask } : {}),
     act: {
-      agent: (req, known, repo, said) => { const d = repo ? actIn(req + shotNote, repo, { map, known, title: "Home", said }) : actNow(req + shotNote, { title: "Home", known }); noteHanded(d, req); return d; },
+      agent: (req, known, repo, said, kind) => { const d = repo ? actIn(req + shotNote, repo, { map, known, title: "Home", said, kind }) : actNow(req + shotNote, { title: "Home", known }); noteHanded(d, req); return d; },
       task: (text, repo) => { const d = taskIn(text + shotNote, repo, { map }); noteHanded(d, text); return d; },
       control: (ops) => control(ops, { map }),
       ...acts, // a phone's chat (phone.mjs OPS.chat) overrides these: it answers and adds tasks, but starts and steers nothing (15 Oct 2026)
@@ -1015,7 +1029,7 @@ async function cardTalk(path, answers, { ask, deps = {}, extra = "", force = fal
     open ? `Its open and waiting items:\n${open}` : "", `The newest answers it has (newest last):\n${read("ANSWERS.md").slice(-4000)}`,
     before.length ? `Said on this card already:\n${talkText(before)}` : "", extra].filter(Boolean).join("\n\n");
   const res = await converse({ where: `Card: ${name}: ${String(q.q).slice(0, 60)}`, role, context, question: said, map, ...(ask ? { ask } : {}),
-    act: { agent: (req, known, repo, s2) => (repo || lane ? actIn(req, repo || lane, { map, known, title: "Card", said: s2 }) : actNow(req, { title: "Card", known })), task: (text, repo) => taskIn(text, repo || lane, { map }) } });
+    act: { agent: (req, known, repo, s2, kind) => (repo || lane ? actIn(req, repo || lane, { map, known, title: "Card", said: s2, kind }) : actNow(req, { title: "Card", known })), task: (text, repo) => taskIn(text, repo || lane, { map }) } });
   const reply = String(res.reply || "").trim() || "I couldn't answer that just now.";
   const talk = addTalk(path, q.q, { from: "agent", text: reply });
   return { ok: true, talk, reply, ...(res.did ? { did: res.did } : {}), lane: lane || "ops" };
@@ -1028,7 +1042,7 @@ async function updateAsk(id, text, { context = "", ask } = {}) {
   let map = {}; try { map = laneMap(); } catch {}
   const role = "They're asking about an update on their Updates list: things Symbiot noticed or did, or would have done, on its own. Answer about it plainly; if they ask for one of its moves (or anything) to be done, do it.";
   const res = await converse({ where: `Updates: ${id}`, role, context: `The update's moves:\n${context || "(none kept)"}`, question: text, map, ...(ask ? { ask } : {}),
-    act: { agent: (req, known, repo, said) => (repo ? actIn(req, repo, { map, known, title: "Updates", said }) : actNow(req, { title: "Updates", known })), task: (t, repo) => taskIn(t, repo, { map }) } });
+    act: { agent: (req, known, repo, said, kind) => (repo ? actIn(req, repo, { map, known, title: "Updates", said, kind }) : actNow(req, { title: "Updates", known })), task: (t, repo) => taskIn(t, repo, { map }) } });
   return { answer: res.reply, ...(res.did ? { did: res.did } : {}) };
 }
 // Ask about the report in place: the same mind as Home's chat, the report in front of it.
@@ -1056,7 +1070,7 @@ async function reportAsk(id, question, { ask, deps = {} } = {}) {
   const role = `Here they're reading a report an agent wrote, "${r.title}"${lane ? ` (${lane})` : ""}, under Reports. Answer about it from its text; a task or agent work it leads to goes to ${lane || "the lane it belongs to"} unless they say otherwise.`;
   const res = await converse({ where: `Reports: ${r.title}`, role, context: `The report (${r.file}):\n${String(r.text || "").slice(0, 12000)}${sinceReport(r)}`, question, map, ...(ask ? { ask } : {}),
     act: {
-      agent: (req, known, repo, said) => ((repo || lane) ? actIn(req, repo || lane, { map, known, title: "Reports", said }) : actNow(req, { title: "Reports", known })),
+      agent: (req, known, repo, said, kind) => ((repo || lane) ? actIn(req, repo || lane, { map, known, title: "Reports", said, kind }) : actNow(req, { title: "Reports", known })),
       task: (text, repo) => taskIn(text, repo || lane, { map }),
     } });
   return { answer: res.reply, spoken: res.spoken, ...(res.did ? { did: res.did } : {}), steps: res.steps || [] };

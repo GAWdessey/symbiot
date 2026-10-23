@@ -1401,6 +1401,19 @@ async function approveRepo(repo, opts = {}) {
   saveTasks(t);
   return { ...r, approved: items.length, ...liveOf(path, repo, r), ...(removed ? { removed } : {}) };
 }
+// A lane whose run ticked its tasks and changed nothing (it read, checked or found something out):
+// there's nothing to approve, so those tasks close as done by themselves. Read-only runs that
+// changed nothing waited on the user's Approve all the same (23 Oct 2026). Not while a run is still
+// there or a ship is going, nor with anything committed here that isn't on GitHub yet.
+function closeUnchanged({ review = pendingReview, ahead = (path) => { const r = git(path, ["rev-list", "--count", "HEAD", "--not", "--remotes=origin"]); return r.ok ? Number(r.out) || 0 : 1; }, now = Date.now() } = {}) {
+  const quiet = review().filter((r) => r.path && (r.tasks || []).length && !(r.files || []).length && !r.unsent && !r.round && !r.running && !r.shipping && !r.untasked);
+  const closing = quiet.filter((r) => { try { return !ahead(r.path); } catch { return false; } });
+  if (!closing.length) return [];
+  const ids = new Set(closing.flatMap((r) => r.tasks.map((x) => x.id))), t = loadTasks(), out = [];
+  for (const x of t) if (ids.has(x.id) && x.review && !x.done && !x.archived) { x.review = false; x.done = true; x.archived = true; x.archivedAt = now; x.approvedAt = now; x.unchanged = true; out.push({ id: x.id, repo: x.repo }); }
+  if (out.length) saveTasks(t);
+  return out;
+}
 // "Approve changes without a task": ship the uncommitted changes even though no
 // ticked task is behind them (a fix the agent made but didn't tick). If tasks are
 // awaiting review in the repo, this is just Approve. opts.tick: ids of the
@@ -1572,4 +1585,4 @@ function pushTasks(filter) {
   return { empty: false, written, unresolved, handoff: handoffCmd() };
 }
 
-export { noteLaneIds, applyMove, readMove, moveCheckout, laneOfRepo, laneNames, refileTask, unplacedTasks, placeTasks, unsentHeadline, setHandedLookup, setTaskModel, MODEL_PICKS, holdShip, SHIP_STALE, shipping, shippingPaths, shipJob, shipJobOf, SHIP_WAIT, workingChangesAsync, rebaseTask, sendAgain, forgetUnsent, unsentOf, readUnsent, unsentCard, repoTests, localRefused, forgetReview, gitFailed, taskPaths, addTask, toggleTask, setTaskDone, removeTask, cancelTask, restoreTask, FINDING_NOTE, completedInRepo, removalOf, applyRemovals, applyDrops, syncTasks, workingChanges, workingDiff, publishesOnMerge, unreleased, bumpOffer, learnNpm, releaseNeeded, releaseNotIn, withReleases, setVersion, changelogEntry, changelogSection, noteChangelog, releaseInput, shipWithBump, runSummary, saidFinished, pendingReview, commitSubject, shipChanges, autoMergeRepos, setAutoMerge, approveRepo, approveChanges, sendBack, TASK_ORDER, taskType, buildTasksMd, pushTasks, mergeWhenGreen, changelogItems, changelogLeaks, commitText };
+export { noteLaneIds, closeUnchanged, applyMove, readMove, moveCheckout, laneOfRepo, laneNames, refileTask, unplacedTasks, placeTasks, unsentHeadline, setHandedLookup, setTaskModel, MODEL_PICKS, holdShip, SHIP_STALE, shipping, shippingPaths, shipJob, shipJobOf, SHIP_WAIT, workingChangesAsync, rebaseTask, sendAgain, forgetUnsent, unsentOf, readUnsent, unsentCard, repoTests, localRefused, forgetReview, gitFailed, taskPaths, addTask, toggleTask, setTaskDone, removeTask, cancelTask, restoreTask, FINDING_NOTE, completedInRepo, removalOf, applyRemovals, applyDrops, syncTasks, workingChanges, workingDiff, publishesOnMerge, unreleased, bumpOffer, learnNpm, releaseNeeded, releaseNotIn, withReleases, setVersion, changelogEntry, changelogSection, noteChangelog, releaseInput, shipWithBump, runSummary, saidFinished, pendingReview, commitSubject, shipChanges, autoMergeRepos, setAutoMerge, approveRepo, approveChanges, sendBack, TASK_ORDER, taskType, buildTasksMd, pushTasks, mergeWhenGreen, changelogItems, changelogLeaks, commitText };

@@ -25,7 +25,7 @@ import { join } from "node:path";
 import { homedir } from "node:os";
 import { readFileSync, writeFileSync, mkdirSync, renameSync } from "node:fs";
 import { randomBytes } from "node:crypto";
-import { heldFor } from "./sends.mjs";
+import { heldFor, addsPayment } from "./sends.mjs";
 
 const PREFIX = "mcp__claude-in-chrome__";
 const READS = new Set(["tabs_context_mcp", "tabs_create_mcp", "tabs_close_mcp", "navigate", "get_page_text", "read_page", "find", "read_console_messages", "read_network_requests", "gif_creator", "resize_window", "list_connected_browsers", "select_browser", "switch_browser", "shortcuts_list"]);
@@ -88,7 +88,45 @@ function judgeChrome(tool, input = {}, { session = "", home = homedir(), now = D
   let h = holds.find((x) => x.host === host && key(x.summary) === key(summary) && !x.go && now - x.at < 86400000);
   if (!h) { h = { id: randomBytes(4).toString("hex"), host, summary: summary.slice(0, 200), kind, at: now, session }; holds.push(h); writeJson(HOLDS(home), holds.slice(-200)); }
   const word = { send: "sends", pay: "pays", delete: "deletes" }[kind];
-  return { why: `this ${word} as the user, on ${host} ("${h.summary}"), so it waits for their Go. Ask in .symbiot/QUESTIONS.md: a ### heading saying plainly what it ${word}, ending {#chrome-go-${h.id}}, and one option, "🤖 Agent: go ahead: ${h.summary}". Stop there; once they say Go, the same action goes through, once: when you retry it, start its action_summary with [go:${h.id}]`, held: h.id };
+  return { why: `this ${word} as the user, on ${host} ("${h.summary}"), so it waits for their Go. Ask in .symbiot/QUESTIONS.md: a ### heading saying plainly what it ${word}, ending {#chrome-go-${h.id}}, ${kind === "pay" && addsPayment(h.summary) ? "a context line saying first that the site may hold or charge money on the card once it's added, with roughly how much if known, " : ""}and one option, "🤖 Agent: go ahead: ${h.summary}". Stop there; once they say Go, the same action goes through, once: when you retry it, start its action_summary with [go:${h.id}]`, held: h.id };
+}
+// A connector that sends as the user (mail's send, reply and forward, a calendar invite or reply, a
+// shared file): held for their Go like a send in their Chrome, on the same kind of card. The guard
+// never saw these, and a guide went out by email to someone the user's rule said hears nothing before
+// the user has seen it on WhatsApp (23 Oct 2026). A standing rule that names who it goes to is on the card.
+const CONNECTOR_SENDS = /^mcp__.+?__(send_message|send_email|send_draft|reply|reply_all|forward|share_file|respond_to_event|create_event|update_event)$/;
+const SAYS = { send_message: "Sends", send_email: "Sends", send_draft: "Sends", reply: "Replies", reply_all: "Replies to all", forward: "Forwards", share_file: "Shares", respond_to_event: "Answers the invite", create_event: "Invites", update_event: "Updates the invite" };
+const RECIPIENT = /^(?:to|cc|bcc|recipients?|emails?|email_?address|attendees?|guests?|people|addresses|share_?with|role_?email)$/i;
+function recipients(input) {
+  const out = new Set();
+  // a value under a recipients' key, or inside one ({ attendees: [{ email }] }): each address or name
+  const walk = (v, k = "", d = 0) => {
+    if (d > 4 || out.size > 20) return;
+    if (typeof v === "string") { if (RECIPIENT.test(k)) for (const x of v.split(/[,;]\s*/)) if (x.trim()) out.add(x.trim().slice(0, 80)); return; }
+    if (Array.isArray(v)) { for (const x of v) walk(x, k, d + 1); return; }
+    if (v && typeof v === "object") for (const [kk, x] of Object.entries(v)) walk(x, RECIPIENT.test(kk) || !RECIPIENT.test(k) ? kk : /^(?:email|address|value)$/i.test(kk) ? k : "", d + 1);
+  };
+  walk(input); return [...out];
+}
+function judgeConnector(tool, input = {}, { session = "", home = homedir(), now = Date.now() } = {}) {
+  const m = String(tool || "").match(CONNECTOR_SENDS); if (!m) return null;
+  const op = m[1], to = recipients(input || {});
+  if (/^(?:create|update)_event$/.test(op) && !to.length) return null; // no guests: nothing goes to anyone
+  const service = String(tool).slice(5, String(tool).length - op.length - 2).replace(/^claude_ai_/, "").replace(/_/g, " ");
+  const subject = String((input && (input.subject || input.summary || input.title || input.name)) || "").replace(/\s+/g, " ").trim().slice(0, 80);
+  const summary = `${SAYS[op]}${subject ? ` "${subject}"` : ""}${to.length ? ` to ${to.slice(0, 4).join(", ")}${to.length > 4 ? ` and ${to.length - 4} more` : ""}` : ""} through ${service}`.slice(0, 200), host = "connector:" + service;
+  const holds = readJson(HOLDS(home), []), live = (h) => h.go && !h.used && now - h.go < GO_FOR;
+  const mine = holds.find((h) => h.host === host && key(h.summary) === key(summary) && live(h));
+  if (mine) { mine.used = now; writeJson(HOLDS(home), holds); return null; }
+  let h = holds.find((x) => x.host === host && key(x.summary) === key(summary) && !x.go && now - x.at < 86400000);
+  if (!h) { h = { id: randomBytes(4).toString("hex"), host, summary, kind: "send", at: now, session }; holds.push(h); writeJson(HOLDS(home), holds.slice(-200)); }
+  // the user's standing rules that name who it goes to (their address, or a name in it)
+  const names = new Set(to.flatMap((x) => [x.toLowerCase(), ...x.toLowerCase().split(/[@.+_\s-]+/).filter((w) => /^[a-z]{4,}$/.test(w) && !/^(gmail|outlook|yahoo|hotmail|mail|info|team|hello|support|com)$/.test(w))]));
+  // …or a name in a rule that's part of the address ("Jono" in jsmithjono@…): not a word that starts a sentence
+  const locals = to.map((x) => ((x.match(/([\w.+-]+)@/) || [])[1] || "").toLowerCase()).filter(Boolean);
+  const named = (r) => [...r.matchAll(/(?<![.!?]\s|^)\b([A-Z][a-z]{3,})\b/g)].some((w) => locals.some((l) => l.includes(w[1].toLowerCase())));
+  const rules = (readJson(join(dir(home), "standing.json"), []) || []).map((r) => String((r && r.rule) || "")).filter((r) => r && ([...names].some((n) => new RegExp(`\\b${n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`, "i").test(r)) || named(r)));
+  return { held: h.id, why: `this sends as the user ("${h.summary}"), so it waits for their Go, as a send in their Chrome does.${rules.length ? ` Their own rule for this: "${rules.join('" "')}" Do what it says first (a proof where it says), and ask only after.` : ""} Ask in .symbiot/QUESTIONS.md: a ### heading saying plainly what it sends and to whom, ending {#chrome-go-${h.id}}, and one option, "🤖 Agent: go ahead: ${h.summary}". Stop there. Their Go lets this same call through once: make it again exactly as it is` };
 }
 // After a Chrome tool ran (the hook's PostToolUse): its result ends with "Tab Context", each tab of the
 // run's group with its address now (`• tabId 7: "Title" ("https://…")`), or tabs_context_mcp's list as
@@ -162,4 +200,4 @@ function setActSite(host, on, { load, save }) {
   cfg.chromeAct = [...list]; save(cfg); return { ok: true, sites: cfg.chromeAct };
 }
 
-export { judgeChrome, seen, openTabs, goAhead, setActSite, setActAll, actSites, hostOf, signInNotNeeded, switchOnAct, actAsk, SETTING, PREFIX, READS, ACTS };
+export { judgeChrome, judgeConnector, recipients, CONNECTOR_SENDS, seen, openTabs, goAhead, setActSite, setActAll, actSites, hostOf, signInNotNeeded, switchOnAct, actAsk, SETTING, PREFIX, READS, ACTS };

@@ -35,11 +35,11 @@ writeFileSync(join(ROOT, "computer.mjs"), `
   const w = await import(${JSON.stringify(join(SRC, "watch.mjs"))});
   const approved = [];
   p.setPhoneApprove(async (repo, untasked) => { approved.push({ repo, untasked }); return { ok: true, pr: "https://github.com/me/demo/pull/7" }; });
-  const cmds = { on: () => p.setPhoneLink(true), off: () => p.setPhoneLink(false), code: () => p.newCode(), state: () => p.linkState(), unpair: (a) => p.unpairPhone(a.id),
+  const cmds = { on: () => p.setPhoneLink(true), off: () => p.setPhoneLink(false), code: () => p.newCode(), usbcode: () => p.newCode({ usb: true }), state: (a) => p.linkState(a.later ? { now: Date.now() + a.later } : {}), unpair: (a) => p.unpairPhone(a.id),
     approved: () => approved, add: (a) => t.addTask(a.text, a.repo || ""), toggle: (a) => t.toggleTask(a.id), tasks: () => JSON.parse(readFileSync(${JSON.stringify(join(PCFG, "tasks.json"))}, "utf8")),
     // adb's device list, round by round (each a 30 s tick): what each round pushed, and every adb call
     adb: (a) => { const calls = []; let now = ""; const run = (x) => { calls.push(x.join(" ")); return x[0] === "devices" ? "List of devices attached\\n" + now.split(",").filter(Boolean).map((d) => d.includes("=") ? d.replace("=", "\\t") : d + "\\tdevice").join("\\n") + "\\n" : ""; };
-      const did = a.rounds.map((r) => { now = r; return p.adbLink({ run, has: () => true }); }); return { did, calls }; },
+      const did = a.rounds.map((r) => { now = r; return p.adbLink({ run, has: () => true, ...(a.later ? { now: Date.now() + a.later } : {}) }); }); return { did, calls }; },
     snapshot: () => p.snapshot({ fresh: true }), loaded: () => typeof w.newsAfter,
     // a port another program holds when the link starts: it listens by itself once that one lets go
     taken: async () => { const net = await import("node:net"), back = p.linkState().port;
@@ -500,7 +500,20 @@ try {
   const fake5 = await P.pairComputer("", "", { link: code5.link.replace(/a=[^&]*/, "a=127.0.0.1").replace(/k=[\w-]+/, "k=AAAAAAAAAAAAAAAAAAAAAA"), name: "Pixel" });
   ok("a link whose key isn't the computer's: refused, nothing sent", /isn't the one whose code you scanned/.test(fake5.error || ""), fake5.error);
   const ab2 = await pc.cmd("adb", { rounds: ["NEW456"] });
-  ok("adbLink: with a phone paired, a new phone on a cable isn't opened either (pair it from Settings)", !ab2.did[0].length && !ab2.calls.some((c) => / am start /.test(c)), ab2);
+  ok("adbLink: a code not opened by Pair a phone (this app starting, a QR's) never opens a cable's phone", !ab2.did[0].length && !ab2.calls.some((c) => / am start /.test(c)), ab2);
+  // Pair a phone pressed here: the cable's phone gets it once; one left unpaired is said once, and never pushed again by itself
+  await pc.cmd("usbcode");
+  const ab3 = await pc.cmd("adb", { rounds: ["NEW456", "NEW456", "", "NEW456"] });
+  ok("adbLink: Pair a phone sends the link to a cable's phone once, however often it comes back", ab3.did[0].join() === "NEW456" && ab3.calls.filter((c) => / am start /.test(c)).length === 1, ab3.did);
+  const usbSt = await pc.cmd("state");
+  ok("Settings says it went to the phone on the cable", usbSt.usbSent === 1 && !usbSt.usbFail, usbSt.usbSent);
+  const ab4 = await pc.cmd("adb", { rounds: ["NEW456", "OTHER9"], later: 11 * 60000 });
+  const missed = await pc.cmd("state", { later: 11 * 60000 });
+  ok("a code the cable's phone didn't pair with runs out: said once (Home, Settings), nothing pushed after", !ab4.calls.some((c) => / am start /.test(c)) && missed.usbFail && /didn't pair within 10 minutes/.test(missed.usbFail.why) && !missed.code, [ab4.calls, missed.usbFail]);
+  const ab5 = await pc.cmd("adb", { rounds: ["NEW456", "NEW456"] });
+  ok("after it ran out the phone is never prompted again by itself", !ab5.calls.some((c) => / am start /.test(c)), ab5.calls);
+  const reopened = await pc.cmd("usbcode");
+  ok("pressing Pair a phone again clears the notice", !reopened.usbFail, reopened.usbFail);
   // a taken port: who holds it, and the way out
   const fakeRun = (out) => (cmd, args) => { if (!(cmd in out)) throw new Error("no " + cmd); return out[cmd]; };
   const h1 = P.portHolder(7392, fakeRun({ ss: 'LISTEN 0 511 0.0.0.0:7392 0.0.0.0:* users:(("node",pid=4242,fd=19))\n', ps: "Sun Oct 11 07:00:01 2026 node /home/x/symbiot/index.mjs app\n" }));

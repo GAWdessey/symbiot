@@ -19,7 +19,7 @@ import { homedir } from "node:os";
 import { execFileSync } from "node:child_process";
 import { readFileSync, realpathSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { judgeChrome, seen as seenChrome, openTabs, signInNotNeeded, actAsk, SETTING, PREFIX as CHROME } from "./chromegate.mjs";
+import { judgeChrome, judgeConnector, CONNECTOR_SENDS, seen as seenChrome, openTabs, signInNotNeeded, actAsk, SETTING, PREFIX as CHROME } from "./chromegate.mjs";
 import { judgePush } from "./pushgate.mjs";
 import { holdsMerge, slugOf, folderSlug } from "./design.mjs";
 import { judgePhone, letGo as phoneLetGo, phoneAsked } from "./phonegate.mjs";
@@ -142,6 +142,30 @@ function changesSelf(part, { home, cwd }) {
 // the branch a bare `git push` pushes: the one checked out in cwd
 function currentBranch(cwd) { try { return execFileSync("git", ["-C", cwd, "rev-parse", "--abbrev-ref", "HEAD"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim(); } catch { return ""; } }
 
+// Moving a branch back over commits nothing else has: a run on 23 Oct 2026 ran `git reset --hard <main's
+// tip>` to replay its changes onto main, and the Approve committed there before it (88ac8f3, never pushed:
+// it clashed with main) was gone, two dozen files of fixes, with nothing said. A reset --hard/--keep/--merge
+// to another commit, a checkout -B / switch -C over an existing branch, and branch -f / -D are stopped when
+// the branch has commits that no remote, tag or other branch has. { n, name, onto } or null.
+function dropsCommits(args, cwd) {
+  const git = (...a) => execFileSync("git", ["-C", cwd, ...a], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 5000 }).trim();
+  const plain = (from) => { const end = args.indexOf("--"); return args.slice(from, end < 0 ? undefined : end).filter((x) => !x.startsWith("-")); };
+  let name = "", onto = "";
+  if (args[0] === "reset" && args.some((a) => /^--(hard|keep|merge)$/.test(a))) { onto = plain(1)[0] || ""; if (!onto) return null; name = "HEAD"; }
+  else if ((args[0] === "checkout" || args[0] === "switch") && args.some((a) => /^(-B|-C|--force-create)$/.test(a))) { const i = args.findIndex((a) => /^(-B|-C|--force-create)$/.test(a)); name = args[i + 1] || ""; onto = plain(i + 2)[0] || "HEAD"; }
+  else if (args[0] === "branch" && args.some((a) => /^(-f|--force|-D)$/.test(a))) { const p = plain(1); name = p[0] || ""; onto = args.includes("-D") ? "" : p[1] || "HEAD"; }
+  if (!name) return null;
+  try {
+    const tip = git("rev-parse", "--verify", "-q", name + "^{commit}"), own = name === "HEAD" ? git("rev-parse", "--abbrev-ref", "HEAD") : name;
+    const n = Number(git("rev-list", "--count", tip, "--not", ...(onto ? [onto] : []), "--remotes", "--tags", ...(own && own !== "HEAD" ? [`--exclude=${own}`] : []), "--branches"));
+    if (!(n > 0)) return null;
+    // a squash merge leaves the branch's commits on no remote while main has all of it: merging them into
+    // where it moves to would change nothing, so nothing is lost
+    if (onto) { try { if (git("merge-tree", "--write-tree", onto, tip).split("\n")[0] === git("rev-parse", onto + "^{tree}")) return null; } catch {} }
+    return { n, name: own, onto };
+  } catch { return null; } // no repo, no such branch or commit: git says so itself
+}
+
 // Stopping or restarting the Symbiot app the run itself runs under (an ops run restarted its service to load a
 // new version on 22 Oct 2026, which killed the run halfway through the phone check and told no one).
 const SVC_STOP = /^(restart|stop|kill|try-restart|reload-or-restart|try-reload-or-restart|force-reload)$/;
@@ -179,7 +203,9 @@ function judgeBash(cmd, { cwd, home, branch, session = "" }) {
     if (/^(shutdown|reboot|poweroff|halt)$/.test(w[0])) return { why: "shutting the computer down is yours to do" };
     if (/^(mkfs(\.\w+)?|fdisk|parted|wipefs)$/.test(w[0]) || (/^dd$/.test(w[0]) && /\bof=\/dev\//.test(s))) return { why: "that writes a disk directly" };
     if (/^git$/.test(w[0]) || /^git\s/.test(s)) {
-      const args = w.slice(1).filter((x, i, a) => !(a[i - 1] === "-C" || x === "-C")), at = w.includes("-C") ? unquote(w[w.indexOf("-C") + 1] || "") : "";
+      // git's own -C <folder> comes before the subcommand; a -C after it is the subcommand's (switch -C)
+      let sub = 1; while (sub < w.length && w[sub].startsWith("-")) sub += /^-[Cc]$/.test(w[sub]) ? 2 : 1;
+      const pre = w.slice(1, sub), args = [...pre.filter((x, i, a) => !/^-[Cc]$/.test(a[i - 1] || "") && !/^-[Cc]$/.test(x)), ...w.slice(sub)], at = pre.includes("-C") ? unquote(pre[pre.indexOf("-C") + 1] || "") : "";
       if (args[0] === "push") {
         const refs = args.slice(1).filter((a) => !a.startsWith("-"));
         const target = refs.length >= 2 ? refs[refs.length - 1].split(":").pop() : branch;
@@ -187,6 +213,8 @@ function judgeBash(cmd, { cwd, home, branch, session = "" }) {
         // forcing a branch: held for the user's Go on a card, and Symbiot pushes it itself (pushgate.mjs)
         if (args.some((a) => /^(-f|--force|--force-with-lease)(=|$)/.test(a) || /^\+/.test(a))) return judgePush(args.slice(1), at ? expand(at, home, cwd) : cwd, { home, session });
       }
+      const lost = /^(reset|checkout|switch|branch)$/.test(args[0] || "") ? dropsCommits(args.map(unquote), at ? expand(at, home, cwd) : cwd) : null;
+      if (lost) return { why: `that drops ${lost.n} commit${lost.n === 1 ? "" : "s"} on ${lost.name} that never reached GitHub (approved work waiting to go up: one was lost this way and nobody knew). Keep them: bring ${lost.onto || "the other branch"} in on top (git merge <its commit>, or git rebase), or to carry uncommitted changes elsewhere, git stash, then git switch -c <a new branch> ${lost.onto || ""}, then git stash pop. If they truly should go, keep a copy first: git branch keep/${String(lost.name).replace(/[^\w.-]+/g, "-")} ${lost.name}` };
     }
     // a merge while Symbiot's design critic still has UI work in that repo sent back, or under review (design.mjs)
     if (w[0] === "gh" && w[1] === "pr" && w[2] === "merge") {
@@ -256,6 +284,7 @@ const WRITES_TEXT = /(>|\btee\b|\bwrite|\bopen\(|<<|\bsed\s+-i|\breplace\()/; //
 function refusal(tool, input = {}, { cwd = process.cwd(), home = homedir(), branch, writes = null, session = "" } = {}) {
   const t = String(tool || "");
   if (t.startsWith(CHROME)) return judgeChrome(t, input, { session, home }); // the user's own Chrome: acting only where they allow it, sends and payments held for their Go (chromegate.mjs)
+  if (CONNECTOR_SENDS.test(t)) return judgeConnector(t, input, { session, home }); // a connector that sends as them (mail, invites, shares): held for their Go too
   if (/^(Write|Edit|MultiEdit)$/.test(t) && basename(String(input.file_path || "")) === "QUESTIONS.md") {
     const text = [input.content, input.new_string, ...[].concat(input.edits || []).map((e) => e && e.new_string)].filter(Boolean).join("\n"), r = needlessSignIn(text, home); if (r) return r;
     try { phoneAsked(dirname(dirname(resolve(cwd, String(input.file_path)))), text, { home }); } catch {} // a phone-go card: the user's, shown at once (phonegate.mjs)
