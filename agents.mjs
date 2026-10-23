@@ -27,6 +27,7 @@ import { knowledgeFolders } from "./knowledge.mjs";
 import { pickModel, MODEL } from "./route.mjs";
 import { runbookOf, onDeployAnswer } from "./deploy.mjs";
 import { claudeState, resolveProvider, write as aiWrite } from "./ai.mjs";
+import { settleDone, ticked as tickedItems } from "./done.mjs";
 import { toReview, criticBrief, CRITIC_PROMPT, settleVerdict, reviewOf, saveReview, startDesign, settleDesign, dropDesign, specsFor, DESIGNER_PROMPT } from "./design.mjs";
 import { judge as triageJudge, verdictOf, saveVerdict, shows as triageShows, answerFor as triageAnswer, recordFault, HOLD_MS as TRIAGE_HOLD } from "./triage.mjs";
 import { stalledFor, onStall, loadStall, saveStall, clearStall, STALL_MIN, STALL_PROMPT_TAIL } from "./stall.mjs";
@@ -426,6 +427,8 @@ function opsWalls(repoPath, { home = homedir(), cfg = loadConfig(), has = hasCmd
 }
 // The command, inside them: bwrap … -- sh -c '<command>'.
 const walled = (cmd, args) => (args ? `bwrap ${args.map(shSingle).join(" ")} -- sh -c ${shSingle(cmd)}` : cmd);
+// Whether a folder has tests a run is expected to run: a package.json test script that isn't npm's placeholder.
+function hasTestScript(path) { try { const t = String(JSON.parse(readFileSync(join(path, "package.json"), "utf8")).scripts?.test || ""); return !!t && !/no test specified/.test(t); } catch { return false; } }
 // For Settings → Handoff: { on, ready, missing } (on: repo runs get it).
 function sandboxState() { const n = sandboxNeeds(); return { on: loadConfig().agentSandbox !== false && trustFull(), ready: n.ready, missing: n.missing, ...(n.unsupported ? { unsupported: true } : {}) }; }
 const SESSION = "session.json", RESUME_MAX = 8, RESUME_AGE = 2 * 86400000;
@@ -576,6 +579,7 @@ function runHandoff(repoPath, { force = false, lost = false, model = "", onExit 
   noteUntracked(repoPath);
   try { archiveAnswers(repoPath); } catch {} // all but the newest answers: in ANSWERS.archive.md, so the run doesn't read them all first
   noteAnswersSeen(repoPath); // what this run starts with: only an answer newer than this is news (nothingToDo)
+  const tickedBefore = tickedItems(readSymbiot(repoPath, "TASKS.md")); // what was ticked already: only what this run ticks is checked (done.mjs)
   const dirtyBefore = dirtyState(repoPath), ticksBefore = ticksIn(readSymbiot(repoPath, "TASKS.md")), askedBefore = readSymbiot(repoPath, "QUESTIONS.md"), handedBefore = readSymbiot(repoPath, "HANDOFF.md");
   const own = opts.env && typeof opts.env === "object" ? Object.fromEntries(Object.entries(opts.env).map(([k, v]) => [k, String(v)])) : null, boxEnv = sandboxEnv(box);
   const owner = licenceState().plan === "owner" ? { SYMBIOT_OWNER: "1" } : null; // the guard lets only the owner's runs touch Symbiot's own files
@@ -602,6 +606,13 @@ function runHandoff(repoPath, { force = false, lost = false, model = "", onExit 
     if (designer) { let d = null; try { d = settleDesign(repoPath); } catch {} setTimeout(() => { try { runHandoff(repoPath, { force: true, onExit, note: d && d.written.length ? "Symbiot's designer has written the spec for this work in .symbiot/design/ (.symbiot/ui-design.json maps item to spec): read it first and build to it." : "" }); } catch {} }, 300); return; }
     const up = !isClaudeCmd(scoped) || critic ? null : (() => { try { return escalation(repoPath, model, code, { dirtyBefore, ticksBefore, askedBefore, handedBefore, after }, escalatedFrom); } catch { return null; } })(); // another agent's run has no Sonnet to go up from
     if (up) { setTimeout(() => { try { runHandoff(repoPath, { force: true, model: up.model, escalatedFrom: up.from, note: up.note, onExit }); } catch {} }, 300); return; } // it failed or did nothing: the same task, one tier up
+    // done is checked, not said: each item this run ticked, against what its log shows it did; one that
+    // fails is reopened with what's missing, and the run starts again on it (done.mjs)
+    if (!critic) try {
+      const changed = ((loadRunFiles(repoPath).find((r) => r.id === e.id) || {}).files || []).length;
+      const dr = settleDone(repoPath, { log: runSection(readRunLog(e.log), e.startedAt, true), before: tickedBefore, ops: isOps(repoPath), hasTests: hasTestScript(repoPath), changed });
+      if (dr.reopened.length && autoStart(repoPath)) { const t = setTimeout(() => { try { runHandoff(repoPath, { force: true, onExit }); } catch {} }, 300); if (t.unref) t.unref(); return; }
+    } catch {}
     try { uiReview(repoPath, e, { critic }); } catch {} // UI work: Symbiot's design critic judges it, or its verdict is settled (design.mjs)
     if (onExit) try { onExit(code); } catch {} // a run beside the lane's own (parallel.mjs) merges back
   }, env);
