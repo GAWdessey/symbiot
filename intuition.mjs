@@ -67,7 +67,7 @@ function tierOf(text) {
 // ---- state --------------------------------------------------------------------------------------
 function load() {
   const d = readState(FILE(), (x) => x && typeof x === "object") || {};
-  return { first: d.first || 0, at: d.at || 0, evAt: d.evAt || 0, sig: d.sig || "", nudged: d.nudged || 0, passes: Array.isArray(d.passes) ? d.passes : [], weights: obj(d.weights), noise: obj(d.noise), tiers: obj(d.tiers), seen: obj(d.seen), digest: Array.isArray(d.digest) ? d.digest : [], digestAt: d.digestAt || 0, proposals: Array.isArray(d.proposals) ? d.proposals : [] };
+  return { first: d.first || 0, at: d.at || 0, evAt: d.evAt || 0, sig: d.sig || "", nudged: d.nudged || 0, passes: Array.isArray(d.passes) ? d.passes : [], weights: obj(d.weights), noise: obj(d.noise), tiers: obj(d.tiers), seen: obj(d.seen), digest: Array.isArray(d.digest) ? d.digest : [], digestMode: typeof d.digestMode === "string" ? d.digestMode : "", digestAt: d.digestAt || 0, proposals: Array.isArray(d.proposals) ? d.proposals : [] };
 }
 function obj(x) { return x && typeof x === "object" && !Array.isArray(x) ? x : {}; }
 function save(st) { try { writeJsonAtomic(FILE(), { ...st, passes: st.passes.slice(-KEEP), digest: st.digest.slice(-100), proposals: st.proposals.slice(-50) }, { indent: 1, mode: 0o600 }); } catch {} }
@@ -143,6 +143,7 @@ const RULES_TEXT = `Moves, as a JSON list (best first, at most 5):
 - what: one plain sentence. why: one plain sentence, what calls for it. lane: the project if one fits, else "".
 - confidence 0..1; leave out anything under 0.6, anything in hand or done, anything listed as turned down, and anything their focus says to ignore.
 - interrupt: "now" only if it's urgent and matters to their focus; "digest" for what can wait for the twice-daily summary; "never" for what's only worth a log line.
+- Never a move to close, clear, dismiss or mark done one of Symbiot's own cards, runs or records (a review card, an Approve, a job): they settle on their own, and a run started to close one leaves a card of its own.
 - event: for a triaged event, its id; else "".
 An empty list [] is a fine answer. Inside a sentence, quote with ’single’ marks, never a double quote.`;
 const SYSTEM = `You are the user's chief of staff inside Symbiot, the app that runs their AI agents across their projects. From the situation and their focus, say what a sharp assistant would do next, unasked: what's stalled and could move, what's obviously next after something finished, what they'll need before they ask, and what they should know. Answer with JSON only.\n${RULES_TEXT}`;
@@ -183,7 +184,7 @@ async function intuitionPass(deps = {}, { now = Date.now(), force = false, event
   // on Updates: what's urgent; while watching, everything it would have done too (that's the point)
   const pass = shown.length || moves.length ? { id: randomBytes(4).toString("hex"), at: now, mode, events: events ? evs.map((e) => e.id) : undefined, moves, title: titleOf(shown.filter((x) => x.channel === "now" || (mode === "watch" && x.channel === "digest"))) } : null;
   if (pass) st.passes.push(pass);
-  for (const mv of shown) if (mv.channel === "digest") st.digest.push({ at: now, line: line(mv), pass: pass.id });
+  for (const mv of shown) if (mv.channel === "digest") st.digest.push({ at: now, line: line(mv), pass: pass.id, mode, how: howOf(mv) });
   const urgent = shown.filter((x) => x.channel === "now");
   if (urgent.length && deps.notify) { try { deps.notify("Symbiot", clip(urgent.map(line).join(" · "), 200)); } catch {} }
   await digestDue(st, deps, now);
@@ -200,6 +201,10 @@ async function askMoves(write, system, prompt) {
   try { r = await write(system, `${prompt}\n\nYour last answer wasn't valid JSON. Answer again: the JSON list only, valid, with no double quotes inside sentences.`, { floor: "sonnet", kind: "intuition" }); } catch {}
   v = read(r); return v || [];
 }
+// A move on Symbiot's own cards, runs or records: "Close the review card from run 7740d069 as done"
+// started a run, which ended with a review card of its own, and the next pass proposed closing that one
+// (24 Oct 2026). Cards settle on their own (jobs.mjs syncOnUser), so these are never carried.
+const HOUSEKEEPING = /\b(?:close|clear|dismiss|remove|resolve|tidy|mark)\b[^\n]{0,60}?\b(?:review |approve |home |workdesk |its |the |a )?(?:card|cards|job record|run record)\b|\bmark (?:the )?(?:run|job|card) [0-9a-f]{6,}\b/i;
 // The moves it may make: known kind, sure enough, not repeated, not turned down, within the day's
 // budget of starts. Each gets its tier and its channel. rejected: [{ move, why }].
 function choose(raw, { st, recent, cfg = {}, now, mode = "act" }) {
@@ -211,6 +216,7 @@ function choose(raw, { st, recent, cfg = {}, now, mode = "act" }) {
     const no = (why) => rejected.push({ move: mv, why });
     if (!KINDS.includes(mv.kind) || !mv.what) { no("not a move"); continue; }
     if (mv.confidence < MIN_CONF) { no("not sure enough"); continue; }
+    if (mv.kind !== "focus" && HOUSEKEEPING.test(mv.what)) { no("Symbiot's own cards settle on their own"); continue; }
     if (moves.length >= MAX_MOVES) { no("five is enough for one pass"); continue; }
     if ((st.weights[`${mv.kind}|${mv.lane}`] || 0) <= SHUN) { no("turned down before"); continue; }
     if (recent.some((r) => r.kind === mv.kind && (r.lane || "") === mv.lane && sameTask(r.what, mv.what)) || moves.some((r) => r.kind === mv.kind && sameTask(r.what, mv.what))) { no("already done"); continue; }
@@ -262,6 +268,9 @@ function line(mv) {
   if (mv.kind === "prepare") return mv.would ? `I would have drafted for you: ${mv.what}` : `Drafting for you (under Reports, not sent): ${mv.what}`;
   return would ? `I would have done this on my own: ${mv.what}` : `On my own: ${mv.what}`;
 }
+// What became of a move, for the digest: done (started on its own), prepared (drafted or waiting on the
+// user's OK), only suggested (watching, or a focus line to accept), or just noticed.
+const howOf = (mv) => mv.kind === "notice" || mv.does === "notice" ? "noticed" : mv.would || mv.kind === "focus" ? "only suggested" : mv.asked || mv.kind === "prepare" ? "prepared" : "done";
 const titleOf = (moves) => clip(moves.map(line).join(" · "), 240);
 
 // ---- learning ----------------------------------------------------------------------------------------
@@ -306,9 +315,13 @@ async function digestDue(st, deps, now) {
   const d = new Date(now), due = DIGEST_HOURS.map((h) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), h).getTime()).filter((t) => t <= now).pop();
   if (!due || st.digestAt >= due) return null;
   const name = `SYMBIOT-DIGEST-${d.toISOString().slice(0, 10)}-${String(d.getHours()).padStart(2, "0")}.md`, dir = deps.digestDir || DIGEST_DIR(), file = join(dir, name);
-  const body = `# Symbiot on its own: ${d.toLocaleString("en-ZA", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hour12: false })}\n\nWhat it did, would have done or noticed since the last digest, for when you have a minute.\n\n${items.map((x) => `- ${new Date(x.at).toLocaleTimeString("en-ZA", { hour: "2-digit", minute: "2-digit", hour12: false })}: ${x.line}`).join("\n")}\n`;
+  const st0 = st.digestMode || "", cfg = val(deps.config, {}) || {}, hm = (x) => new Date(x).toLocaleTimeString("en-ZA", { hour: "2-digit", minute: "2-digit", hour12: false });
+  const why = (m) => m === "watch" ? (cfg.intuition === "watch" ? "you set it to watch, so nothing below was done: these are only what it would have done" : "it watches its first day before acting, so nothing below was done: these are only what it would have done") : m === "act" ? "it acts on its own, within what it's allowed (what goes outward is prepared and asked first)" : "it is off";
+  const modes = items.map((x) => x.mode).filter(Boolean), first = modes[0] || st0, last = modes[modes.length - 1] || first, nm = (m) => m === "watch" ? "watching only" : m === "act" ? "acting" : "off";
+  let cur = first;
+  const body = `# Symbiot on its own: ${d.toLocaleString("en-ZA", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hour12: false })}\n\n${first ? `**Mode: ${nm(first)}**: ${why(first)}.\n` : ""}${st0 && first && st0 !== first ? `It was ${nm(st0)} at the last digest and is now ${nm(first)}.\n` : ""}\nEach line says whether it was done, prepared (drafted, or waiting for your OK), only suggested, or just noticed.\n\n${items.map((x) => { let sw = ""; if (x.mode && cur && x.mode !== cur) { sw = `- **${hm(x.at)}: it changed from ${nm(cur)} to ${nm(x.mode)}**: ${why(x.mode)}.\n`; } if (x.mode) cur = x.mode; return `${sw}- ${hm(x.at)}: ${x.how ? `[${x.how}] ` : ""}${x.line}`; }).join("\n")}\n`;
   try { mkdirSync(dir, { recursive: true }); writeFileSync(file, body); } catch { return null; }
-  st.digestAt = now;
+  st.digestAt = now; if (last) st.digestMode = last;
   const id = randomBytes(4).toString("hex");
   st.passes.push({ id, at: now, digest: true, report: { id: createHash("sha1").update(file).digest("hex").slice(0, 12), title: body.split("\n")[0].slice(2) }, moves: [], title: `Digest: ${items.length} thing${items.length > 1 ? "s" : ""} Symbiot did or noticed on its own` });
   return { file, items: items.length };
@@ -352,6 +365,7 @@ function doMove(passId, i, deps = {}) {
   const st = load(), p = st.passes.find((x) => x.id === String(passId || "")), m = p && p.moves && p.moves[Number(i)];
   if (!m) return { error: "That move isn't there any more." };
   if (m.userDid || m.started || m.asked) return { ok: true, said: "That's already under way." };
+  if (m.kind !== "focus" && HOUSEKEEPING.test(m.what)) return { ok: true, said: "Nothing to start: Symbiot's own cards settle on their own, and a run to close one would only leave another." };
   if (m.kind === "focus") { const id = randomBytes(4).toString("hex"); st.proposals.push({ id, line: m.what, why: m.why, at: Date.now() }); m.userDid = Date.now(); save(st); return acceptFocus(id); }
   let map = {}; try { map = val(deps.map, {}) || {}; } catch {}
   const mv = { ...m, would: false }; delete mv.error;
@@ -405,4 +419,4 @@ async function intuitionTick(deps = {}, { now = Date.now() } = {}) {
   return { events: ev, pass: await intuitionPass(deps, { now }) };
 }
 
-export { asksOfUser, SHOWN_FOR, moveView, doMove, markMove, moveContext, noteChange, askMoves, SYSTEM as INTUITION_SYSTEM, EVENT_SYSTEM, digest, newEvents, intuitionPass, intuitionTick, choose, carry, learn, tierOf, modeOf, channelOf, digestDue, intuitionUpdates, intuitionState, intuitionLines, acceptFocus, revoke, readFocus, writeFocus, nudge, line, SOURCES, TIERS, FILE as INTUITION_FILE, FOCUS as FOCUS_FILE, EVERY, NUDGE_GAP, BUDGET, PROMOTE_AFTER, WATCH_FIRST, FOCUS_START };
+export { HOUSEKEEPING, asksOfUser, SHOWN_FOR, moveView, doMove, markMove, moveContext, noteChange, askMoves, SYSTEM as INTUITION_SYSTEM, EVENT_SYSTEM, digest, newEvents, intuitionPass, intuitionTick, choose, carry, learn, tierOf, modeOf, channelOf, digestDue, intuitionUpdates, intuitionState, intuitionLines, acceptFocus, revoke, readFocus, writeFocus, nudge, line, SOURCES, TIERS, FILE as INTUITION_FILE, FOCUS as FOCUS_FILE, EVERY, NUDGE_GAP, BUDGET, PROMOTE_AFTER, WATCH_FIRST, FOCUS_START };

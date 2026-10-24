@@ -2,6 +2,10 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one), for anyone who installs the app: what changed in it, never whose work it was (no projects, people, accounts, services, run ids or task wording of the person who made it). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.90.7 — 2026-10-24
+
+- The 'Symbiot on its own' digest (SYMBIOT-DIGEST-2026-10-24-08.md) never says which mode it ran in or why it didn't act.
+
 ## 0.90.6 — 2026-10-24
 
 - **A step that is commands to run is direct.** When a card needs you to run something, it now shows an **Open terminal** button (opens a terminal on this computer, in the project's folder), each command in a box of its own with a **Copy** button (run them one at a time, in order), and a **Done** button. Before, you got a question and had to find a terminal and work out what to paste. The card writer picks the exact commands out of the agent's words; with no AI connected it uses the ones the agent fenced in a code block.
