@@ -129,6 +129,15 @@ try {
   { const wf = readFileSync(new URL("../.github/workflows/publish.yml", import.meta.url), "utf8");
     ok("a push to main while a release runs waits for it, never cancels it", /^concurrency:\s*\n\s+group: publish\s*\n\s+cancel-in-progress: false/m.test(wf));
     ok("…and a version older than npm's newest isn't released", /older than npm's newest/.test(wf) && /release=false/.test(wf.split("older than npm's newest")[1].split("else")[0])); }
+  console.log("A SCRIPT THAT CAN'T RUN — made runnable, not asked about every run");
+  { const { statSync } = await import("node:fs");
+    const sh = join(CFG, "wrapper"); writeFileSync(sh, "#!/bin/sh\nexit 0\n", { mode: 0o600 });
+    a.ensureRunnable(`${sh} -p "x" --model sonnet`);
+    ok("a 0600 script at the start of the command gets its run bit", !!(statSync(sh).mode & 0o100));
+    const q = join(CFG, "spaced wrapper"); writeFileSync(q, "#!/bin/sh\nexit 0\n", { mode: 0o600 });
+    a.ensureRunnable(`"${q}" -p x`);
+    ok("…also when its path is quoted", !!(statSync(q).mode & 0o100));
+    a.ensureRunnable("claude -p x"); a.ensureRunnable("/no/such/file --x"); ok("a bare command or missing file is left alone (no throw)", true); }
 } finally {
   rmSync(HOME, { recursive: true, force: true });
 }
