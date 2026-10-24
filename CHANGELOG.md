@@ -2,6 +2,10 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one), for anyone who installs the app: what changed in it, never whose work it was (no projects, people, accounts, services, run ids or task wording of the person who made it). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.90.5 — 2026-10-24
+
+- **Reports offer the next steps they list.** Most reports gave no ideas to hand to an agent at the bottom, even when their text said what to do, because only a few heading names counted. A list under "What must change", "Still open", "Remaining", "Not done" or a plan now counts (and a bold lead-in ending in a colon works as a heading), and up to 8 steps are offered instead of 4.
+
 ## 0.90.4 — 2026-10-24
 
 - **No more replies to no-reply senders.** Symbiot offered to draft replies to automated email (Kaggle's, for one), and a reply sent to a no-reply address only bounced. An automated email is now refused up front, the drafting agent checks who an email is from and writes "not replyable" instead of a reply (no card, and that email stops waiting on you), and the send step won't send to a no-reply address.

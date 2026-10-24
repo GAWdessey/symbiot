@@ -233,11 +233,11 @@ function list(lines, i, out, o) {
 // "fix" and "plan" alone head the record of what was done ("The fix", "Battery scorer fix") as often as
 // what is left, so they count only with a qualifier; a heading that says what was done or wrong
 // (DONE_HEAD) never counts. The report's own title (its `# ` line) never counts (2026-10-16).
-const NEXT_HEAD = /\b(?:next|top \d+|recommend\w*|suggest\w*|ideas?|actions?|action items?|to ?dos?|follow[- ]?ups?|what to do|priorit\w*|(?:implementation|rollout|migration|action|fix) plan|fixes? (?:to make|needed|left|still)|still to fix)\b/i;
+const NEXT_HEAD = /\b(?:next(?: steps?)?|top \d+|recommend\w*|suggest\w*|ideas?|actions?|action items?|to ?dos?|follow[- ]?ups?|what to do|priorit\w*|(?:implementation|rollout|migration|action|fix|launch|improvement) plan|plan, in order|plan for|fixes? (?:to make|needed|left|still)|still to fix|(?:what )?must change|needs? (?:to|your|doing|attention)|remaining|still open|left for you|open (?:items?|issues?|questions?)|outstanding|not done|to (?:fix|change|build|do|add|decide)|gaps)\b/i;
 const DONE_HEAD = /\b(?:done|fixed|changed|ticked|shipped|completed|flaws?|causes?)\b/i;
 // A bullet that asks for nothing: it says to leave things be, or reports what is already so.
 const NOT_ACTION = /^(?:paused\b|hold\b|do not|don'?t|never|keep\b|leave\b|no action|nothing (?:to|more)|no [\w ]{0,40}(?:so far|yet)|revisit only if|ticked:|release:)|\b(?:is|are|was|were) now\b|\bhas been\b|\bhad actually\b|\bnot worth\b|\bnothing more for you\b|\bin progress\)/i;
-const IDEAS_MAX = 4;
+const IDEAS_MAX = 8;
 // A half-sentence lifted off a wrapped line is not an action (2026-10-13): one word, one that
 // carries on from something before it ("and then…", "which…"), one that stops on a joining word
 // or a comma, or one with a bracket or quote left open.
@@ -254,7 +254,7 @@ const cleanIdea = (s) => String(s).replace(/^\[[ xX~]\]\s+/, "").replace(/\[([^\
 function reportIdeas(text, max = IDEAS_MAX) {
   const out = []; let on = false, base = -1;
   for (const l of String(text || "").replace(/\r\n?/g, "\n").split("\n")) {
-    const h = l.match(/^(#{1,6})\s+(.*)$/) || l.match(/^\s*()\*\*([^*]+)\*\*:?\s*$/);
+    const h = l.match(/^(#{1,6})\s+(.*)$/) || l.match(/^\s*()\*\*([^*]+)\*\*:?\s*$/) || l.match(/^\s*()\*\*([^*]+)\*\*[^\n]{0,80}:\s*$/); // "**What must change** (full fixes in x.json):" leads a list too
     if (h) { on = h[1].length !== 1 && NEXT_HEAD.test(h[2]) && !DONE_HEAD.test(h[2]); base = -1; continue; }
     if (!on) continue;
     const m = l.match(/^(\s*)(?:[-*+]|\d+[.)])\s+(.+)$/); if (!m) continue;
