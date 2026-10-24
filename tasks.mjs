@@ -1381,7 +1381,11 @@ async function approveRepo(repo, opts = {}) {
   const shipped = waiting(loadTasks());
   if (!shipped.length) return { error: "Nothing awaiting review for " + (repo || "(no repo)") + "." };
   const path = laneMap()[repo]; if (!path) return { error: "Repo not found: " + repo };
-  const busy = stillWorking(repo, path); if (busy) return busy;
+  // Another run at work in the folder only matters when there's something of these finished tasks to
+  // commit. A report, an answer or a check changed nothing in the repo, so it's approved at once
+  // (24 Oct 2026: a finished plan report was refused for a run in the steve lane that shared the repo).
+  const busy = stillWorking(repo, path);
+  if (busy && taskPaths(path, (await workingChangesAsync(path)).files).paths.length) return busy;
   const r = startFix(path, repo, await shipWithBump(path, uniqueTasks(shipped.map((x) => x.text)), { ...opts, repo, autoMerge: opts.autoMerge !== undefined ? opts.autoMerge : autoMergeRepos().includes(repo) }));
   if (r.error) return r;
   // read again: the ship took a while, and the list may have changed meanwhile
