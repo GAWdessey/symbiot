@@ -29,11 +29,11 @@
 import { join } from "node:path";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
-import { CONFIG_DIR, loadTasks, clipWords, jobWords, readState, writeJsonAtomic } from "./core.mjs";
+import { CONFIG_DIR, loadTasks, clipWords, jobWords, readState, writeJsonAtomic, sameTask } from "./core.mjs";
 import { goalRows, putGoal, loadJobs, ENDED } from "./jobs.mjs";
 import { sentAt } from "./handback.mjs";
 
-const DAY = 86400e3, H = 3600e3;
+const DAY = 86400e3, H = 3600e3, DEAD_RUN = 3 * H; // runs that hang are stopped after 45 minutes (agents.mjs runsTick)
 const GOALS_DIR = join(CONFIG_DIR, "drafts"); // a goal's breakdown is a report in a folder of its own there (act-<id>)
 const STALL_AFTER = DAY, NUDGE_AFTER = DAY, SURFACE_AFTER = 3 * DAY, WAIT_OLD = 7 * DAY, LEFT_TRIES = 1;
 const CARDS_FILE = join(CONFIG_DIR, "goal-cards.json"); // the old-wait cards' "keep waiting" (an email wait isn't a goal)
@@ -145,6 +145,7 @@ function childState(key, ctx) {
   if (kind === "run") {
     const j = ctx.jobs.find((x) => x.key === key); if (!j) return { state: "active" };
     if (ctx.running(j.path)) return { state: "active", path: j.path };
+    if (j.state === "running" && (ctx.now || Date.now()) - (j.changed || j.at || 0) > DEAD_RUN) return { state: "ended", path: j.path, at: j.changed, summary: "its end wasn't recorded: nothing has run there since" }; // a record still "running" with nothing running there held its goal open for good
     if (j.state === "waiting") { // the job it's on (its [~] item, or an ops run's own request), for the card's "I'm on it: …"
       const job = jobWords(j.task || (j.lane === "agent" || /^act-/.test(String(j.lane || "")) ? j.text : ""));
       return { state: "waiting", waitingOn: j.waitingOn, what: j.what, path: j.path, at: j.changed, summary: j.summary, ...(job ? { task: job } : {}), ...(j.bare ? { bare: true } : {}) };
@@ -170,14 +171,52 @@ function childState(key, ctx) {
 // The runs, handovers and waits in its folders since it was asked for, which it didn't have yet:
 // every run in its folders after it began, each handover from them (and from those, down the
 // chain), and each email wait they started. A folder's later runs stop being its once its task is done.
+// A lane's folder is shared: every goal there took every run in it, and every folder those runs or
+// their handovers reached, so the two marketing goals took all of daaymn's runs and showed its
+// 'faceVerificationEnabled' release as their blocker, and stayed open with both their tasks long
+// approved (24 Oct 2026). So a folder another child reached is the goal's only when it's a run's own
+// (an ops folder, a copy beside a lane); in a shared one, a run that says which item it's on joins
+// only when that item is the goal's; and once all its tasks are done, later runs there aren't its.
+const OWN_FOLDER = (p) => /\/drafts\/act-[^/]+\/?$|\/worktrees\/[^/]+\/?$/.test(String(p || ""));
+const wordsOf = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9 ]+/g, " ").split(/\s+/).filter(Boolean);
+function sameItem(a, b) { // an item and a clipped copy of it (a run's record cuts it mid-word)
+  if (sameTask(a, b)) return true;
+  const x = wordsOf(a), y = wordsOf(b), [sh, lo] = x.length < y.length ? [x, y] : [y, x], head = sh.slice(0, -1);
+  return head.length >= 6 && head.every((w, i) => lo[i] === w);
+}
+function goalTasks(g, ctx) { return g.children.filter((k) => k.startsWith("task:")).map((k) => ctx.tasks.find((t) => "task:" + t.id === k)).filter(Boolean); }
+function tasksDoneAt(g, ctx) { // when the last of its tasks was done, or 0 while one is open (or none says when)
+  const ts = goalTasks(g, ctx); if (!ts.length) return 0;
+  let at = 0; for (const t of ts) { if (!(t.done || t.archived)) return 0; const w = Number(t.doneAt || t.approvedAt || t.archivedAt) || 0; if (!w) return 0; at = Math.max(at, w); }
+  return at;
+}
+function runBelongs(g, j, ctx, done = tasksDoneAt(g, ctx)) {
+  if (OWN_FOLDER(j.path)) return true;
+  if (done && (j.at || 0) > done) return false;
+  if (!j.task) return true;
+  return [g.asked || g.text, ...goalTasks(g, ctx).map((t) => t.text)].some((t) => sameItem(t, j.task));
+}
 function adopt(g, ctx) {
-  const before = g.children.length, paths = new Set(g.paths);
+  const before = g.children.length, done = tasksDoneAt(g, ctx), first = g.children[0];
+  const handOf = (k) => ctx.ledger.handoffs.find((h) => "handoff:" + h.id === k), runOf = (k) => ctx.jobs.find((x) => x.key === k);
+  // a lane folder only a handover reached isn't its (the old rule took it whole): its runs there are the handover's own
+  const wasHanded = g.children.map(handOf).filter(Boolean), reached = new Set(wasHanded.map((h) => h.to && h.to.path).filter((p) => p && !OWN_FOLDER(p) && p !== g.paths[0]));
+  const paths = new Set(g.paths.filter((p) => !reached.has(p)));
   const own = (p) => p && paths.has(p);
-  for (const k of g.children) { const c = childState(k, ctx); if (c.path) paths.add(c.path); }
-  for (let pass = 0; pass < 3; pass++) {
-    for (const h of ctx.ledger.handoffs) if ((own(h.from.path) || g.children.includes("handoff:" + h.parent)) && (h.at || 0) >= g.at && !g.children.includes("handoff:" + h.id)) { g.children.push("handoff:" + h.id); if (h.to.path) paths.add(h.to.path); }
-  }
-  for (const j of ctx.jobs) if (String(j.key).startsWith("run:") && j.path && own(j.path) && (j.at || 0) >= g.at && !g.children.includes(j.key)) g.children.push(j.key);
+  const mine = (j) => !!j && String(j.key).startsWith("run:") && (OWN_FOLDER(j.path) || own(j.path)) && (j.at || 0) >= g.at && runBelongs(g, j, ctx, done);
+  // a handover from a shared folder is its only when the run that made it is: one run works a lane's
+  // folder at a time, so that's the last one started there before the handover was sent
+  const madeByMine = (h) => { if (OWN_FOLDER(h.from.path)) return true; let by = null; for (const j of ctx.jobs) if (String(j.key).startsWith("run:") && j.path === h.from.path && (j.at || 0) <= (h.at || 0) && (!by || (j.at || 0) > (by.at || 0))) by = j; return !!by && mine(by); };
+  // its handovers, rebuilt by those rules each time (a chain from one that wasn't its goes too), and down their chains
+  const hands = [];
+  for (let pass = 0; pass < 3; pass++) for (const h of ctx.ledger.handoffs) if (!hands.includes(h) && (h.at || 0) >= g.at && ((own(h.from.path) && madeByMine(h)) || hands.some((x) => x.id === h.parent))) { hands.push(h); if (h.to.path && OWN_FOLDER(h.to.path)) paths.add(h.to.path); }
+  const byHand = new Set(hands.map((h) => h.job && "run:" + h.job).filter(Boolean));
+  // the rest it had: a run only if it's still its (in its folders, on its item, before its tasks were done) or a handover's own
+  const rest = g.children.filter((k, i) => i > 0 && !k.startsWith("handoff:") && (!k.startsWith("run:") || byHand.has(k) || ((j) => !j || mine(j))(runOf(k))));
+  g.children = [...(first ? [first] : []), ...hands.map((h) => "handoff:" + h.id).filter((k) => k !== first), ...rest.filter((k) => !hands.some((h) => "handoff:" + h.id === k))];
+  for (const k of byHand) if (!g.children.includes(k) && runOf(k)) g.children.push(k);
+  for (const k of g.children) { const c = childState(k, ctx); if (c.path && OWN_FOLDER(c.path)) paths.add(c.path); }
+  for (const j of ctx.jobs) if (!g.children.includes(j.key) && j.path && own(j.path) && mine(j)) g.children.push(j.key);
   for (const w of ctx.waits) if (w.from && own(w.from.path) && (w.at || 0) >= g.at && !g.children.includes("wait:" + w.id)) g.children.push("wait:" + w.id);
   g.paths = [...paths];
   return g.children.length - before;
@@ -243,7 +282,7 @@ function askIn(said) {
 //   ops(request, opts) → { job, dir } (mind.mjs actNow), notify(title, body), settle(path, note),
 //   tasks, ledger, waits, jobs, map }. Returns what it did, for the log and the tests.
 async function goalsTick(deps = {}, { now = Date.now() } = {}) {
-  const ctx = { tasks: deps.tasks || loadTasks(), ledger: deps.ledger || { handoffs: [] }, waits: deps.waits || [], jobs: deps.jobs || loadJobs(), map: deps.map || {}, running: deps.running || (() => false) };
+  const ctx = { tasks: deps.tasks || loadTasks(), ledger: deps.ledger || { handoffs: [] }, waits: deps.waits || [], jobs: deps.jobs || loadJobs(), map: deps.map || {}, running: deps.running || (() => false), now };
   const did = [];
   if (!deps.jobs) { try { tidyGoals({ now }); ctx.jobs = loadJobs(); } catch {} }
   for (const g0 of goalRows({ jobs: ctx.jobs })) {
@@ -335,7 +374,7 @@ function goalAnswer(path, answers = [], deps = {}, { now = Date.now() } = {}) {
     return { ok: true, said: "Kept waiting; it'll come up again in a week." };
   }
   const g = goalById(path); if (!g) return { error: "That goal isn't on record any more." };
-  const ctx = { tasks: deps.tasks || loadTasks(), ledger: deps.ledger || { handoffs: [] }, waits: deps.waits || [], jobs: deps.jobs || loadJobs(), map: deps.map || {}, running: deps.running || (() => false) };
+  const ctx = { tasks: deps.tasks || loadTasks(), ledger: deps.ledger || { handoffs: [] }, waits: deps.waits || [], jobs: deps.jobs || loadJobs(), map: deps.map || {}, running: deps.running || (() => false), now };
   const kind = g.card && g.card.kind; let said = "Noted.";
   if (is("Drop it")) { close(g, "dropped", { left: "Dropped by the user." }, ctx, deps, now); g.dropped = true; said = "Dropped. Its breakdown is under Reports."; }
   else if (kind === "done" || is("Got it")) { if (g.card) g.card = { ...g.card, seen: now }; said = "Done and closed."; }
