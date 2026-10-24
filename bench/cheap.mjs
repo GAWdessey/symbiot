@@ -88,7 +88,7 @@ const CASES = [
   signinCase(2, "www.linkedin.com", "Welcome to your professional community  Email or phone  Password  Show  Forgot password?  Sign in  or  Continue with Google  New to LinkedIn? Join now", false),
   signinCase(3, "x.com", "Home  Explore  Notifications  Messages  Grok  Bookmarks  Profile  More  Post  For you  Following  What is happening?!", true),
   signinCase(4, "www.domains.co.za/client/dashboard", "Client Area  Please enter your details to log in.  Email Address  Password  Remember Me  Login  Forgotten Password?  Not registered? Create an account", false),
-  signinCase(5, "accounts.google.com", "Choose an account  to continue to Gmail  Garth White garthwhite507@gmail.com  Signed out  Use another account", false),
+  signinCase(5, "accounts.google.com", "Choose an account  to continue to Gmail  Jane Doe jane.doe@example.com  Signed out  Use another account", false),
   signinCase(6, "www.facebook.com/harvestconnect", "HarvestConnect  1.2K likes  Posts  About  Photos  See more of HarvestConnect on Facebook  Log in  or  Create new account", false),
   kwCase("commit", 1, COMMIT_SYS, '--- a/estimate.mjs\n+++ b/estimate.mjs\n@@ -17 +17 @@\n-const FILE = join(CONFIG_DIR, "durations.json"), KEEP = 400, MIN_SAMPLES = 3;\n+const FILE = join(CONFIG_DIR, "durations.json"), KEEP = 800, MIN_SAMPLES = 5;', ["keep|sample|duration"], [], 72),
   kwCase("commit", 2, COMMIT_SYS, '--- a/guard.mjs\n+++ b/guard.mjs\n@@ -21 +21 @@\n-const SECRET = [".ssh", ".gnupg", ".aws",\n+const SECRET = [".ssh", ".gnupg", ".aws", ".config/rclone",', ["rclone"], [], 72),

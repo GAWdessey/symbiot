@@ -365,6 +365,8 @@ try {
   await P.pollComputer({ notify: () => {}, discover: async () => [] });
   ok("…it starts: the task is there", (await pc.cmd("tasks")).some((t) => t.text === "Book the flights") && !P.computerView().queued, P.computerView().queued);
 
+  if (typeof globalThis.WebSocket !== "function") console.log("9. AWAY FROM HOME — skipped: the relay link needs Node 22 or newer (this is " + process.version + ")");
+  else {
   console.log("9. AWAY FROM HOME — through the relay, which only passes sealed messages");
   // the relay in this process (relay/server.mjs); SYMBIOT_TEST_RELAY=<url> runs these against
   // another one instead: the Worker in Miniflare, or the deployed relay.symbiot.co.za
@@ -432,6 +434,7 @@ try {
   const offR = await P.pollComputer({ notify: () => {}, discover: async () => [] });
   ok("with the relay switched off on the computer, nothing goes through it (Wi-Fi only)", offR.error && !(await pc.cmd("state")).relay.connected, [offR.error, (await pc.cmd("state")).relay]);
   relay.close();
+  }
 
   console.log("3. FOUND ON THE NETWORK — mDNS, its name neutral, its TXT the key's fingerprint");
   const { announce, browse, encMessage, decMessage, T } = await import("../mdns.mjs");
