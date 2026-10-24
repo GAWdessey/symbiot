@@ -101,6 +101,20 @@ try {
   console.log("NEEDS YOU — the Updates button takes clicks");
   { const ui = (await import("./uisource.mjs")).uiSource(), rule = (ui.match(/body\.lq-liquid header \.status[^{]*\{pointer-events:auto\}/) || [""])[0];
     ok("the header lets clicks through to the liquid, except its controls: Updates is one of them (it couldn't be clicked, 22 Oct 2026)", /#lqupd/.test(rule) && /#lqlook/.test(rule), rule); }
+  console.log("A STEP THAT IS COMMANDS TO RUN — Open terminal, a box per command to copy, then Done (24 Oct 2026)");
+  { const raw = { kind: "ask", id: "ask:/w/deploy", path: "/w/deploy", name: "steve", q: "Can you run the deploy as root, then re-run the chat and battery?", why: "Run:\n```\nsudo bash deploy/deploy-1024.sh\n```\nthen\n```\n$ python3 v2/battery.py\n```", options: ["Mark deploy as done", "Drop it"] };
+    const a = N.applyText(raw, {});
+    ok("the exact commands the agent fenced are on the card, one each, in order, with no $ prompt", a.run && a.run.map((c) => c.cmd).join("|") === "sudo bash deploy/deploy-1024.sh|python3 v2/battery.py", a.run);
+    ok("a card with no commands has no run block", !N.applyText(choose, {}).run);
+    ok("the card writer's list is kept (what + cmd, at most 5, never empty or a long script)", N.commandList([{ what: "restart it", cmd: " sudo systemctl restart steve " }, { cmd: "" }, { cmd: "a\nb\nc\nd\ne\nf\ng" }, ...Array(6).fill({ cmd: "ls" })]).length === 5 && N.commandList([{ what: "x", cmd: " y " }])[0].cmd === "y");
+    const ui = (await import("./uisource.mjs")).uiSource();
+    ok("the page draws it: Open terminal, a Copy per command, one at a time, and Done", /function runHtml/.test(ui) && /Open terminal/.test(ui) && /brun-copy/.test(ui) && /one at a time/.test(ui) && /brun-done/.test(ui));
+    ok("an agent's own 'so far' words are not drawn as 'undefined has done this already'", /y\.done&&typeof y\.done==='object'&&y\.done\.lane/.test(ui));
+    const { openTerminal } = await import("../core.mjs"); const calls = [];
+    const r1 = openTerminal("/tmp", { platform: "linux", has: (c) => c === "gnome-terminal", spawnIt: (c, a) => { calls.push([c, a]); return {}; } });
+    ok("Open terminal picks the terminal the computer has, in the card's folder", r1.ok && r1.via === "gnome-terminal" && calls[0][1][0] === "--working-directory=/tmp", [r1, calls]);
+    ok("…Terminal on a Mac, Command Prompt on Windows without Windows Terminal", openTerminal("/tmp", { platform: "darwin", has: () => false, spawnIt: (c) => (calls.push([c]), {}) }).via === "Terminal" && openTerminal("/tmp", { platform: "win32", has: () => false, spawnIt: () => ({}) }).via === "Command Prompt");
+    ok("…and no terminal installed says so, with what to do instead", /paste the commands/.test(openTerminal("/tmp", { platform: "linux", has: () => false, spawnIt: () => ({}) }).error || "")); }
 } catch (e) { ok("ran", false, String((e && e.stack) || e)); }
 finally { rmSync(HOME, { recursive: true, force: true }); }
 console.log(`\n${fail ? "✗" : "✓"} needs: ${pass} passed, ${fail} failed`);
