@@ -5,6 +5,9 @@ What each Symbiot release brought, newest first. When Approve bumps the version,
 ## 0.90.7 — 2026-10-24
 
 - The 'Symbiot on its own' digest (SYMBIOT-DIGEST-2026-10-24-08.md) never says which mode it ran in or why it didn't act.
+- New job: find which of the 110 test files fails after the exit 126 fix, fix it, commit, sync with origin/main and open a PR with auto-merge on green CI.
+- Bug: Symbiot sends a 'Design first' product-designer brief for jobs that have no screens or are already built.
+- Bug: Symbiot wrapped one agent brief inside another.
 
 ## 0.90.6 — 2026-10-24
 

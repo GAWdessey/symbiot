@@ -24,6 +24,9 @@ import { judgePush } from "./pushgate.mjs";
 import { holdsMerge, slugOf, folderSlug } from "./design.mjs";
 import { judgePhone, letGo as phoneLetGo, phoneAsked } from "./phonegate.mjs";
 
+// A read the membrane stops: what to do instead, never "ask the user" (a run handed the user a
+// diff of Symbiot's settings and vault to run themselves, 24 Oct 2026)
+const READ_INSTEAD = "your keys and cloud credentials stay yours. To check Symbiot's vault, `symbiot secret list` gives its entry names (compare those, never values); any other check you can't make goes to ops in .symbiot/HANDOFF.md, and never to the user as a command to run";
 const SECRET = [".ssh", ".gnupg", ".aws", ".azure", ".kube", ".docker/config.json", ".config/gcloud", ".config/gh/hosts.yml", ".netrc", ".npmrc", ".pypirc", ".git-credentials", ".config/symbiot/secrets.json", ".config/symbiot/vault.json", ".config/symbiot/vault.key", ".config/symbiot/vault-pin.json"];
 const under = (p, d) => p === d || p.startsWith(d.endsWith("/") ? d : d + "/");
 const expand = (p, home, cwd) => resolve(cwd, String(p).replace(/^~(?=\/|$)/, home).replace(/^\$HOME(?=\/|$)/, home).replace(/^\$\{HOME\}(?=\/|$)/, home));
@@ -198,7 +201,7 @@ function judgeBash(cmd, { cwd, home, branch, session = "" }) {
       const own = w[0] === "scp" ? SCP_VALUE : null;
       for (const p of w.slice(1).filter((a, i, all) => !a.startsWith("-") && !(own && own.test(all[i - 1] || "")))) {
         const abs = expand(unquote(p), home, cwd);
-        if (secretPath(abs, home) && !(PUB_READ.test(w[0]) && PLAIN.test(unquote(p)) && publicKey(abs, home))) return { why: "your keys and cloud credentials stay yours" };
+        if (secretPath(abs, home) && !(PUB_READ.test(w[0]) && PLAIN.test(unquote(p)) && publicKey(abs, home))) return { why: READ_INSTEAD, read: true };
       }
     }
     if (changesOwn(s, { home, cwd, whole: c })) return { why: "Symbiot's own settings are yours to change" + OWN_READ_HINT };
@@ -240,7 +243,7 @@ function refusal(tool, input = {}, { cwd = process.cwd(), home = homedir(), bran
   const p = input.file_path || input.path || input.notebook_path;
   if (!p) return null;
   const abs = expand(p, home, cwd);
-  if (secretPath(abs, home) && !(t === "Read" && publicKey(abs, home))) return { why: "your keys and cloud credentials stay yours" };
+  if (secretPath(abs, home) && !(t === "Read" && publicKey(abs, home))) return { why: t === "Read" ? READ_INSTEAD : "your keys and cloud credentials stay yours", ...(t === "Read" ? { read: true } : {}) };
   if (/^(Edit|Write|MultiEdit|NotebookEdit)$/.test(t) && symbiotConfig(abs, home)) return { why: "Symbiot's own settings are yours to change" };
   if (/^(Edit|Write|MultiEdit|NotebookEdit)$/.test(t) && selfFile(abs)) return { why: "Symbiot doesn't edit its own code" };
   if (/^(Edit|Write|MultiEdit|NotebookEdit)$/.test(t) && Array.isArray(writes) && writes.length && !writes.some((d) => under(abs, d))) return { why: "this run writes only in its repo and your folders (its sandbox), not " + p, setting: true };
@@ -264,7 +267,7 @@ if (main) {
   }
   let writes = null; try { writes = JSON.parse(process.env.SYMBIOT_WRITES || "null"); } catch {} // a sandboxed repo run's folders
   const r = judge(ev.tool_name, ev.tool_input || {}, { cwd: ev.cwd || process.cwd(), writes, session: String(ev.session_id || "") });
-  if (r) { process.stderr.write("Blocked by Symbiot's membrane: " + r.why + ". If it's needed, ask the user in .symbiot/QUESTIONS.md with options.\n"); process.exit(2); }
+  if (r) { process.stderr.write("Blocked by Symbiot's membrane: " + r.why + (r.read ? ".\n" : ". If it's needed, ask the user in .symbiot/QUESTIONS.md with options.\n")); process.exit(2); }
   process.exit(0);
 }
 

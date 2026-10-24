@@ -83,6 +83,13 @@ try {
   ok("…and the Archive still lists it", S.archivedTasks(CFG).some((t) => t.id === "a1"));
   const T = await import("../tasks.mjs"), back = T.restoreTask("a1");
   ok("…and Restore brings it back into tasks.json", back && back.id === "a1" && !back.archived && JSON.parse(readFileSync(join(CFG, "tasks.json"), "utf8")).some((t) => t.id === "a1") && !S.archivedTasks(CFG).length, back);
+  if (process.platform !== "win32") {
+    // 24 Oct 2026: the sweep set ~/.config/symbiot/claude-fallback (0755) to 0600, and 25 agent runs failed "Permission denied"
+    const w = join(CFG, "claude-fallback"); writeFileSync(w, "#!/bin/sh\necho ran\n"); chmodSync(w, 0o755);
+    S.sweepModes({ dir: CFG });
+    const { execFileSync } = await import("node:child_process"); let out = ""; try { out = execFileSync(w, { encoding: "utf8" }); } catch {}
+    ok("a 0755 script in the swept folder comes out 0700, and still runs", (st2(w).mode & 0o777) === 0o700 && out.trim() === "ran", (st2(w).mode & 0o777).toString(8));
+  }
   if (process.platform !== "win32") ok("a state file left 0664 is yours only after a sweep (0600)", (st2(join(CFG, "continued.json")).mode & 0o777) === 0o600 && r3.modes >= 1, (st2(join(CFG, "continued.json")).mode & 0o777).toString(8));
 } finally {
   rmSync(HOME, { recursive: true, force: true });
