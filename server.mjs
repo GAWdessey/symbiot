@@ -650,6 +650,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       if (u.pathname === "/api/secrets/delete" && req.method === "POST") { const b = await readBody(req); return json(res, deleteSecret(String(b.name || ""))); }
       if (u.pathname === "/api/secrets/scrub" && req.method === "POST") { const r = scrubStored({ force: true }); return json(res, { found: r.found || [], files: (r.files || []).map((f) => f.replace(CONFIG_DIR + "/", "")) }); }
       // The Vault page (vaultview.mjs): the list never holds a value; one is given only to a page unlocked with the vault PIN, for a short while.
+      if (u.pathname === "/api/sync/now" && req.method === "POST") return json(res, await (await import("./sync.mjs")).now()); // symbiot sync now, while the app runs: one writer
       if (u.pathname === "/api/timers") return json(res, { timers: timersState() }); // the app's background jobs: when each ran, how long, what failed (timers.mjs)
       if (u.pathname === "/api/triage/stats") return json(res, triageStats()); // how often a question reached the user that wasn't theirs (triage.mjs)
       if (u.pathname === "/api/vault" && req.method === "POST") { const b = await readBody(req); return json(res, { ...vaultList({ token: String(b.token || "") }), log: vaultLog() }); }
@@ -974,6 +975,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
   setPhoneApprove(async (repo, untasked) => { const { notes, deny } = await notesFor(repo, {}); return untasked ? approveChanges(repo, { tick: [], notes, deny }) : approveRepo(repo, { notes, deny }); });
   startPhone();
   onAnswered((path, rows) => shareAnswer(path, rows)); // an answer to one agent reaches the others on the same work
+  if (!SANDBOX) every("sync", 5 * 60000, async () => { const S = await import("./sync.mjs"); if (S.status().paired) { const r = await S.now(); if (r.error) throw new Error(r.error); } }, { first: 60000 }); // this Symbiot and the other paired one (sync.mjs)
   every("waiting runs", 20000, () => startWaiting()); // a run that waits for your step starts once the file it names changes
   every("runs", 60000, () => runsTick(), { first: 5000 }); // a run silent too long is stopped; one that ended while Symbiot was down gets its exit's bookkeeping (agents.mjs)
   every("merge back", 20000, () => mergeEnded({ addTask })); // runs beside a lane's own that ended (also while Symbiot was down): merged back into the lane
