@@ -74,6 +74,15 @@ try {
   ok("…and no ember: the project isn't ready for your OK, nor lit", !w.ready.length && !(w.projects || []).some((p) => p.repo === "orig" && (p.lit || p.ready)), [w.ready, w.projects]);
   const done = { ...left, leftover: undefined, open: [{ id: "o1", text: "Make the Home balls say what they wait on", finished: true }] };
   ok("changes a run says finished a task still wait on you, on both", homeState({ fresh: true, deps: homeDeps([done]) }).you.some((y) => y.id === "approve:orig") && workScene({ deps: sceneDeps([done]) }).ready.length === 1);
+
+  console.log("(3) A FINISHED TASK THAT CHANGED NOTHING IS APPROVED, WHOEVER ELSE IS AT WORK");
+  { execSync("git checkout -q -- . && git clean -fdq -e .symbiot", { cwd: repo, env: gitEnv }); live();
+    const { readFileSync } = await import("node:fs");
+    const tj = JSON.parse(readFileSync(join(CFG, "tasks.json"), "utf8")); for (const x of tj) if (x.id === "o1") { x.review = true; x.reviewAt = Date.now(); }
+    writeFileSync(join(CFG, "tasks.json"), JSON.stringify(tj)); T.forgetReview();
+    const ap = await T.approveRepo("orig", { push: false });
+    ok("a report (nothing changed in the repo) is approved while another run is at work there", !ap.error && ap.approved === 1, ap);
+    ok("…and the task is done", JSON.parse(readFileSync(join(CFG, "tasks.json"), "utf8")).find((x) => x.id === "o1").done === true); }
 } finally { rmSync(HOME, { recursive: true, force: true }); }
 console.log(`\n${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0);
 
