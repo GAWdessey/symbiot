@@ -2,6 +2,10 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one), for anyone who installs the app: what changed in it, never whose work it was (no projects, people, accounts, services, run ids or task wording of the person who made it). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.90.3 — 2026-10-24
+
+- **Approve no longer fails on a finished report.** A task that only wrote a report (nothing changed in the repo) was refused with "an agent is still at work here" whenever another agent was working in the same repo, even though there was nothing half-done to commit. It is now approved at once; the wait only applies when there are files of the finished task to commit.
+
 ## 0.90.2 — 2026-10-24
 
 - **A run no longer fails on a script it can't start.** A wrapper script saved without permission to run (such as `claude-fallback`) made every run die at once with "Permission denied", and each failed run then asked you "Run it again?". Symbiot now makes the script runnable before it starts the run.
