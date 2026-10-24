@@ -2,6 +2,10 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one), for anyone who installs the app: what changed in it, never whose work it was (no projects, people, accounts, services, run ids or task wording of the person who made it). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.90.2 — 2026-10-24
+
+- **A run no longer fails on a script it can't start.** A wrapper script saved without permission to run (such as `claude-fallback`) made every run die at once with "Permission denied", and each failed run then asked you "Run it again?". Symbiot now makes the script runnable before it starts the run.
+
 ## 0.90.1 — 2026-10-23
 
 - **Updates only show what you can see and act on.** A note saying something waited on you ("waiting on one yes from you", "the texts wait only for your Go") sent you looking for a question that wasn't on screen. Anything that needs you is already a card on Home, with its buttons, so those notes no longer appear and Symbiot no longer writes them.
