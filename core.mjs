@@ -1,7 +1,7 @@
 // Shared basics for every module: Symbiot's version (and npm's newest), its
 // config and task files, the helpers that run programs (never throw, never hang) and
 // a repo's working-tree state.
-import { execSync, execFileSync } from "node:child_process";
+import { execSync, execFileSync, spawn as spawnProc } from "node:child_process";
 import { homedir } from "node:os";
 import { join, dirname } from "node:path";
 import { readFileSync, mkdirSync, chmodSync, existsSync, openSync, writeSync, fsyncSync, closeSync, renameSync, unlinkSync, linkSync, copyFileSync, statSync } from "node:fs";
@@ -327,6 +327,23 @@ const gitOk = (path, args, opts) => runOk("git", ["-C", String(path), ...args], 
 // path, as execSync finds it, so a PATH without /bin still answers)
 const POSIX_SH = process.platform === "android" ? "/system/bin/sh" : "/bin/sh";
 function hasCmd(cmd) { return !!(process.platform === "win32" ? runOut("where", [String(cmd)]) : runOut(POSIX_SH, ["-c", 'command -v -- "$1"', "sh", String(cmd)])).trim(); }
+// Open a terminal window on this computer, in a folder: the card's "Open terminal", for a step only the
+// user can take that is a command to run. One of the terminals the OS has, the first found; { ok, via } or
+// { error }. The pieces are passed in so a test can answer for another OS (24 Oct 2026: the user was told
+// to run a deploy and had to find a terminal and work out what to paste himself).
+function openTerminal(cwd = homedir(), { platform = process.platform, has = hasCmd, spawnIt = spawnProc } = {}) {
+  const dir = cwd && existsSync(cwd) ? cwd : homedir();
+  let via = "", cmd = "", args = [];
+  if (platform === "darwin") { via = "Terminal"; cmd = "open"; args = ["-a", "Terminal", dir]; }
+  else if (platform === "win32") { const wt = has("wt"); via = wt ? "Windows Terminal" : "Command Prompt"; cmd = wt ? "wt" : "cmd"; args = wt ? ["-d", dir] : ["/c", "start", "cmd", "/K", `cd /d "${dir}"`]; }
+  else {
+    const T = [["x-terminal-emulator", []], ["gnome-terminal", ["--working-directory=" + dir]], ["konsole", ["--workdir", dir]], ["xfce4-terminal", ["--working-directory=" + dir]], ["kitty", ["-d", dir]], ["alacritty", ["--working-directory", dir]], ["tilix", ["--working-directory=" + dir]], ["xterm", []]];
+    const t = T.find(([c]) => has(c)); if (!t) return { error: "No terminal program found on this computer. Open one yourself and paste the commands below." };
+    via = t[0]; cmd = t[0]; args = t[1];
+  }
+  try { const c = spawnIt(cmd, args, { cwd: dir, detached: true, stdio: "ignore" }); if (c && c.on) c.on("error", () => {}); if (c && c.unref) c.unref(); return { ok: true, via }; }
+  catch (e) { return { error: "Couldn't open a terminal: " + ((e && e.message) || e) }; }
+}
 // A Chromium-family browser, per OS: the app's chrome-less --app window, and
 // Screens' hidden (headless) browser.
 function chromeBinary() {
@@ -367,4 +384,4 @@ function repoState(repoPath) {
   return { branch, dirty, del, mod, add, stale, staleBy, behind };
 }
 
-export { jobWords, own, writeAtomic, writeJsonAtomic, readState, privateDir, alive, takeAppLock, releaseAppLock, lockPath, VERSION, LATEST_VERSION, semverGt, REGISTRY, checkLatest, CONFIG_DIR, CONFIG_PATH, SECRETS_PATH, loadConfig, saveConfig, moveSecrets, splitSecrets, loadTasks, saveTasks, TASK_MAX, clipWords, taskWords, sameTask, isFinding, uniqueTasks, sh, runOut, runOk, gitOut, gitOk, hasCmd, chromeBinary, repoState };
+export { openTerminal, jobWords, own, writeAtomic, writeJsonAtomic, readState, privateDir, alive, takeAppLock, releaseAppLock, lockPath, VERSION, LATEST_VERSION, semverGt, REGISTRY, checkLatest, CONFIG_DIR, CONFIG_PATH, SECRETS_PATH, loadConfig, saveConfig, moveSecrets, splitSecrets, loadTasks, saveTasks, TASK_MAX, clipWords, taskWords, sameTask, isFinding, uniqueTasks, sh, runOut, runOk, gitOut, gitOk, hasCmd, chromeBinary, repoState };
