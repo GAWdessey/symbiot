@@ -18,7 +18,7 @@ import { readFileSync, writeFileSync, mkdirSync, statSync } from "node:fs";
 import { watchBoard, draftReply, draftCards, draftAnswer } from "./watch.mjs";
 import { pendingReview, pushTasks, addTask, taskType, releaseNotIn, unplacedTasks } from "./tasks.mjs";
 import { estimate, estimateWords } from "./estimate.mjs";
-import { agentQuestions, answerQuestions, heldAsk, grantCard, cardIsPermission, onCardGone, setHandoffCmd, agentsList, agentsNow, forgetAgents, runHandoff, runningHandoff, handoffCmd, loadRuns, connectorsInfo, parkedPaths, agentMissing, settleNeeds, closeAsk, pickAgent, detectHandoffs, linkReach, unchangedStep, whereOf, claudePause, parkLane, waitingTask } from "./agents.mjs";
+import { launchFault, ensureRunnable, agentQuestions, answerQuestions, heldAsk, grantCard, cardIsPermission, onCardGone, setHandoffCmd, agentsList, agentsNow, forgetAgents, runHandoff, runningHandoff, handoffCmd, loadRuns, connectorsInfo, parkedPaths, agentMissing, settleNeeds, closeAsk, pickAgent, detectHandoffs, linkReach, unchangedStep, whereOf, claudePause, parkLane, waitingTask } from "./agents.mjs";
 import { stallCards, loadStall, saveStall } from "./stall.mjs";
 import { isDone, recordDone, doneList, asksBack, askBackNote, wantsReport, closesAsk, heldBy, reportsSince, talkOf, addTalk, talkText, YES, asksQ, saysDone, wantsToRead } from "./asksdone.mjs";
 import { captureSecrets } from "./vault.mjs";
@@ -118,6 +118,15 @@ function troubles({ stuck = [], list = [], map = {}, named = displayName, now = 
       continue;
     }
     if (a.status !== "failed" || dropped.has(a.id) || stoppedFor.has(a.id) || a.down || (a.endedAt && now - a.endedAt > FAILED_FOR)) continue; // down: Claude itself was out, and Home has one card for that
+    if (a.relaunched) continue; // its launcher was made runnable, and it started again by itself
+    // the agent never started (its launcher couldn't run): Symbiot's fault, and a rerun as it was changes nothing
+    const fault = a.fault || launchFault(a.exitCode, a.tail);
+    if (fault) {
+      out.push({ kind: "ask", fix: "fault", id: "fault:" + a.id, path: a.path, repo, name: nm, title: `Symbiot couldn't start ${nm}'s agent`, sub: `${fault.path}: ${fault.why || fault.said}`,
+        q: `This is a fault in Symbiot, not in ${nm}'s work: the agent command starts with ${fault.path}, and the system said "${fault.why || fault.said}", so no agent ran. Fix and start checks it again and starts the run only once it can run.`,
+        options: ["Fix and start (recommended)", "Skip"], shape: "agents" });
+      continue;
+    }
     const said = plain(String(a.tail || "").split(/\n+/).filter((l) => l.trim()).pop() || "", 140);
     out.push({ kind: "ask", fix: "failed", id: "failed:" + a.id, path: a.path, repo, name: nm, title: `${nm}'s run stopped`, sub: said || `it exited with code ${a.exitCode}`,
       q: `Its run stopped with an error${said ? `: ${said}` : ` (exit code ${a.exitCode})`}. Run it again?`, options: ["Run it again (recommended)", "Skip"], shape: "agents" });
@@ -630,6 +639,16 @@ function homeAnswer(id, { pick, text = "" } = {}, deps = {}) {
     if (!go) { const r = (deps.skip || skipHandover)(ref); return r.error ? r : { ok: true, said: "Skipped. Its agent knows." }; }
     const r = (deps.allow || allowHandover)(ref, { note: text }); if (r.error) return r;
     return { ok: true, said: `Started a run on it${r.dirs && r.dirs.length ? `, allowed into ${r.dirs.map((d) => (d.startsWith(homedir() + "/") ? "~" + d.slice(homedir().length) : d)).join(" and ")}` : ""}. What it does goes back to the agent that asked.` };
+  }
+  // a launcher that couldn't run: made runnable first, and the run starts only if it now can
+  if (id.startsWith("fault:")) {
+    const a = (deps.agents || agentsList)().find((x) => x.id === ref); if (!a) return { error: "That run isn't here any more." };
+    if (!go) { dropped.add(ref); return { ok: true, said: "Skipped." }; }
+    if ((deps.running || runningHandoff)(a.path)) return { ok: true, said: "An agent is already at work there." };
+    const fix = (deps.ensureRunnable || ensureRunnable)((deps.handoffCmd || handoffCmd)());
+    if (fix && !fix.ok) return { error: `Symbiot still can't start it: ${fix.path}, ${fix.why}. Change the agent command in Settings → Handoff.` };
+    const e = (deps.run || runHandoff)(a.path, { force: true }); dropped.add(ref);
+    return e && e.id && !e.blocked ? { ok: true, said: "Its launcher runs now, and the run has started.", rerun: e.id } : { error: (e && e.note) || "It didn't start. Check your agent in Settings." };
   }
   if (id.startsWith("failed:")) {
     const a = (deps.agents || agentsList)().find((x) => x.id === ref); if (!a) return { error: "That run isn't here any more." };

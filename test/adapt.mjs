@@ -312,6 +312,17 @@ try {
   homeAnswer("failed:r1", { pick: 1 }, fd);
   ok("…Skip: it stops asking", noFail(() => [failedRun()]), "");
   ok("…and an agent's own question is answered on its block, as before", !!homeAnswer("ask:/w", { pick: 0 }).error, "");
+  // the launcher couldn't run (exit 126): Symbiot's fault, not "Run it again?", and Fix and start checks first
+  const faultRun = () => failedRun({ id: "rf126", exitCode: 126, tail: "sh: 1: /home/u/.config/symbiot/claude-fallback: Permission denied" });
+  const fy = homeState({ fresh: true, deps: { ...deps, pending: () => [], repos: () => ({ atlas: "/c" }), agents: () => [faultRun()] } }).you;
+  const fc = fy.find((y) => y.fix === "fault");
+  ok("a run whose launcher couldn't run: a Symbiot-fault card, never Run it again", fc && fc.id === "fault:rf126" && /fault in Symbiot/.test(fc.q) && /claude-fallback/.test(fc.q) && fc.options[0] === "Fix and start (recommended)" && !fy.some((y) => y.fix === "failed"), fy);
+  ok("…and none once it started again by itself", !homeState({ fresh: true, deps: { ...deps, pending: () => [], repos: () => ({ atlas: "/c" }), agents: () => [{ ...faultRun(), relaunched: true }] } }).you.some((y) => y.fix === "fault" || y.fix === "failed"));
+  const fRan = [], fdeps = { agents: () => [faultRun()], running: () => false, handoffCmd: () => "/x/claude-fallback -p x", run: (p) => { fRan.push(p); return { id: "j3" }; } };
+  const stillBad = homeAnswer("fault:rf126", { pick: 0 }, { ...fdeps, ensureRunnable: () => ({ ok: false, path: "/x/claude-fallback", why: "it can't be made runnable" }) });
+  ok("…Fix and start: still not runnable, it says why and starts nothing", stillBad.error && /can't be made runnable/.test(stillBad.error) && !fRan.length, stillBad);
+  const fixed = homeAnswer("fault:rf126", { pick: 0 }, { ...fdeps, ensureRunnable: () => ({ ok: true, path: "/x/claude-fallback", fixed: true }) });
+  ok("…runnable now, it starts the run", fixed.ok && fixed.rerun === "j3" && fRan.join() === "/c", fixed);
   // a permission card: Done writes the rules into the lane's allow list, a glob is never a file to look for
   const lane = join(HOME, "robin-lane"); mkdirSync(lane, { recursive: true });
   const permCard = { id: "pc1", path: lane, needs: { kind: "step", key: "k1", what: "👤 You (only you: a permission): allow `python3 -I -c` / `py_compile` on `v2/*.py`", check: "" } };

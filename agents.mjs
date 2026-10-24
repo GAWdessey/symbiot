@@ -549,7 +549,7 @@ function twinRunning(path, { goals = () => { try { return goalRows(); } catch { 
   for (const g of goals()) { if (!g || ["done", "failed"].includes(g.state) || !(g.paths || []).includes(path)) continue; const other = (g.paths || []).find((p) => p !== path && isOps(p) && running(p)); if (other) return other; }
   return null;
 }
-function runHandoff(repoPath, { force = false, lost = false, model = "", onExit = null, escalatedFrom = "", note = "", stalled = false, critic = false, designer = false } = {}) {
+function runHandoff(repoPath, { force = false, lost = false, model = "", onExit = null, escalatedFrom = "", note = "", stalled = false, critic = false, designer = false, relaunched = false } = {}) {
   let tmpl = handoffCmd(); if (!tmpl || !repoPath) return null;
   if (isParked(repoPath)) return { blocked: true, parked: true, questions: 0, note: PARKED_NOTE }; // even forced: that's what parking is for
   const lic = licenceGate(repoPath); if (lic) return lic; // Free's limits, and never Symbiot's own code (licence.mjs); even forced
@@ -571,6 +571,8 @@ function runHandoff(repoPath, { force = false, lost = false, model = "", onExit 
   const runCmd = resume && !fresh ? tmpl + ` --resume ${resume.id}` : tmpl;
   if (!force) { const w = waitingFor(repoPath); if (w) { askedFor(repoPath); return { blocked: true, waiting: true, questions: 0, note: waitNote(w) }; } }
   const blocked = !force && blockedAgain(repoPath, scoped); if (blocked) return blocked;
+  // its launcher can run, or no run starts: one that can't ended at once, every time (launchFault)
+  const launch = ensureRunnable(runCmd); if (launch && !launch.ok) return { blocked: true, fault: true, questions: 0, note: `Symbiot can't start the agent: its command starts with ${launch.path}, and ${launch.why}. That's Symbiot's agent command (Settings → Handoff), not the work.` };
   // the folder is this run's from here: the lock is claimed before the slow part (git status on a big
   // tree), where a second process (symbiot push --open, a second app during an update) got in
   const lock = join(repoPath, ".symbiot", LOCK);
@@ -589,6 +591,18 @@ function runHandoff(repoPath, { force = false, lost = false, model = "", onExit 
   const full = fillHandoff(runCmd, repoPath, `${critic ? CRITIC_PROMPT : designer ? DESIGNER_PROMPT : stalled ? HANDOFF_PROMPT + STALL_PROMPT_TAIL : fresh ? carryOn(repoPath) : resume ? RESUME_PROMPT : HANDOFF_PROMPT} ${whereLine(repoPath)}${note ? " " + note : ""}`);
   const walls = (() => { try { return opsWalls(repoPath); } catch { return null; } })(); // an ops run: in walls of its own (opsWalls)
   const e = track(critic ? `Design critic: ${repoPath.split("/").pop()}` : designer ? `Designer: ${repoPath.split("/").pop()}` : typeof opts.name === "string" && opts.name ? opts.name.slice(0, 80) : repoPath.split("/").pop(), walled(gap ? `sleep ${Math.ceil(gap / 1000)}; ${full}` : full, walls), repoPath, (code) => {
+    // the launcher couldn't run: no agent started, so nothing else here applies. Made runnable, it
+    // starts again once by itself; still not, the run says so as Symbiot's fault (Home), never "Run it again?"
+    const fault = (() => { try { return launchFault(code, workOf(repoPath, readRunLog(e.log)).tail, runCmd); } catch { return null; } })();
+    if (fault) {
+      try { if (JSON.parse(readFileSync(lock, "utf8")).pid === e.pid) unlinkSync(lock); } catch {}
+      forgetRunStart(repoPath, e.id);
+      const fix = ensureRunnable(runCmd);
+      if (fix && fix.ok && !relaunched) { e.relaunched = true; setTimeout(() => { try { runHandoff(repoPath, { force: true, relaunched: true, model, escalatedFrom, note, stalled, critic, designer, onExit }); } catch {} }, 300); return; }
+      e.fault = { ...fault, ...(fix && !fix.ok ? { why: fix.why } : {}) };
+      if (onExit) try { onExit(code); } catch {}
+      return;
+    }
     if (!critic && !designer && noteSession(repoPath, code, !!resume && !fresh) === "lost") { setTimeout(() => { try { runHandoff(repoPath, { force: true, lost: true, onExit }); } catch {} }, 300); return; } // its conversation is gone: start afresh
     try { if (JSON.parse(readFileSync(lock, "utf8")).pid === e.pid) unlinkSync(lock); } catch {}
     try { const d = noteClaudeDown(repoPath); if (d) e.down = d; } catch {} // Claude itself was the reason: no start anywhere until it's back
@@ -1902,13 +1916,33 @@ END_HOOKS.push((e) => { const w = e && TWIN_WAIT.get(e.path); if (!w) return; TW
 // A command that starts with a script path this app can see but cannot run (saved 0600,
 // as every file in the config folder is) fails with "Permission denied" on every run, and
 // each run then asks you "Run it again?". Make it runnable once, here, instead.
+// The launcher is the first word that isn't VAR=value, past a leading `sleep N;` (the start
+// gap): runHandoff's command began with that sleep, so the check above saw "sleep" and the
+// wrapper went on failing (24 Oct 2026). ~ is your home. { path, ok, why }: the script, and
+// whether it can run now; null when the command doesn't start with a path.
+function launcherOf(cmd) {
+  const rest = String(cmd || "").replace(/^\s*sleep\s+\d+\s*;\s*/, "").replace(/^(?:\s*[A-Za-z_][A-Za-z0-9_]*=(?:"[^"]*"|'[^']*'|\S*))*\s*/, "");
+  const m = /^(?:"([^"]+)"|'([^']+)'|(\S+))/.exec(rest); if (!m) return "";
+  const first = (m[1] || m[2] || m[3]).replace(/^~(?=\/)/, homedir());
+  return first.startsWith("/") ? first : "";
+}
 function ensureRunnable(cmd) {
-  try {
-    const first = (/^\s*(?:"([^"]+)"|(\S+))/.exec(cmd) || [])[1] || (/^\s*(\S+)/.exec(cmd) || [])[1];
-    if (!first || !first.startsWith("/")) return;
-    const st = statSync(first);
-    if (st.isFile() && !(st.mode & 0o100)) chmodSync(first, st.mode | 0o700);
-  } catch {}
+  const path = launcherOf(cmd); if (!path) return null;
+  let st; try { st = statSync(path); } catch { return { path, ok: false, why: "it isn't there" }; }
+  if (!st.isFile()) return { path, ok: true };
+  if (!(st.mode & 0o100)) try { chmodSync(path, st.mode | 0o700); } catch {}
+  try { return statSync(path).mode & 0o100 ? { path, ok: true, fixed: !(st.mode & 0o100) } : { path, ok: false, why: "it can't be made runnable" }; } catch { return { path, ok: false, why: "it isn't there" }; }
+}
+// A run that ended before its agent started: the shell couldn't run the launcher (126:
+// Permission denied, 127: not found). Nothing in the work changed, so "Run it again?" was no
+// use: four lanes asked it on 24 Oct 2026. The launcher's path and what the shell said, or null.
+function launchFault(code, tail, cmd = "") {
+  if (code !== 126 && code !== 127) return null;
+  const m = /(?:^|\n)[^\n]*?(\/[^\s:]+): (Permission denied|not found|No such file or directory)\s*$/.exec(String(tail || "").trimEnd());
+  if (!m) return null;
+  const path = m[1], launcher = launcherOf(cmd);
+  if (launcher && launcher !== path) return null; // a command inside the run, not the run's own start
+  return { path, said: m[2] };
 }
 function track(name, cmd, cwd, onExit, env) {
   ensureRunnable(cmd);
@@ -2648,7 +2682,7 @@ function agentsList() {
     const waiting = first && e.status !== "running" ? waitingFor(e.path) : null;
     // a need is a card only while the run's record says it waits on the user: its last words alone made cards the record contradicted
     const needs = first && e.status !== "running" && (!outcome || (outcome.state === "waiting" && outcome.waitingOn === "user")) ? needsOf(e.path, { final: work ? tail : "", waiting, end: e.endedAt || Date.now(), start: e.startedAt }) : null;
-    return { id: e.id, ...(outcome ? { outcome } : {}), name: e.name, path: e.path, status: e.status, startedAt: e.startedAt, endedAt: e.endedAt, elapsed: (e.endedAt || Date.now()) - e.startedAt, exitCode: e.exitCode, ...(e.down ? { down: e.down } : {}), tail, work, progress, ...(e.status === "running" && line ? { line } : {}), changed: agentChanges(e.path, e.startedAt, e.endedAt || 0), ask: first ? agentQuestions(e.path, e.name) : null, held: first ? heldTasks(e.path) : null, waiting, needs, remember: facts.length ? facts : null, fromHeld: !!e.fromHeld };
+    return { id: e.id, ...(outcome ? { outcome } : {}), name: e.name, path: e.path, status: e.status, startedAt: e.startedAt, endedAt: e.endedAt, elapsed: (e.endedAt || Date.now()) - e.startedAt, exitCode: e.exitCode, ...(e.down ? { down: e.down } : {}), ...(e.fault ? { fault: e.fault } : {}), ...(e.relaunched ? { relaunched: true } : {}), tail, work, progress, ...(e.status === "running" && line ? { line } : {}), changed: agentChanges(e.path, e.startedAt, e.endedAt || 0), ask: first ? agentQuestions(e.path, e.name) : null, held: first ? heldTasks(e.path) : null, waiting, needs, remember: facts.length ? facts : null, fromHeld: !!e.fromHeld };
   }).concat(earlierRuns())).map((a) => ({ ...a, phase: runPhase(a) })).map(oneNeedEach());
 }
 // One subject is one card: the GitHub billing need came back from five runs, each worded its own
@@ -2675,4 +2709,4 @@ function agentsNow({ now = Date.now() } = {}) {
 }
 const forgetAgents = () => { agentsKept = null; };
 
-export { ensureRunnable, opsWalls, walled, OPS_RO, OPS_OWN, OPS_HIDDEN, runOpen, namedRun, twinRunning, TWIN_WAIT, wholeLog, uiReview, onGoalAnswer, runOutcome, settleRecord, waitsOutside, triageSweep, runSection, autoStart, AUTO_MAX, oneNeedEach, NOTHING_FOR_YOU, chaseReport, CHASED, UNMET, heldAsk, onCardGone, withOwnTools, escalation, grantCard, cardRules, cardIsPermission, runPhase, onRunEnd, isClaudeCmd, GUARD, tidyRule, tidyRules, tidySettings, pruneRuns, claudePlugins, idlePlugins, runSettings, archiveAnswers, allAnswers, answersDigest, ANSWERS_ARCHIVE, ANSWERS_KEEP, runsTick, RUN_START, HANG_MIN, noteBlocked, userAnswers, CONTINUED_FILE, onAnswered, CHANGES, toKnownHost, continueLanes, autoPick, autoDecide, FACTS, factsOf, knownRun, withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, linkReach, fillHandoff, runHandoff, nothingToDo, whereOf, whereLine, whereAnswer, askTask, PARKED_NOTE, parkedPaths, isParked, parkLane, agentMissing, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, unchangedStep, waitingFor, startWaiting, noteUntracked, untrackedBefore, forgetUntracked, writeTasks, droppedTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, pickAgent, findOrcaCli, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, routeIdeas, agentQuestions, answerQuestions, agentsList, agentsNow, forgetAgents, AGENTS_KEEP, needsOf, settleNeeds, closeAsk, closedAsk, sameSubject, NEEDS_FOR, readLastWords, readNeeds, parseRead, READ_FILE, autoAllow, autoAllowSweep, allowlistInWork, installAllowlist, inWork, withScope, withTrust, sandboxFor, sandboxLifts, sandboxEnv, sandboxNeeds, sandboxState, sandboxWrites, SANDBOX_DIR, resumeFor, noteSession, tooLong, carryOn, RESUME_CTX, CARRY_PROMPT, trustFull, GUARD_SETTINGS, runCmdOf, claimLock, wideRoot, sandboxDenies, questionFolders, folderState, dirtyState, ANSWERS_SEEN, newAnswers, claudeDownIn, claudePause, noteClaudeDown, resetTime, PAUSE_FILE, startGap, isUrgent, urgentStop, urgentFirst, urgentUndo, urgentDone, urgentSweep, urgentState, licenceGate, stopRun, loadRunFiles, saveRunFiles, forgetRunFiles, withModel, routedModel, userWords, onShipping, waitingTask };
+export { ensureRunnable, launcherOf, launchFault, opsWalls, walled, OPS_RO, OPS_OWN, OPS_HIDDEN, runOpen, namedRun, twinRunning, TWIN_WAIT, wholeLog, uiReview, onGoalAnswer, runOutcome, settleRecord, waitsOutside, triageSweep, runSection, autoStart, AUTO_MAX, oneNeedEach, NOTHING_FOR_YOU, chaseReport, CHASED, UNMET, heldAsk, onCardGone, withOwnTools, escalation, grantCard, cardRules, cardIsPermission, runPhase, onRunEnd, isClaudeCmd, GUARD, tidyRule, tidyRules, tidySettings, pruneRuns, claudePlugins, idlePlugins, runSettings, archiveAnswers, allAnswers, answersDigest, ANSWERS_ARCHIVE, ANSWERS_KEEP, runsTick, RUN_START, HANG_MIN, noteBlocked, userAnswers, CONTINUED_FILE, onAnswered, CHANGES, toKnownHost, continueLanes, autoPick, autoDecide, FACTS, factsOf, knownRun, withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, linkReach, fillHandoff, runHandoff, nothingToDo, whereOf, whereLine, whereAnswer, askTask, PARKED_NOTE, parkedPaths, isParked, parkLane, agentMissing, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, unchangedStep, waitingFor, startWaiting, noteUntracked, untrackedBefore, forgetUntracked, writeTasks, droppedTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, pickAgent, findOrcaCli, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, routeIdeas, agentQuestions, answerQuestions, agentsList, agentsNow, forgetAgents, AGENTS_KEEP, needsOf, settleNeeds, closeAsk, closedAsk, sameSubject, NEEDS_FOR, readLastWords, readNeeds, parseRead, READ_FILE, autoAllow, autoAllowSweep, allowlistInWork, installAllowlist, inWork, withScope, withTrust, sandboxFor, sandboxLifts, sandboxEnv, sandboxNeeds, sandboxState, sandboxWrites, SANDBOX_DIR, resumeFor, noteSession, tooLong, carryOn, RESUME_CTX, CARRY_PROMPT, trustFull, GUARD_SETTINGS, runCmdOf, claimLock, wideRoot, sandboxDenies, questionFolders, folderState, dirtyState, ANSWERS_SEEN, newAnswers, claudeDownIn, claudePause, noteClaudeDown, resetTime, PAUSE_FILE, startGap, isUrgent, urgentStop, urgentFirst, urgentUndo, urgentDone, urgentSweep, urgentState, licenceGate, stopRun, loadRunFiles, saveRunFiles, forgetRunFiles, withModel, routedModel, userWords, onShipping, waitingTask };
