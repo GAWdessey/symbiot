@@ -98,10 +98,13 @@ function sweepTasks({ now = Date.now(), dir = CONFIG_DIR, keep = KEEP.archived, 
 // What the archive file holds, for the Archive page and Restore (tasks.mjs restoreTask).
 const archivedTasks = (dir = CONFIG_DIR) => readState(ARCHIVE_FILE(dir), Array.isArray) || [];
 // Every state file in the folder, yours only: one an older Symbiot (or a plain write) left 0664.
+// Only the group's and others' bits go: your own run bit stays. Set to 0600 outright, the
+// agent wrapper kept here (claude-fallback, 0755) lost it, and every run failed at once with
+// "Permission denied" (24 Oct 2026, the first start of 0.90.1).
 function sweepModes({ dir = CONFIG_DIR } = {}) {
   if (process.platform === "win32") return 0;
   let n = 0;
-  try { for (const name of readdirSync(dir)) { const f = join(dir, name); try { const st = statSync(f); if (st.isFile() && (st.mode & 0o077)) { chmodSync(f, 0o600); n++; } } catch {} } } catch {}
+  try { for (const name of readdirSync(dir)) { const f = join(dir, name); try { const st = statSync(f); if (st.isFile() && (st.mode & 0o077)) { chmodSync(f, st.mode & 0o700); n++; } } catch {} } } catch {}
   return n;
 }
 function sweepSettled({ file = join(CONFIG_DIR, "settled.json") } = {}) {
