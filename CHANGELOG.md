@@ -2,6 +2,11 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one), for anyone who installs the app: what changed in it, never whose work it was (no projects, people, accounts, services, run ids or task wording of the person who made it). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.90.6 — 2026-10-24
+
+- **A step that is commands to run is direct.** When a card needs you to run something, it now shows an **Open terminal** button (opens a terminal on this computer, in the project's folder), each command in a box of its own with a **Copy** button (run them one at a time, in order), and a **Done** button. Before, you got a question and had to find a terminal and work out what to paste. The card writer picks the exact commands out of the agent's words; with no AI connected it uses the ones the agent fenced in a code block.
+- **No more "undefined has done this already: undefined".** An agent's own "so far" line was drawn as if another lane had finished the work.
+
 ## 0.90.5 — 2026-10-24
 
 - **Reports offer the next steps they list.** Most reports gave no ideas to hand to an agent at the bottom, even when their text said what to do, because only a few heading names counted. A list under "What must change", "Still open", "Remaining", "Not done" or a plan now counts (and a bold lead-in ending in a colon works as a heading), and up to 8 steps are offered instead of 4.
