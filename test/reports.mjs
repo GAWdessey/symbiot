@@ -143,7 +143,7 @@ console.log("REPORTS — each ends with what to do about it");
   const seenFile = join(HOME, "seen-ideas.json");
   const r = R.readReport(list[0].id, { list, seenFile });
   ok("a write-up's end: its own \"Top 3 next\", as ideas, in plain words, nothing from other sections", r.ideas.join("|") === "Fix the login redirect on staging (auth.ts)|Add a test for the export|Ship 0.9 to the beta group" && !r.draft, r.ideas);
-  ok("…at most 4, from \"Recommendations\" or \"Next steps\" too; none when it has no such section", R.reportIdeas("## Next steps\n- fix a\n- fix b\n- fix c\n- fix d\n- fix e\n").length === 4 && R.reportIdeas("## Recommendations\n* ship x\n").join() === "ship x" && R.reportIdeas("# Plain\n\n- a list\n").length === 0);
+  ok("…at most 8, from \"Recommendations\" or \"Next steps\" too; none when it has no such section", R.reportIdeas("## Next steps\n" + "abcdefghij".split("").map((c) => `- fix ${c}\n`).join("")).length === 8 && R.reportIdeas("## Recommendations\n* ship x\n").join() === "ship x" && R.reportIdeas("# Plain\n\n- a list\n").length === 0);
   const added = [];
   const ia = reportIdeasAdd(list[0].id, [r.ideas[0], r.ideas[2]], { list: () => list, add: (t, lane, o) => (added.push({ t, lane, o }), { id: "x" }) });
   ok("ticked ideas go onto the Workdesk in the report's lane, saying which report they came from", ia.ok && ia.added === 2 && ia.lane === "meridian" && added.every((a) => a.lane === "meridian" && /from the report "Meridian catch-up"/.test(a.o.after)) && added[0].t === "Fix the login redirect on staging (auth.ts)", [ia, added]);
@@ -205,6 +205,8 @@ console.log("REPORTS — a handed-off or dismissed next step leaves 'Read, to ac
 
 console.log("REPORTS — superseded actions leave 'Read, open actions' (2026-10-13)");
 {
+  ok("a list under \"What must change\" (a bold lead-in ending in a colon, a review's way) or \"Still open\" or a \"Plan, in order\" is what to do next",
+    R.reportIdeas("# Review\n\n**What must change** (full fixes in x.json):\n\n1. /match: show the same person in both places\n2. /score: the tab label is cut\n").length === 2 && R.reportIdeas("# R\n\n## Still open\n- Add the retry button to the card\n").length === 1 && R.reportIdeas("# R\n\n## Plan, in order of points per hour\n1. Build the harness first\n").length === 1);
   ok("half-sentence fragments are not actions", R.reportIdeas("## Next steps\n- and then restart it\n- which covers the login, and\n- Restart\n- Fix the (broken link\n- Fix the login redirect\n").join("|") === "Fix the login redirect", R.reportIdeas("## Next steps\n- and then restart it\n- Restart\n- Fix the login redirect\n"));
   const d1 = join(CFG, "drafts", "act-sup00001"), d2 = join(CFG, "drafts", "act-sup00002"), sf = join(CFG, "seen-sup.json");
   const gone = join(HOME, "no-such", "login.patch");
