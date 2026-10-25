@@ -113,7 +113,7 @@ function troubles({ stuck = [], list = [], map = {}, named = displayName, now = 
     const n = a.needs;
     if (n && !dropped.has("needs:" + a.id) && !isDone(n.what) && (n.reportFirst || !heldNeeds(n.what, a.path, lane))) { // asked back, and now pointing at its report: that's the card they're waiting for
       const ok = n.kind === "approve";
-      out.push({ kind: "ask", fix: "needs", id: "needs:" + a.id, path: a.path, repo, ...(ok ? { ok } : {}), name: nm, title: ok ? `${nm} waits for your OK` : `${nm} needs you`, sub: plain(n.label || n.what, 90),
+      out.push({ kind: "ask", fix: "needs", id: "needs:" + a.id, path: a.path, repo, asked: a.endedAt || a.startedAt || 0, ...(ok ? { ok } : {}), name: nm, title: ok ? `${nm} waits for your OK` : `${nm} needs you`, sub: plain(n.label || n.what, 90),
         q: n.what + (n.check ? ` Check first: ${n.check}` : ""), options: ok ? ["Go ahead (recommended)", "Skip"] : [I_DID_IT, "Skip"], status: "Waiting on you", ...(n.api ? { api: n.api } : signInCard([n.label, n.what, n.check])), ...reportLink(n.report), shape: "agents" });
       continue;
     }
