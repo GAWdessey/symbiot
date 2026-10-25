@@ -14,6 +14,7 @@
     "timers.mjs",
     "laneids.mjs",
     "needs.mjs",
+    "proof.mjs",
     "intuition.mjs",
     "overrides.mjs",
     "apiwatch.mjs",

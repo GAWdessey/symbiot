@@ -16,6 +16,7 @@
 //   answer is saved exactly as before), the recommended one, and whether the step is a judgement the
 //   user reports back on ("Tell the agent what you found", the card's talk box). With no AI, or
 //   before it has run, a card reads as it did.
+import { readOnly } from "./proof.mjs";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
 import { CONFIG_DIR, readState, writeJsonAtomic } from "./core.mjs";
@@ -70,14 +71,14 @@ function codeIn(text) {
 function applyText(y, all = loadText()) {
   if (!y || y.kind !== "ask") return y;
   const t = textFor(y, all); if (t && t.notTheirs) return y;
-  const run = (t && t.run && t.run.length ? t.run : codeIn([y.raw || y.q, y.why, y.context].filter(Boolean).join("\n"))), withRun = run.length ? { run } : {};
+  const run = (t && t.run && t.run.length ? t.run : codeIn([y.raw || y.q, y.why, y.context].filter(Boolean).join("\n"))), withRun = { ...(run.length ? { run } : {}), ...(t && t.proof ? { proof: t.proof } : {}) };
   if (!t) return run.length ? { ...y, ...withRun } : y;
   const n = (y.options || []).length;
   return { ...y, ...withRun, raw: y.raw || y.q, q: t.question, ...(t.doing ? { doing: t.doing } : {}), ...(t.why ? { why: t.why } : {}), ...(t.labels && t.labels.length === n ? { labels: t.labels } : {}), ...(t.tips && t.tips.length === n ? { tips: t.tips } : {}), ...(Number.isInteger(t.rec) && t.rec >= 0 && t.rec < n ? { rec: t.rec } : {}), ...(t.tell ? { tellAgent: true } : {}) };
 }
 
 const SYSTEM = `You rewrite one card on a person's "Needs you" list so they can decide at a glance. An AI agent wrote the card; it is often long, cut off, or echoes back what the person said. Answer with JSON only:
-{"doing":"...","question":"...","why":"...","labels":["..."],"tips":["..."],"recommended":0,"judgement":false,"notTheirs":false,"run":[{"what":"...","cmd":"..."}]}
+{"doing":"...","question":"...","why":"...","labels":["..."],"tips":["..."],"recommended":0,"judgement":false,"notTheirs":false,"run":[{"what":"...","cmd":"..."}],"proof":{"cmd":"...","expect":"..."}}
 - doing: at most 25 words, in the agent's own voice (I, me), saying that it is the one doing the work, what the work is and what it has done so far ("I'm moving bookly.co.za to the company's own account. I've drafted the transfer ticket."). Never written as steps for the person. Say a job is new or started only if the card shows it is running.
 - question: at most 15 words. The one thing the agent needs from them, from the agent ("Can I pay the R95 transfer fee?", "I need your OK to send the ticket."), or one clear step only they can take, saying exactly what to do and where. Never their own words repeated back. Never cut off. If it refers to a login, an account or a detail, name it (the address or account it means), never "the login".
 - why: one short line of context: what it's for, or what happens next. No jargon, no file names.
@@ -85,17 +86,26 @@ const SYSTEM = `You rewrite one card on a person's "Needs you" list so they can 
 - tips: one per option, same order: one sentence on what happens if they press it.
 - recommended: the index of the option to press first, or -1 if none stands out.
 - run: when their step is to run commands in a terminal on their own computer (or over ssh), each command as one item: "what" is at most 8 words on what it does, "cmd" is the exact command copied from the card, one command or one short pipeline that runs as a unit. In the order to run them. At most 5. Never invent or change a command, and leave it out ([]) when the card holds no exact command.
+- proof: when their step changes something a command can read afterwards (a service running, a file there, a version installed), one read-only command that shows it's done, and "expect": a short regular expression its output matches only once it is ("^active$"). Only reading commands (systemctl is-active, test -f, ls, cat, grep, git status, md5sum), over ssh if the step is on a server (same ssh options as the card's), never one that changes anything. Leave it out ({}) when nothing can be read.
 - judgement: true when their step is to look, listen or try something and report what they found (which voice sounds better, whether it works), so they need to tell the agent the result, not just "done".
 - notTheirs: true when the card asks them whether something has happened or what state something is in (is it moved, have you scheduled it, did it arrive), or asks for something an agent could check or do itself: a login, key, document or detail the saved keys or the linked sites and mailboxes listed hold, or a file on their computer. Those are the agent's to find out, never a card for them. Only a password nobody saved, a code sent to them, a payment, or a yes to something hard to undo is theirs. Then the other fields don't matter.`;
 
+// The writer's proof, kept only when it only reads (proof.mjs readOnly) and its expectation is a pattern that compiles.
+function proofOf(p) {
+  if (!p || typeof p !== "object") return null;
+  const cmd = String(p.cmd || "").trim(), expect = String(p.expect || "").trim().slice(0, 120);
+  if (!cmd || !expect || !readOnly(cmd)) return null;
+  try { new RegExp(expect); } catch { return null; }
+  return { cmd, expect };
+}
 function check(o, n) {
   if (!o || typeof o !== "object") return null;
   if (o.notTheirs === true) return { v: CARD_V, notTheirs: true, question: "" }; // "Is it moved yet?": the agent checks, it's no card
   const question = clip(o.question, 140), why = clip(o.why, 140), doing = words(o.doing) <= 30 && !/…$/.test(String(o.doing || "").trim()) ? clip(o.doing, 200) : "";
   if (!question || words(question) > 18 || /…$/.test(question)) return null;
   const labels = Array.isArray(o.labels) ? o.labels.map((l) => clip(l, 40)) : [], tips = Array.isArray(o.tips) ? o.tips.map((t) => clip(t, 160)) : [];
-  const run = commandList(o.run);
-  return { v: CARD_V, question, ...(run.length ? { run } : {}), ...(doing ? { doing } : {}), ...(why ? { why } : {}), ...(labels.length === n && labels.every(Boolean) ? { labels } : {}), ...(tips.length === n ? { tips } : {}), rec: Number.isInteger(o.recommended) ? o.recommended : -1, ...(o.judgement === true ? { tell: true } : {}) };
+  const run = commandList(o.run), proof = proofOf(o.proof);
+  return { v: CARD_V, question, ...(proof ? { proof } : {}), ...(run.length ? { run } : {}), ...(doing ? { doing } : {}), ...(why ? { why } : {}), ...(labels.length === n && labels.every(Boolean) ? { labels } : {}), ...(tips.length === n ? { tips } : {}), rec: Number.isInteger(o.recommended) ? o.recommended : -1, ...(o.judgement === true ? { tell: true } : {}) };
 }
 // Writes the cards not written yet, one AI call each. write: ai.mjs write. Returns how many.
 // known: { keys: the vault's names, sites: the sites and mailboxes linked under Connections }, so a
