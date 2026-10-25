@@ -271,15 +271,17 @@ function reportIdeas(text, max = IDEAS_MAX) {
 // pressed again and again and the idea was always back. Long enough that it is the same idea, not a common few words.
 const SAME_IDEA = 30, HANDLED = /^(?:handed|done|dismissed)$/;
 function handledIdeas(r, file = SEEN_FILE) {
-  const all = loadSeen(file).handed, h = all[r.id], out = h && h.mtime === r.mtime && h.done && typeof h.done === "object" ? { ...h.done } : {};
+  // Keys are trimmed: an idea cut at IDEAS' length keeps or loses its last space from one copy to the next (ed54e8, 25 Oct 2026).
+  const all = loadSeen(file).handed, h = all[r.id], out = {};
+  if (h && h.mtime === r.mtime && h.done && typeof h.done === "object") for (const [t, st] of Object.entries(h.done)) out[t.trim()] = st;
   for (const [id, x] of Object.entries(all)) {
     if (id === r.id || !x || typeof x.done !== "object" || !x.done) continue;
-    for (const [t, st] of Object.entries(x.done)) if (t.length >= SAME_IDEA && HANDLED.test(st) && !out[t]) out[t] = st;
+    for (const [t, st] of Object.entries(x.done)) if (t.trim().length >= SAME_IDEA && HANDLED.test(st) && !out[t.trim()]) out[t.trim()] = st;
   }
   return out;
 }
 const openIdeas = (r, text, file = SEEN_FILE, ctx) => {
-  const done = handledIdeas(r, file), open = reportIdeas(text, 40).filter((t) => !done[t]).slice(0, IDEAS_MAX); // handled ones don't use up the slots
+  const done = handledIdeas(r, file), open = reportIdeas(text, 40).filter((t) => !done[t.trim()]).slice(0, IDEAS_MAX); // handled ones don't use up the slots
   if (!open.length) return open;
   const why = supersededIdeas(r, open, ctx || supersedeContext({ file }));
   return open.filter((t) => !why.has(t));
@@ -305,7 +307,7 @@ function supersedeContext({ list, tasks, file = SEEN_FILE } = {}) {
     tasks: { get() { if (!this._t) { try { this._t = loadTasks(); } catch { this._t = []; } } return this._t; } },
   });
   ctx.ideasOf = (r) => { // a report's open ideas, read once
-    if (!ctx._i.has(r.id)) { let t = ""; try { t = readFileSync(r.file, "utf8").slice(0, MAX_READ); } catch {} const done = handledIdeas(r, file); ctx._i.set(r.id, isDraftReport(r.title, r.name) ? [] : reportIdeas(t, 40).filter((x) => !done[x]).slice(0, IDEAS_MAX)); }
+    if (!ctx._i.has(r.id)) { let t = ""; try { t = readFileSync(r.file, "utf8").slice(0, MAX_READ); } catch {} const done = handledIdeas(r, file); ctx._i.set(r.id, isDraftReport(r.title, r.name) ? [] : reportIdeas(t, 40).filter((x) => !done[x.trim()]).slice(0, IDEAS_MAX)); }
     return ctx._i.get(r.id);
   };
   return ctx;
