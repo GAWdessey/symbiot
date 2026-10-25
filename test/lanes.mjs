@@ -16,7 +16,7 @@ mkdirSync(CFG, { recursive: true });
 let pass = 0, fail = 0;
 const ok = (n, c, got) => { if (c) { pass++; console.log("  ✓ " + n); } else { fail++; console.log("  ✗ " + n + (got !== undefined ? "  got: " + JSON.stringify(got) : "")); } };
 
-const { dispatch, lanesTick, outcome, loadLedger, lanesState, MAX_CHAIN, aboutIt, partlyDone, remoteKey, orcaMoves, orcaRelink, stuckHandovers, allowHandover, skipHandover, namedDirs, handingOf } = await import("../lanes.mjs");
+const { dispatch, lanesTick, outcome, loadLedger, lanesState, stageOf, underWay, MAX_CHAIN, aboutIt, partlyDone, remoteKey, orcaMoves, orcaRelink, stuckHandovers, allowHandover, skipHandover, namedDirs, handingOf } = await import("../lanes.mjs");
 const { parseHandoffs, handoverRules, CLI_LOGIN, ONLY_YOU, leftToYou, gitWork, agentsGitWork, agentsClicking, agentsCodeWork, heldAsks, agentsPosting, linkedAsks, linkedChore } =await import("../handover.mjs");
 const { buildTasksMd, mergeWhenGreen } = await import("../tasks.mjs");
 {
@@ -789,6 +789,21 @@ try {
     ask(op, "Record the consent-screen video now?", "Ops records the screen too.");
     const s3 = shareAnswer(dl, [{ q: "Record the consent-screen video now?", a: "yes, from the staging site" }], o);
     ok("…and started when its own open question is the one answered", started.join() === op && s3[0].started, [s3, started]);
+  }
+  // a started handover says where its run really is, not "working on it" for good (25 Oct 2026)
+  {
+    const d = join(HOME, "stage"); mkdirSync(join(d, ".symbiot"), { recursive: true });
+    const e = { status: "started", at: 1000, to: { lane: "ops", path: d } }, none = () => null;
+    ok("a handover whose agent hasn't started yet is queued", stageOf(e, { running: none }).stage === "queued", stageOf(e, { running: none }));
+    writeFileSync(join(d, ".symbiot", "agent.log"), "=== ops 2026-10-25T10:00:00.000Z ===\n$ x\n");
+    ok("…its run still going is running", stageOf(e, { running: () => ({ pid: 1 }) }).stage === "running");
+    ok("…its run ended with nothing asked is ended, not working", stageOf(e, { running: none }).stage === "ended", stageOf(e, { running: none }));
+    writeFileSync(join(d, ".symbiot", "QUESTIONS.md"), "## Questions\n\n### Run it as root?\nx\n- a\n- b\n");
+    ok("…its run ended on a question for the user is asks", stageOf(e, { running: none }).stage === "asks");
+    ok("…a reported or finished one has no stage", !stageOf({ ...e, reportedAt: 5 }).stage && !stageOf({ ...e, status: "done" }).stage);
+    // only what is really going counts as under way, so the count matches (25 Oct 2026: 13, most of them over)
+    ok("…a running or queued one is under way", underWay(e, { status: "started", stage: "running" }) && underWay(e, { status: "held" }) && underWay(e, { status: "started", stage: "asks" }));
+    ok("…an ended run, a stopped, finished or failed one, or one you skipped is not", !underWay(e, { status: "started", stage: "ended" }) && !underWay({ ...e, reportedAt: 5 }, { status: "stopped" }) && !underWay(e, { status: "done" }) && !underWay(e, { status: "error" }) && !underWay({ ...e, skipped: 5 }, { status: "started", stage: "running" }));
   }
 } finally {
   rmSync(HOME, { recursive: true, force: true });

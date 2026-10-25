@@ -153,8 +153,20 @@ function restartsApp(w) {
   return false;
 }
 
+// What ssh runs on the other machine is that machine's, not this one's: `ssh host 'a; sudo b'` was split at
+// the `;` inside the quotes, and the `sudo b` stopped as if it ran here, so every ops run on Steve's server
+// was blocked and handed the root step back (25 Oct 2026). The quoted remote command goes (single quotes,
+// or double quotes with nothing this shell would expand), unless the host is this computer.
+const LOCAL_HOST = /^(?:\w+@)?(?:localhost|127\.\d+\.\d+\.\d+|::1|0\.0\.0\.0)$/i;
+const SSH_VALUE = /^-[A-Za-z]*[iFopJlbcDELRWBeIMmOQSw]$/; // options whose next word is a value, not the host
+function withoutRemote(c) {
+  return c.replace(/(^|[\n;&|(]\s*)ssh((?:\s+[^\s'"`$;&|<>()]+)+?)\s+(?:'[^']*'|"(?:[^"\\$`]|\\[^$`])*")/g, (m, pre, args) => {
+    const words = args.trim().split(/\s+/), host = words.find((x, i) => !x.startsWith("-") && !SSH_VALUE.test(words[i - 1] || "")) || "";
+    return LOCAL_HOST.test(host) ? m : `${pre}ssh${args} ''`;
+  });
+}
 function judgeBash(cmd, { cwd, home, branch, session = "" }) {
-  const c = String(cmd || "");
+  const c = withoutRemote(String(cmd || ""));
   // the user's phone over adb: an app opened on it waits for their yes, and one run uses it at a time (phonegate.mjs)
   const ph = judgePhone(c, { session, cwd, home }); if (ph) return { ...ph, setting: true };
   // each simple command on its own (a; b && c | d)

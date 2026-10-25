@@ -25,12 +25,13 @@ const ticked = (md) => String(md || "").split("\n").filter((l) => /^\s*[-*+]\s*\
 // What a run's log shows it did: { commands: [{ cmd, out, error, at }], tools: [{ name, input, out, error }], edits: [paths] }.
 const resultText = (c) => (typeof c === "string" ? c : Array.isArray(c) ? c.map((x) => (x && typeof x.text === "string" ? x.text : "")).join("\n") : "");
 function evidenceOf(log) {
-  const calls = new Map(), out = { commands: [], tools: [], edits: [] };
+  const calls = new Map(), out = { commands: [], tools: [], edits: [], said: "" };
   for (const l of String(log || "").split("\n")) {
     if (!l.startsWith("{")) continue;
     let e; try { e = JSON.parse(l); } catch { continue; }
     const content = e.message && Array.isArray(e.message.content) ? e.message.content : [];
     if (e.type === "assistant") for (const b of content) {
+      if (b.type === "text" && b.text) out.said = String(b.text).slice(0, 4000); // the run's last words
       if (b.type !== "tool_use") continue;
       const inp = b.input || {}, rec = { name: String(b.name || ""), input: inp, out: "", error: false, i: calls.size };
       calls.set(b.id, rec);
@@ -72,7 +73,7 @@ const TEST_CMD = /\b(npm (?:run )?test|pnpm (?:-r )?test|yarn test|node --test|n
 // `symbiot screens verify`, or the same through node: `node $S screens verify` was the check that landed, and
 // missed, the Kaggle, Sonora and Fly.io sends were reopened and their runs sent them again (24 Oct 2026)
 const VERIFY_CMD = /\bscreens\s+verify\b/;
-// A code item ticked with no change, saying why: the brief tells a run to tick what's already done or no
+// A code item ticked with no change, saying why (on the item, or in the run's last words): the brief tells a run to tick what's already done or no
 // longer applies with a one-line note, and reopening it ran the same item again (gamerepo's Meadow Zone)
 const ALREADY = /\b(already (?:done|in|there|built|fixed|merged|applied|ticked|in place|in the code)|no longer appl(?:y|ies)|nothing (?:needed|left) to (?:change|do)|no (?:code )?change(?:s)? (?:was |were )?needed|needed no (?:code )?change)/i;
 const SENT_TOOL = /send|reply|post|publish|forward|create_comment|comment/i;
@@ -93,8 +94,8 @@ function judge(item, ev, { ops = false, hasTests = false, changed = 0 } = {}) {
     return last >= 0 && live ? { ok: true, kind } : { ok: false, kind, missing: last < 0 ? "nothing in the run deployed it. Deploy it, then check the live address answers as it should, then tick it." : "nothing checked the live address after the deploy. Check it answers as it should (curl it, or `symbiot screens verify <address> --expect \"<words>\"`), then tick it." };
   }
   // code
-  if (!changed && !ev.edits.length && ALREADY.test(item)) return { ok: true, kind, already: true };
-  if (!changed && !ev.edits.length) return { ok: false, kind, missing: "the run changed no files. Make the change (or, if nothing needed changing, say why in one line on the item and mark it [~]), then tick it." };
+  if (!changed && !ev.edits.length && (ALREADY.test(item) || ALREADY.test(ev.said || ""))) return { ok: true, kind, already: true };
+  if (!changed && !ev.edits.length) return { ok: false, kind, missing: "the run changed no files. Make the change (or, if nothing needed changing because it is already done or no longer applies, tick it with a one-line note on the item saying so), then tick it." };
   if (!hasTests) return { ok: true, kind };
   const lastEdit = Math.max(-1, ...ev.edits.map((x) => x.i)), runs = ev.commands.filter((c) => TEST_CMD.test(c.cmd) && c.i > lastEdit);
   if (!runs.length) return { ok: false, kind, missing: "the tests weren't run after the last change. Run them, fix what fails, then tick it." };
