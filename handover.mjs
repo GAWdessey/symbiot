@@ -68,7 +68,7 @@ const KINDS = ["person", "account", "site", "repo", "project", "decision", "pref
 const HANDBACK = ["## Hand back to Symbiot",
   `- Found a lasting fact worth knowing elsewhere (who someone is, which account is what, a decision, how the user likes things)? Write \`.symbiot/REMEMBER.json\`: an array of \`{"name": "…", "kind": "…", "fact": "…"}\` (kind: ${KINDS.join(", ")}; a fact under 300 characters). The user sees them on your block in the Agents tab and picks Remember or Skip: that's the only way into Symbiot's memory.`,
   "- Sent an email, or drafted one for the user to send, that waits on a reply? Write `.symbiot/AWAITING.json`: an array of `{\"to\": \"their address\", \"subject\": \"its exact subject\", \"asked\": \"what you asked for\", \"next\": \"what to do once the reply is in\", \"task\": \"the task it's for\", \"lane\": \"the lane that does that\"}`. Symbiot watches the user's inbox for the reply itself and starts that lane's agent with it, so the user never has to say they replied. Don't tick a task that waits on the reply.",
-  "- Wrote up something for the user to read (findings, an audit, a plan, a pitch)? Leave it in `.symbiot/` as a `.md` named for what it is (`COMPANY-AUDIT.md`, not `NOTES.md`), starting with a `# ` title. The user reads it under Reports in Symbiot, so say its name in your last message rather than repeating it there.",
+  "- Wrote up something for the user to read (findings, an audit, a plan, a pitch)? Leave it in `.symbiot/` as a `.md` named for what it is (`COMPANY-AUDIT.md`, not `NOTES.md`), starting with a `# ` title. The user reads it under Reports in Symbiot, so say its name in your last message rather than repeating it there. Run every read-only check it calls for yourself (over ssh, an API or a CLI) and write what it showed; a command it leaves for the user is complete and copy-pasteable, with every argument's real value and where it runs (`systemctl is-active steve.service`, never `systemctl is-active`).",
   "- Need the user to see a message before it goes out (an SMS, a WhatsApp template with its buttons, a PDF, an email)? Write `.symbiot/PROOF.md`: a `# ` title, then `Kind: sms|whatsapp|pdf|email`, `To: who it goes to`, `File: the PDF's path` and `Buttons: Yes, No` lines as they apply, a blank line, then the message exactly as it goes out. Their phone shows it with Send and Change, and the answer comes back in ANSWERS.md (\"### Proof: …\"). Send nothing until it says Send.",
   "- Waiting for a code a site sends by SMS or email (a sign-in or verification code)? Ask for it in QUESTIONS.md naming the site's address (\"the 6-digit code zoho.com texted you\"): their phone can pass it on by itself, into the vault for one use, and your answer then names it. Read it with `symbiot secret get \"<name>\" --use` and type it only where it's asked.",
   ""];
@@ -284,6 +284,12 @@ function asksNow(s) {
   for (const re of [HELD, YOURS]) { const m = re.exec(s); if (m) { const c = COND.exec(s); if (!c || c.index > m.index) return true; } }
   return false;
 }
+// A command, a path or code is never something the user is handed: they don't code. A card's
+// check read "Not checked: To compare them yourself: diff <(jq -S . ~/.config/…) …" (24 Oct 2026).
+const COMMANDISH = /`{1,3}[^`\n]{2,}`{1,3}|\$\(|<\(|(?:^|[\s(])~\/|(?:^|\s)\.{0,2}\/[\w.-]+\/[\w.-]|(?:^|[\s:])(?:diff|jq|cat|grep|sudo|npm|npx|node|git|curl|ls|cd|chmod|rm|cp|mv|sed|awk|python3?|bash|ssh|systemctl)\s+(?:-{1,2}\w|[~./<$|])/;
+const commandish = (s) => COMMANDISH.test(String(s || ""));
+// What's left of a sentence once the command in it is gone: "" when that leaves only its lead-in ("To compare them yourself:").
+const noCommand = (s) => { s = String(s || ""); const m = COMMANDISH.exec(s); if (!m) return s; const t = s.slice(0, m.index).replace(/(?:[\s:;,(-]|\b(?:run|type|paste|use|try|with|enter|do)\b)+$/i, "").trim(); return t.split(/\s+/).length < 4 || /\byourself\b/i.test(t) ? "" : t + "."; };
 function leftToYou(text) {
   const points = String(text || "").replace(/```[\s\S]*?```/g, (m) => m.replace(/\s+/g, " ")).split(/\n+|\s+-\s+(?=\*\*)/).map((p) => p.replace(/^\s*[-*•]\s+/, "").trim()).filter(Boolean)
     .map((p) => { const lm = p.match(/^\*\*([^*]{2,60}?):?\*\*:?\s*/), body = lm ? p.slice(lm[0].length) : p;
@@ -296,16 +302,38 @@ function leftToYou(text) {
     const s = ss[i], next = points[k + 1] && !points[k + 1].off ? points[k + 1].ss : [];
     // what to check first: the catch it named (in this point, then the next), else what it says next
     const catches = ss.filter((x, j) => j !== i && CATCH.test(x) && !DID.test(x));
-    const elsewhere = points.filter((p, j) => j !== k && !p.off).flatMap((p) => p.ss.filter((x) => /\byourself\b|\bbefore you\b|\bcatch\b/i.test(x) && !DID.test(x)).map((x) => (p.label ? `${p.label}: ${x}` : x)));
+    const elsewhere = points.filter((p, j) => j !== k && !p.off && !BLOCKED_LABEL.test(p.label)).flatMap((p) => p.ss.filter((x) => /\byourself\b|\bbefore you\b|\bcatch\b/i.test(x) && !DID.test(x) && !commandish(x)).map((x) => (p.label ? `${p.label}: ${x}` : x)));
     let check = (catches.length ? catches.slice(0, 2).join(" ") : elsewhere[0]) || ss[i + 1] || next[0] || "";
     if (/:$/.test(check)) { const seq = [...ss.slice(i + 1), ...next, ...((points[k + 2] && points[k + 2].ss) || [])], at = seq.indexOf(check); if (at >= 0 && seq[at + 1]) check += " " + seq[at + 1]; } // "paste this:" and then the command
     // "The draft isn't sent." says which draft only in its own point ("**Draft:** it's in Gmail, to …")
     const about = !label && SENDS.test(s) ? points.find((p) => p.label && SENDS.test(p.label) && p.ss.length) : null;
-    const what = label ? `${label}: ${s}` : about ? `${s} ${about.label}: ${about.ss[0]}` : s;
+    if (commandish(check)) check = noCommand(check);
+    const said = label ? `${label}: ${s}` : about ? `${s} ${about.label}: ${about.ss[0]}` : s, what = commandish(said) ? noCommand(said) || said.replace(COMMANDISH, " ") : said;
     return { kind: HELD.test(s) || ACTS.test(s) || gitWork(s + " " + check) ? "approve" : "step", what: clean(what, 240), check: clean(check === s ? "" : check, 240), label: clean(label || (about && about.label), 60) };
   }
   return null;
 }
+
+// ---- a check a run couldn't make: a run that can makes it --------------------------
+// "Not checked: Symbiot's settings and vault, because the membrane blocks me from reading them"
+// left the check to the user, with a command to run (24 Oct 2026). A point like that, stopped by
+// the sandbox, the membrane or a permission, is ops's to do (it runs with Symbiot's own access):
+// [{ what }], each in the run's words with any command taken out. Not one the run handed on already.
+const BLOCKED_LABEL = /^(?:not (?:checked|verified|tested|confirmed)|unchecked|unverified|couldn['’]t (?:check|verify)|didn['’]t (?:check|verify)|left unchecked)\b/i;
+const STOPPED_READING = /\b(?:membrane|sandbox)\b[^.]{0,80}\b(?:block|stop|den(?:y|ies|ied)|won['’]t let|doesn['’]t let|kept)|\bblock(?:s|ed)? (?:me |this run |the run )?(?:from )?(?:reading|checking|opening|seeing)\b|\bpermission denied\b|\bEACCES\b|\b(?:can['’]t|cannot|couldn['’]t|could not|unable to|not allowed to) (?:read|open|access|see inside)\b/i;
+function blockedChecks(text) {
+  const out = [];
+  for (const raw of String(text || "").replace(/```[\s\S]*?```/g, " ").split(/\n+/)) {
+    const p = raw.replace(/^\s*(?:[-*•]\s+|#{1,4}\s*)/, "").trim(); if (!p) continue;
+    const lm = p.match(/^\*\*([^*]{2,60}?):?\*\*:?\s*/) || p.match(/^((?:not|un|couldn|didn|left)[\w’' ]{2,30}?):\s+/i), label = lm ? lm[1].trim() : "", body = lm ? p.slice(lm[0].length) : p;
+    if (!(BLOCKED_LABEL.test(label) || BLOCKED_LABEL.test(body)) || !STOPPED_READING.test(body) || lanesJob(body)) continue;
+    const what = body.split(/(?<=[.!?])\s+/).map(noCommand).filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
+    if (what) out.push({ what: what.slice(0, 400) });
+  }
+  return out;
+}
+// The handover for one: what ops is to check, by names only for the vault, and how to say what it found.
+const blockedHandover = (lane, what) => `New job: a check the ${lane} lane's run couldn't make, because its sandbox or Symbiot's membrane stopped it reading what it needed. In its words: "${what}" Make that check with your own access and write what you found for the ${lane} lane, in plain words. For Symbiot's vault, compare entry names only (\`symbiot secret list\`), never their values. Give the user no commands or file paths.`;
 
 // What an agent handed over: [{ lane, text }] from its .symbiot/HANDOFF.md.
 function parseHandoffs(md) {
@@ -319,4 +347,4 @@ function parseHandoffs(md) {
   return out.map((h) => ({ lane: h.lane, text: h.text.trim().slice(0, HANDOVER_MAX) })).filter((h) => h.lane && h.text);
 }
 
-export { lanesJob, agentsMail, mailWork, OPS, MARKETING, HANDOVER_MAX, handoverRules, CLI_LOGIN, ONLY_YOU, HANDBACK, gitWork, agentsGitWork, agentsClicking, agentsCodeWork, heldAsks, sitesOf, PUSH_OK, postsOnLinked, agentsPosting, APPROVE_FIRST, linkedAsks, linkedChore, parseFacts, parseAwaiting, parseHandoffs, leftToYou };
+export { lanesJob, agentsMail, mailWork, OPS, MARKETING, HANDOVER_MAX, handoverRules, CLI_LOGIN, ONLY_YOU, HANDBACK, gitWork, agentsGitWork, agentsClicking, agentsCodeWork, heldAsks, sitesOf, PUSH_OK, postsOnLinked, agentsPosting, APPROVE_FIRST, linkedAsks, linkedChore, parseFacts, parseAwaiting, parseHandoffs, leftToYou, commandish, blockedChecks, blockedHandover };

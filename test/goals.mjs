@@ -39,6 +39,24 @@ try {
   ok("its folder's later runs and handovers join it, not earlier ones", gg.children.includes("run:r1") && gg.children.includes("handoff:h1") && !gg.children.includes("handoff:h0") && gg.paths.includes(ops), gg.children);
   ok("…waiting on the lane it handed to, saying what", G.rollUp(gg, ctx).state === "waiting" && G.rollUp(gg, ctx).waitingOn === "lane", G.rollUp(gg, ctx));
 
+  console.log("GOALS — a shared lane folder: only its own work joins it (the marketing goals, 24 Oct 2026)");
+  {
+    const mk = join(HOME, "work", "marketing"), dy = join(HOME, "work", "webapp"), m0 = Date.now() - 3 * H;
+    const goal = G.openGoal("Fix the GitHub installer downloads figure that shows n/a in the daily marketing results", { child: "task:m1", lane: "marketing", path: mk, now: m0 });
+    const other = (id, path, o) => J.track("run:" + id, { kind: "agent", path, lane: "x", text: "a run", state: o.state, waitingOn: o.waitingOn || "", what: o.what || "", task: o.task || "", outcome: true }, { now: o.at });
+    other("mk-mine", mk, { at: m0 + 1000, state: "done", task: "Fix the GitHub installer downloads figure that shows n/a in the daily marketing results." });
+    other("mk-other", mk, { at: m0 + 2000, state: "waiting", waitingOn: "lane", what: "webapp: demo screens", task: "[Webapp][Symbiot] Garth wants marketing for Webapp and Symbiot running now" });
+    other("dy-badges", dy, { at: m0 + 4000, state: "waiting", waitingOn: "user", what: "the release that turns verification on: faceVerificationEnabled is still false", task: "Clear every existing verified badge once verify-face is live" });
+    other("mk-later", mk, { at: m0 + 2 * H, state: "waiting", waitingOn: "user", what: "something else" });
+    const ld = { handoffs: [{ id: "hd", from: { lane: "marketing", path: mk }, to: { lane: "webapp", path: dy }, text: "Give each demo screen its own address", at: m0 + 3000, status: "done", reportedAt: m0 + 5000, job: "dy-spec" }] };
+    const tasks = [{ id: "m1", repo: "marketing", text: "Fix the GitHub installer downloads figure that shows n/a in the daily marketing results.", done: true, archived: true, approvedAt: m0 + H }];
+    const cx = { ...base({ ledger: ld, tasks, map: { marketing: mk, webapp: dy } }), jobs: J.loadJobs() };
+    const gm = { ...G.goalById(goal.key), children: [...G.goalById(goal.key).children, "run:dy-badges", "run:mk-other"] }; // as the old adopt left it
+    G.adopt(gm, cx);
+    ok("its own run joins; another item's run, the other lane's runs, its handover and runs after its task was done don't (and are taken out)", gm.children.includes("run:mk-mine") && !gm.children.some((k) => /mk-other|dy-badges|mk-later|handoff:hd/.test(k)) && !gm.paths.includes(dy), gm.children);
+    ok("…so the other lane's release isn't its blocker, and with its task done it ends", G.rollUp(gm, cx).state === "ended", G.rollUp(gm, cx));
+  }
+
   console.log("GOALS — followed through");
   const notes = [], started = [], settled = [];
   const deps = (x = {}) => ({ ...base({ ledger, tasks: [{ id: "t1", repo: "bookly", text: "x", done: true }] }), jobs: J.loadJobs(), start: (p) => (started.push(p), { id: "s" + started.length }), autoStart: () => true, notify: (t, b) => notes.push(t + ": " + b), settle: (p) => settled.push(p), ...x });

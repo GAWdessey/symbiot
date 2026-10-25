@@ -488,4 +488,4 @@ async function converse({ where, role = "", context = "", history = "", question
 // The usual "task" act, for a caller with no lanes of its own to pass.
 const addToTasks = (text, repo) => { let map = {}; try { map = laneMap(); } catch {} return taskIn(text, repo, { map }); };
 
-export { dayLine, dayMark, MIND_FILE, loadMind, remember, recall, recallText, lately, mindState, forget, actBrief, actNow, actIn, taskIn, selfLane, rulesFor, parseReply, converse, spokenLine, unbackedClaim, bindingClaim, goOf, PAGES, addToTasks , ownThread };
+export { dayLine, dayMark, MIND_FILE, loadMind, saveMind, remember, recall, recallText, lately, mindState, forget, actBrief, actNow, actIn, taskIn, selfLane, rulesFor, parseReply, converse, spokenLine, unbackedClaim, bindingClaim, goOf, PAGES, addToTasks , ownThread };

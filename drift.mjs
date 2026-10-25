@@ -9,7 +9,12 @@ import { SCAN, scanBegin, scanPhase, scanTick, scanExpired, scanEnd, scanBase, f
 function gitDefaultBranch(repo) {
   const d = gitOut(repo, ["symbolic-ref", "--short", "refs/remotes/origin/HEAD"]).trim();
   if (d) return d.replace(/^origin\//, "");
-  for (const b of ["main", "master", "develop"]) if (gitOut(repo, ["rev-parse", "--verify", "-q", `refs/remotes/origin/${b}`]).trim()) return b;
+  // No origin/HEAD here: the first of main/master/develop that shares history with this checkout. one project's GitHub default
+  // is master, but a stale `origin/main` with no history in common was picked, and every PR failed with "no history in
+  // common with main" (25 Oct 2026), so its approved work sat on Needs you as "Send … not on GitHub yet: no PR opened".
+  const have = ["main", "master", "develop"].filter((b) => gitOut(repo, ["rev-parse", "--verify", "-q", `refs/remotes/origin/${b}`]).trim());
+  const joined = have.find((b) => gitOut(repo, ["merge-base", "HEAD", `refs/remotes/origin/${b}`]).trim());
+  if (joined || have.length) return joined || have[0];
   return gitOut(repo, ["rev-parse", "--abbrev-ref", "HEAD"]).trim() || "main";
 }
 function fetchAgeDays(repo) {

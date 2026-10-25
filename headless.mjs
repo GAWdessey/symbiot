@@ -595,11 +595,38 @@ function linkedSite(host, cfg = loadConfig()) {
 // That's the part under the middle of the window that scrolls (Gmail's list of
 // mail scrolls inside the page, not the page), if it fills half the window or the
 // page itself doesn't scroll; else the page; else the biggest part that scrolls.
-// null when it all fits.
-const SCROLLER = `function scroller() {
+// null when it all fits. A box open over the page (a dialog) comes first: what
+// scrolls in it, or what it scrolls in. Kaggle's "Join Competition" box was over
+// a rules page that scrolled, and its Accept button, at the bottom of the box,
+// was never reached: every scroll moved the page behind it (2026-10-25).
+// modalScroller() is that, or null when no box is open or nothing scrolls in it.
+const SCROLLER = `function modalScroller() {
+  const W = innerWidth, H = innerHeight;
+  const can = (e) => e.scrollHeight - e.clientHeight > 1 && /^(auto|scroll|overlay)$/.test(getComputedStyle(e).overflowY);
+  const shown = (e) => { const b = e.getBoundingClientRect(), cs = getComputedStyle(e); return b.width > 20 && b.height > 20 && b.bottom > 0 && b.right > 0 && b.top < H && b.left < W && cs.visibility !== 'hidden' && cs.display !== 'none' && +cs.opacity !== 0; };
+  // the one on top: the last open one whose middle is its own
+  // a box that holds the window: marked modal, or fixed over a good part of it (not a cookie bar or a chat bubble)
+  const fixed = (e) => { for (let n = e; n && n !== document.documentElement; n = n.parentElement) if (getComputedStyle(n).position === 'fixed') return true; return false; };
+  const holds = (e) => { const b = e.getBoundingClientRect(); return e.getAttribute('aria-modal') === 'true' || (() => { try { return e.matches('dialog:modal'); } catch (x) { return false; } })() || (fixed(e) && b.width * b.height >= W * H / 6); };
+  const boxes = [...document.querySelectorAll('dialog[open], [role=dialog], [role=alertdialog], [aria-modal=true]')].filter(shown).filter(holds).filter((e) => !e.parentElement || !e.parentElement.closest('dialog[open], [role=dialog], [role=alertdialog], [aria-modal=true]'));
+  if (!boxes.length) return null;
+  const onTop = (e) => { const b = e.getBoundingClientRect(), t = document.elementFromPoint(Math.max(0, Math.min(W - 1, (b.left + b.right) / 2)), Math.max(0, Math.min(H - 1, (Math.max(0, b.top) + Math.min(H, b.bottom)) / 2))); return !!t && e.contains(t); };
+  const box = boxes.filter(onTop).pop() || boxes.pop();
+  const bb = box.getBoundingClientRect(), mx = Math.max(0, Math.min(W - 1, (bb.left + bb.right) / 2)), my = Math.max(0, Math.min(H - 1, (Math.max(0, bb.top) + Math.min(H, bb.bottom)) / 2));
+  // what scrolls under the box's middle, up to the box; else the biggest part of it that scrolls
+  for (let e = document.elementFromPoint(mx, my); e && box.contains(e); e = e.parentElement) if (can(e)) return e;
+  let best = null, most = 0;
+  for (const e of box.querySelectorAll('*')) if (can(e)) { const b = e.getBoundingClientRect(), a = b.width * b.height; if (a > most) { best = e; most = a; } }
+  if (best) return best;
+  // a box taller than the window that scrolls in the layer it sits on (scroll="body" dialogs), not the page
+  for (let e = box.parentElement; e && e !== document.body && e !== document.documentElement; e = e.parentElement) if (can(e)) return e;
+  return null;
+}
+function scroller() {
   const W = innerWidth, H = innerHeight, d = document.scrollingElement || document.documentElement;
   const can = (e) => e.scrollHeight - e.clientHeight > 1 && /^(auto|scroll|overlay)$/.test(getComputedStyle(e).overflowY);
   const seen = (e) => { const b = e.getBoundingClientRect(); return Math.max(0, Math.min(W, b.right) - Math.max(0, b.left)) * Math.max(0, Math.min(H, b.bottom) - Math.max(0, b.top)); };
+  const box = modalScroller(); if (box) return box;
   const page = d.scrollHeight - H > 1 && ![document.documentElement, document.body].some((e) => e && /^(hidden|clip)$/.test(getComputedStyle(e).overflowY));
   let mid = null;
   for (let e = document.elementFromPoint(W / 2, H / 2); e && e !== document.documentElement; e = e.parentElement) if (can(e)) { mid = e; break; }
@@ -1156,6 +1183,8 @@ function untrustSite(host) {
 const scrollJs = (to, where = null) => `(() => { ${SCROLLER} ${DEEP}
   const sel = ${JSON.stringify(where)}, to = ${JSON.stringify(to)};
   let e = null; try { e = sel === null ? null : sel ? deepOne(sel) : document.scrollingElement || document.documentElement; } catch (x) {}
+  // a box open now, over what scrolled when it was mapped: the box's part scrolls instead
+  const box = modalScroller(); if (box && !(e && (e === box || box.contains(e)))) e = box;
   e = e || scroller(); if (!e) return null;
   const from = e.scrollTop, step = Math.round(Math.min(e.clientHeight, innerHeight) * 0.85);
   e.scrollTo({ top: to === 'down' ? from + step : to === 'up' ? from - step : to === 'top' ? 0 : to === 'bottom' ? e.scrollHeight : +to || 0, behavior: 'instant' });

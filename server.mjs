@@ -17,7 +17,7 @@ import { readFileSync, existsSync, mkdirSync, writeFileSync, readdirSync, statSy
 import { createServer } from "node:http";
 import { randomBytes, createHash } from "node:crypto";
 import { EMBEDDED_UI } from "./ui.mjs";
-import { VERSION, LATEST_VERSION, REGISTRY, semverGt, checkLatest, CONFIG_PATH, loadConfig, saveConfig, moveSecrets, loadTasks, hasCmd, chromeBinary, CONFIG_DIR, takeAppLock, releaseAppLock, writeJsonAtomic } from "./core.mjs";
+import { VERSION, LATEST_VERSION, REGISTRY, semverGt, checkLatest, CONFIG_PATH, loadConfig, saveConfig, moveSecrets, loadTasks, hasCmd, openTerminal, chromeBinary, CONFIG_DIR, takeAppLock, releaseAppLock, writeJsonAtomic } from "./core.mjs";
 import { whereOf, onGoalAnswer, settleRecord, autoStart, runningHandoff as goalRunning, triageSweep, onRunEnd, onAnswered, shSingle, handoffCmd, setHandoffCmd, grantAgent, runHandoff, track, detectHandoffs, connectorsInfo, linkReach, answerQuestions, skipIdea, agentsNow, startWaiting, parkLane, parkedPaths, autoAllowSweep, continueLanes, trustFull, readLastWords, sandboxState, HANDOFFS, runningHandoff, runsTick } from "./agents.mjs";
 import { write as aiWrite, PROVIDERS, resolveProvider, connectProvider, detectHardware, recommendModels, hasOllama, ollamaInstall, ensureOllama, useOllamaModel } from "./ai.mjs";
 import { SCAN, SCAN_TIMEOUT_MS, scanRoots, scanHome, addScanRoot, removeScanRoot, mapNow, nodeDetail, repoPathMap, laneMap, setScanOptions, refreshRepos, REPO_STATE, reposState } from "./scan.mjs";
@@ -48,6 +48,7 @@ import { archivedTasks } from "./sweep.mjs";
 import { sentTick } from "./sentmail.mjs";
 import { keepFacts, skipFacts, awaitTick, awaitingState, stopWaiting } from "./handback.mjs";
 import { adaptState, noteUse } from "./adapt.mjs";
+import { settleDone } from "./proof.mjs";
 import { writeCards, loadCardText, keyOf as cardKeyOf } from "./needs.mjs";
 import { shoot } from "./design.mjs";
 import { updateAsk, cardTalk, dismissCard, reportIdeasAdd, reportIdeasDismiss, reportAsk, reportDraftAnswer, homeState, homeTick, homeAsk, homeAnswer, homeNext, workScene, forgetWork, workGo, workTick, firstSteps, marketingState, marketingGo, marketingDraftAnswer, marketingTask, moveToMarketing, onboarding, setOnboarding, startOnboarding, phoneSetupFirst, loadDismissed } from "./home.mjs";
@@ -650,6 +651,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       if (u.pathname === "/api/secrets/delete" && req.method === "POST") { const b = await readBody(req); return json(res, deleteSecret(String(b.name || ""))); }
       if (u.pathname === "/api/secrets/scrub" && req.method === "POST") { const r = scrubStored({ force: true }); return json(res, { found: r.found || [], files: (r.files || []).map((f) => f.replace(CONFIG_DIR + "/", "")) }); }
       // The Vault page (vaultview.mjs): the list never holds a value; one is given only to a page unlocked with the vault PIN, for a short while.
+      if (u.pathname === "/api/sync/now" && req.method === "POST") return json(res, await (await import("./sync.mjs")).now()); // symbiot sync now, while the app runs: one writer
       if (u.pathname === "/api/timers") return json(res, { timers: timersState() }); // the app's background jobs: when each ran, how long, what failed (timers.mjs)
       if (u.pathname === "/api/triage/stats") return json(res, triageStats()); // how often a question reached the user that wasn't theirs (triage.mjs)
       if (u.pathname === "/api/vault" && req.method === "POST") { const b = await readBody(req); return json(res, { ...vaultList({ token: String(b.token || "") }), log: vaultLog() }); }
@@ -856,6 +858,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       if (u.pathname === "/api/whatsnew/seen" && req.method === "POST") { const cfg = loadConfig(); cfg.seenVersion = VERSION; return json(res, saveConfig(cfg) ? { ok: true } : { error: "Couldn't write the config file." }); }
       if (u.pathname === "/api/claude/setup") return json(res, claudeSetup(u.searchParams.get("fresh") === "1"));
       if (u.pathname === "/api/claude/install" && req.method === "POST") return json(res, installClaude());
+      if (u.pathname === "/api/terminal/open" && req.method === "POST") { const b = await readBody(req), d = typeof b.path === "string" && b.path ? b.path : ""; return json(res, openTerminal(d && statSync(d, { throwIfNoEntry: false })?.isDirectory() ? d : undefined)); }
       if (u.pathname === "/api/claude/signin" && req.method === "POST") return json(res, signInClaude());
       if (u.pathname === "/api/claude/code" && req.method === "POST") { const b = await readBody(req); return json(res, sendClaudeCode(b.code)); }
       // the language (lang.mjs): the window reports the computer's, Settings can name any; the app's own words, translated once and kept
@@ -973,6 +976,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
   setPhoneApprove(async (repo, untasked) => { const { notes, deny } = await notesFor(repo, {}); return untasked ? approveChanges(repo, { tick: [], notes, deny }) : approveRepo(repo, { notes, deny }); });
   startPhone();
   onAnswered((path, rows) => shareAnswer(path, rows)); // an answer to one agent reaches the others on the same work
+  if (!SANDBOX) every("sync", 5 * 60000, async () => { const S = await import("./sync.mjs"); if (S.status().paired) { const r = await S.now(); if (r.error) throw new Error(r.error); } }, { first: 60000 }); // this Symbiot and the other paired one (sync.mjs)
   every("waiting runs", 20000, () => startWaiting()); // a run that waits for your step starts once the file it names changes
   every("runs", 60000, () => runsTick(), { first: 5000 }); // a run silent too long is stopped; one that ended while Symbiot was down gets its exit's bookkeeping (agents.mjs)
   every("merge back", 20000, () => mergeEnded({ addTask })); // runs beside a lane's own that ended (also while Symbiot was down): merged back into the lane
@@ -998,6 +1002,9 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
   let carding = false;
   const cardSweep = async () => { if (carding) return; carding = true; try { let ai = null; try { ai = resolveProvider() ? aiWrite : null; } catch {} if (!ai) return; let keys = [], sites = []; try { keys = listSecrets().map((x) => x.name); } catch {} try { sites = [...new Set(Object.entries(loadConfig().linked || {}).flatMap(([id, v]) => [id, ...((v && v.hosts) || [])]))]; } catch {} const n = await writeCards((homeState() || {}).you || [], { write: ai, known: { keys, sites } }); if (n) homeState({ fresh: true }); } catch {} finally { carding = false; } };
   every("cards", 20000, () => cardSweep(), { first: 8000 });
+  // a step that's already done (its proof reads true, proof.mjs) is answered "Done" for them, not kept as a card
+  let proving = false;
+  every("proofs", 30000, async () => { if (proving) return; proving = true; try { const n = (await settleDone((homeState() || {}).you || [], { answer: (id, o) => homeAnswer(id, o) })).length; if (n) homeState({ fresh: true }); } catch {} finally { proving = false; } }, { first: 15000 });
   every("goals", 10 * 60000, () => goalsTick(goalDeps()), { first: 60000 });
   every("continue lanes", 60000, () => continueLanes());
   every("lane ids", 10 * 60000, () => noteLaneIds(), { first: 20000 }); // each lane by what it is, so a renamed folder keeps its tasks (laneids.mjs) // a lane with open tasks and no run going starts again, while it gets somewhere

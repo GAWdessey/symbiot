@@ -137,7 +137,19 @@ try {
     const q = join(CFG, "spaced wrapper"); writeFileSync(q, "#!/bin/sh\nexit 0\n", { mode: 0o600 });
     a.ensureRunnable(`"${q}" -p x`);
     ok("…also when its path is quoted", !!(statSync(q).mode & 0o100));
-    a.ensureRunnable("claude -p x"); a.ensureRunnable("/no/such/file --x"); ok("a bare command or missing file is left alone (no throw)", true); }
+    a.ensureRunnable("claude -p x"); a.ensureRunnable("/no/such/file --x"); ok("a bare command or missing file is left alone (no throw)", true);
+    const g = join(CFG, "gapped"); writeFileSync(g, "#!/bin/sh\nexit 0\n", { mode: 0o600 });
+    const r = a.ensureRunnable(`sleep 3; FOO=1 ${g} -p x`);
+    ok("…also behind the start gap's sleep and a VAR=value (runHandoff's command began with `sleep N;`)", !!(statSync(g).mode & 0o100) && r.ok && r.fixed, r);
+    ok("…a launcher that isn't there says so", a.ensureRunnable("/no/such/file --x").ok === false && a.ensureRunnable("claude -p x") === null);
+    const tail = "sh: 1: /home/u/.config/symbiot/claude-fallback: Permission denied";
+    const f = a.launchFault(126, tail, "sleep 2; /home/u/.config/symbiot/claude-fallback -p x");
+    ok("exit 126 on the launcher: a launch fault, with its path and what the shell said", f && f.path === "/home/u/.config/symbiot/claude-fallback" && f.said === "Permission denied", f);
+    ok("…127 'not found' too; not another exit code, not a command inside the run", !!a.launchFault(127, "sh: 1: /opt/x/claude: not found") && !a.launchFault(1, tail) && !a.launchFault(126, "sh: 1: /tmp/build.sh: Permission denied", "/opt/claude -p x"));
+    const { sweepModes } = await import("../sweep.mjs");
+    const sd = join(HOME, "sweepdir"); mkdirSync(sd); writeFileSync(join(sd, "w"), "#!/bin/sh\n", { mode: 0o755 }); writeFileSync(join(sd, "s.json"), "{}", { mode: 0o664 });
+    sweepModes({ dir: sd });
+    ok("the config folder's sweep makes files yours only, and keeps a script's run bit (0755 -> 0700, 0664 -> 0600)", (statSync(join(sd, "w")).mode & 0o777) === 0o700 && (statSync(join(sd, "s.json")).mode & 0o777) === 0o600, [statSync(join(sd, "w")).mode & 0o777]); }
 } finally {
   rmSync(HOME, { recursive: true, force: true });
 }

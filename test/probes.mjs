@@ -65,11 +65,11 @@ try {
   ok("the Dashboard's Status card counts it as a change", board && board.label === "1 change" && board.source === "status", board);
 
   console.log("SOMETHING TO DO — a run only then");
-  const dl = lane("dailify2"); writeFileSync(join(dl, ".symbiot", "TASKS.md"), "## Tasks\n- [ ] Once Meta approves bookly_invite_v3, switch the server to it\n- [x] done one\n");
+  const dl = lane("acme2"); writeFileSync(join(dl, ".symbiot", "TASKS.md"), "## Tasks\n- [ ] Once Meta approves bookly_invite_v3, switch the server to it\n- [x] done one\n");
   const quiet = lane("atlas"); writeFileSync(join(quiet, ".symbiot", "TASKS.md"), "## Tasks\n- [ ] Fix the header\n");
   const added = [], ran = [];
   const did = P.actOn([{ text: "WhatsApp template bookly_invite_v3 (en): approved", kind: "meta", subject: "bookly_invite_v3", state: "approved" }, { text: "PR symbiot#216 (symbiot): has conflicts", href: "https://github.com/me/symbiot/pull/216", kind: "pr", lane: "symbiot", subject: "symbiot#216", state: "has conflicts", open: true }, { text: "PR atlas#3 (atlas): closed", kind: "pr", lane: "atlas", subject: "atlas#3", state: "closed", open: false }],
-    { map: { dailify2: dl, atlas: quiet }, add: (t, l) => { added.push([t, l]); return { id: "t" + added.length }; }, run: (p) => ran.push(p) });
+    { map: { acme2: dl, atlas: quiet }, add: (t, l) => { added.push([t, l]); return { id: "t" + added.length }; }, run: (p) => ran.push(p) });
   ok("the lane whose open task names it is told, and started", ran.join() === dl && /### Symbiot: WhatsApp template bookly_invite_v3 \(en\): approved/.test(readFileSync(join(dl, ".symbiot", "ANSWERS.md"), "utf8")), [ran, did]);
   ok("…a lane whose tasks don't name it isn't", !ran.includes(quiet));
   ok("an open PR of Symbiot's with conflicts becomes its lane's task, on the same branch", added.length === 1 && added[0][1] === "symbiot" && /has conflicts with main: rebase its branch on main/.test(added[0][0]) && /Don't open a new PR/.test(added[0][0]), added);

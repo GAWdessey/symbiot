@@ -36,6 +36,12 @@ console.log("HANDBACK — the briefs say how");
   const ab = actBrief("Draft an email to Remy", { lanes: [] });
   ok("a run of its own (ops) is told the same", ab.includes(".symbiot/REMEMBER.json") && ab.includes(".symbiot/AWAITING.json"));
   ok("one wording for both", HANDBACK.every((l) => md.includes(l) && ab.includes(l)));
+  // "check that systemctl is-active says active" (steve report, 24 Oct 2026): "Too few arguments."
+  for (const [n, t] of [["a repo's TASKS.md", md], ["a run of its own (ops)", ab]]) {
+    ok(`${n}: a command for the user is complete and copy-pasteable, unit and all`, /exact and complete, in a code span they can copy and paste/.test(t) && t.includes("`systemctl is-active steve.service`, never `systemctl is-active`"));
+    ok(`${n}: …and a read-only check over ssh is the agent's to run, never the user's`, /read-only check you can run yourself \(over ssh[^)]*\) is never the user's step: run it/.test(t));
+    ok(`${n}: …and a report runs the checks it calls for itself`, /Run every read-only check it calls for yourself/.test(t));
+  }
 }
 
 console.log("REMEMBER.json — read, shown, kept only on Remember");

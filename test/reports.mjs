@@ -143,7 +143,7 @@ console.log("REPORTS — each ends with what to do about it");
   const seenFile = join(HOME, "seen-ideas.json");
   const r = R.readReport(list[0].id, { list, seenFile });
   ok("a write-up's end: its own \"Top 3 next\", as ideas, in plain words, nothing from other sections", r.ideas.join("|") === "Fix the login redirect on staging (auth.ts)|Add a test for the export|Ship 0.9 to the beta group" && !r.draft, r.ideas);
-  ok("…at most 4, from \"Recommendations\" or \"Next steps\" too; none when it has no such section", R.reportIdeas("## Next steps\n- fix a\n- fix b\n- fix c\n- fix d\n- fix e\n").length === 4 && R.reportIdeas("## Recommendations\n* ship x\n").join() === "ship x" && R.reportIdeas("# Plain\n\n- a list\n").length === 0);
+  ok("…at most 8, from \"Recommendations\" or \"Next steps\" too; none when it has no such section", R.reportIdeas("## Next steps\n" + "abcdefghij".split("").map((c) => `- fix ${c}\n`).join("")).length === 8 && R.reportIdeas("## Recommendations\n* ship x\n").join() === "ship x" && R.reportIdeas("# Plain\n\n- a list\n").length === 0);
   const added = [];
   const ia = reportIdeasAdd(list[0].id, [r.ideas[0], r.ideas[2]], { list: () => list, add: (t, lane, o) => (added.push({ t, lane, o }), { id: "x" }) });
   ok("ticked ideas go onto the Workdesk in the report's lane, saying which report they came from", ia.ok && ia.added === 2 && ia.lane === "meridian" && added.every((a) => a.lane === "meridian" && /from the report "Meridian catch-up"/.test(a.o.after)) && added[0].t === "Fix the login redirect on staging (auth.ts)", [ia, added]);
@@ -198,6 +198,19 @@ console.log("REPORTS — a handed-off or dismissed next step leaves 'Read, to ac
   ok("…and reading it lists only the open one, with the handed one recorded", rd.ideas.join() === "update the links" && rd.handled["move the repo"] === "handed", rd);
   reportIdeasDismiss(id, ["update the links"], { list: () => l, mark: (r, i, st) => R.markIdeas(r, i, st, sf) });
   ok("dismissing the last one drops it to Read", needs().needs === "" && needs().ideas === 0);
+  // the same plan saved again under a new name (an agent did it nine times, 25 Oct 2026) is a new report with the same ideas
+  const long = "Extension constructions for the long tail: grow the container by j and fill the L-shaped border with a grid";
+  const dc = join(CFG, "drafts", "act-copy001"), dd = join(CFG, "drafts", "act-copy002"), sc = join(CFG, "seen-copy.json");
+  put(dc, "PLAN-aaa111.md", `# Plan\n\n## Next steps\n\n- ${long}\n- short one\n`);
+  put(dd, "PLAN-bbb222.md", `# Plan\n\n## Next steps\n\n- ${long}\n- short one\n`);
+  const lc = R.listReports({ map: { symbiot: repo }, folders: [dc, dd], running: () => false }), a = lc.find((x) => /aaa111/.test(x.file)), b = lc.find((x) => /bbb222/.test(x.file));
+  reportIdeasAdd(a.id, [long, "short one"], { list: () => lc, add: () => ({ id: "t" }), mark: (r, i, st) => R.markIdeas(r, i, st, sc) });
+  const nb = R.withNeeds(lc, { seenFile: sc }).find((x) => x.id === b.id);
+  ok("a long idea handed in one copy stays handed in the next copy of the report", !R.readReport(b.id, { list: lc, mark: false, seenFile: sc }).ideas.includes(long), nb);
+  ok("…while a short one (a few common words) is not taken for the same idea", R.readReport(b.id, { list: lc, mark: false, seenFile: sc }).ideas.includes("short one"));
+  const sp = join(CFG, "seen-space.json"), cut = "Extension constructions: cut at the length limit, the last space kept in one copy and lost in the next one";
+  R.markIdeas(a, [cut + " "], "handed", sp);
+  ok("an idea cut with a trailing space in one copy is the same idea without it in the next", R.handledIdeas(b, sp)[cut] === "handed");
   ok("nothing was handed over when the Workdesk add failed", (reportIdeasAdd(id, ["x"], { list: () => l, add: () => ({ error: "no" }), mark: () => { throw new Error("marked"); } })).error === "Couldn't add them.");
   put(d, "MOVE-PLAN.md", "# Move plan\n\n## Next steps\n\n- move the repo\n- update the links\n- a new one\n");
   ok("a rewritten report offers its steps again", needs().needs === "ideas" && needs().ideas === 3);
@@ -205,6 +218,8 @@ console.log("REPORTS — a handed-off or dismissed next step leaves 'Read, to ac
 
 console.log("REPORTS — superseded actions leave 'Read, open actions' (2026-10-13)");
 {
+  ok("a list under \"What must change\" (a bold lead-in ending in a colon, a review's way) or \"Still open\" or a \"Plan, in order\" is what to do next",
+    R.reportIdeas("# Review\n\n**What must change** (full fixes in x.json):\n\n1. /match: show the same person in both places\n2. /score: the tab label is cut\n").length === 2 && R.reportIdeas("# R\n\n## Still open\n- Add the retry button to the card\n").length === 1 && R.reportIdeas("# R\n\n## Plan, in order of points per hour\n1. Build the harness first\n").length === 1);
   ok("half-sentence fragments are not actions", R.reportIdeas("## Next steps\n- and then restart it\n- which covers the login, and\n- Restart\n- Fix the (broken link\n- Fix the login redirect\n").join("|") === "Fix the login redirect", R.reportIdeas("## Next steps\n- and then restart it\n- Restart\n- Fix the login redirect\n"));
   const d1 = join(CFG, "drafts", "act-sup00001"), d2 = join(CFG, "drafts", "act-sup00002"), sf = join(CFG, "seen-sup.json");
   const gone = join(HOME, "no-such", "login.patch");

@@ -181,6 +181,15 @@ console.log("WHAT A COPY LEAVES — handovers, questions, waits, facts and repor
   writeFileSync(join(P.inflight()[0].wt, ".symbiot", "QUESTIONS.md"), "### To what?\n- Starter\n- Free\n");
   hook(0);
   ok("one that only asked counts as asking", P.besideAgain(repo, "p2").kind === "asked" && /### To what\?\n- Starter/.test(L("QUESTIONS.md")), P.besideAgain(repo, "p2"));
+  // left waiting: the copy marked it [~] (Steve's chat fix, run in four copies on 24 Oct 2026)
+  writeFileSync(join(repo, ".symbiot", "TASKS.md"), "## Tasks\n- [ ] Make chat read-only\n");
+  P.startParallel("repo4", repo, { id: "p3", text: "Make chat read-only" }, { run });
+  writeFileSync(join(P.inflight()[0].wt, ".symbiot", "TASKS.md"), "## Tasks\n- [~] (waits on the user: Symbiot couldn't confirm it's done after 2 tries: x) Make chat read-only\n");
+  hook(0);
+  const w = P.besideAgain(repo, "p3");
+  ok("one it left waiting ([~]) is on record as waiting, so no fresh copy runs it when an answer comes in; the lane's brief carries the [~]", w && w.kind === "waited" && /^- \[~\] \(waits on the user.*Make chat read-only$/m.test(L("TASKS.md")), [w, L("TASKS.md")]);
+  writeFileSync(join(repo, ".symbiot", "ANSWERS.md"), "# Answers\n\n### Something new\nyes\n");
+  ok("…even after a new answer", P.besideAgain(repo, "p3") && P.besideAgain(repo, "p3").kind === "waited");
 }
 
 console.log("RESTARTS — a tick alone isn't success, and a running lane's brief isn't rewritten");

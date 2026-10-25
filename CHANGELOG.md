@@ -2,6 +2,38 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one), for anyone who installs the app: what changed in it, never whose work it was (no projects, people, accounts, services, run ids or task wording of the person who made it). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.90.11 — 2026-10-25
+
+- **A handed next step stays handed even when its last space differs.** The Kaggle plan's longest step was cut at the length limit, keeping its trailing space in one saved copy and losing it in the next, so each new copy listed the same step as open again. Steps are now compared without that space.
+
+## 0.90.10 — 2026-10-25
+
+- **A next step you handed to an agent stays handed.** An agent saved its plan again under a new name nine times, and each copy was a new report whose steps showed up as open again, so "Hand to agent" came back every time you pressed it. A step handed over, done or dropped in one report now counts as handled in every other report that lists the same step.
+
+## 0.90.9 — 2026-10-25
+
+- **Approved work goes to the right branch on GitHub.** A project's approved changes sat on Home as "Send <project>'s approved work: no PR opened" and the button never worked: with no default branch recorded in the clone, Symbiot picked an old `main` that shares no history with the project (its real default is `master`), so every pull request failed with "no history in common with main". It now picks the one branch that shares history with the work.
+
+## 0.90.8 — 2026-10-25
+
+- **Step cards already on Home get their check too.** The "run the deploy as root" card was written before steps had a check, so it stayed after the work was done. Cards are now written again once, with the commands to run and a read-only check of what the step changes (a file the same on both sides, a version, how long a service has run).
+
+## 0.90.7 — 2026-10-24
+
+- The 'Symbiot on its own' digest (SYMBIOT-DIGEST-2026-10-24-08.md) never says which mode it ran in or why it didn't act.
+- New job: find which of the 110 test files fails after the exit 126 fix, fix it, commit, sync with origin/main and open a PR with auto-merge on green CI.
+- Bug: Symbiot sends a 'Design first' product-designer brief for jobs that have no screens or are already built.
+- Bug: Symbiot wrapped one agent brief inside another.
+
+## 0.90.6 — 2026-10-24
+
+- **A step that is commands to run is direct.** When a card needs you to run something, it now shows an **Open terminal** button (opens a terminal on this computer, in the project's folder), each command in a box of its own with a **Copy** button (run them one at a time, in order), and a **Done** button. Before, you got a question and had to find a terminal and work out what to paste. The card writer picks the exact commands out of the agent's words; with no AI connected it uses the ones the agent fenced in a code block.
+- **No more "undefined has done this already: undefined".** An agent's own "so far" line was drawn as if another lane had finished the work.
+
+## 0.90.5 — 2026-10-24
+
+- **Reports offer the next steps they list.** Most reports gave no ideas to hand to an agent at the bottom, even when their text said what to do, because only a few heading names counted. A list under "What must change", "Still open", "Remaining", "Not done" or a plan now counts (and a bold lead-in ending in a colon works as a heading), and up to 8 steps are offered instead of 4.
+
 ## 0.90.4 — 2026-10-24
 
 - **No more replies to no-reply senders.** Symbiot offered to draft replies to automated email (Kaggle's, for one), and a reply sent to a no-reply address only bounced. An automated email is now refused up front, the drafting agent checks who an email is from and writes "not replyable" instead of a reply (no card, and that email stops waiting on you), and the send step won't send to a no-reply address.

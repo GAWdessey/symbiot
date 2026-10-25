@@ -24,6 +24,9 @@ import { judgePush } from "./pushgate.mjs";
 import { holdsMerge, slugOf, folderSlug } from "./design.mjs";
 import { judgePhone, letGo as phoneLetGo, phoneAsked } from "./phonegate.mjs";
 
+// A read the membrane stops: what to do instead, never "ask the user" (a run handed the user a
+// diff of Symbiot's settings and vault to run themselves, 24 Oct 2026)
+const READ_INSTEAD = "your keys and cloud credentials stay yours. To check Symbiot's vault, `symbiot secret list` gives its entry names (compare those, never values); any other check you can't make goes to ops in .symbiot/HANDOFF.md, and never to the user as a command to run";
 const SECRET = [".ssh", ".gnupg", ".aws", ".azure", ".kube", ".docker/config.json", ".config/gcloud", ".config/gh/hosts.yml", ".netrc", ".npmrc", ".pypirc", ".git-credentials", ".config/symbiot/secrets.json", ".config/symbiot/vault.json", ".config/symbiot/vault.key", ".config/symbiot/vault-pin.json"];
 const under = (p, d) => p === d || p.startsWith(d.endsWith("/") ? d : d + "/");
 const expand = (p, home, cwd) => resolve(cwd, String(p).replace(/^~(?=\/|$)/, home).replace(/^\$HOME(?=\/|$)/, home).replace(/^\$\{HOME\}(?=\/|$)/, home));
@@ -61,12 +64,31 @@ function symbiotConfig(p, home) { const d = join(home, ".config", "symbiot"); re
 // A bare config.json counts once the command, or the folder it runs in, is Symbiot's settings folder
 // itself (an ops run works in drafts/act-… under it, on files of its own).
 const OWN_READ = /^(cat|less|more|head|tail|grep|egrep|fgrep|rg|ls|wc|file|stat|diff|cmp|sha\d*sum|md5sum|readlink|realpath|du|jq|echo|printf|test|\[|sed|find)$/;
+// What a refusal of these hands back: the way to read them that is allowed. Told only "yours to change",
+// the 'Changes 7 and 8' run read config.json through python, was stopped four times, and wrote its diff
+// from file times and sizes alone (24 Oct 2026).
+const OWN_READ_HINT = ". To only read one, use the Read tool, or cat, jq, grep or diff on it (e.g. `diff <(jq -S . config.json.bak) <(jq -S . config.json)`): those are allowed, but node, python or any other program naming it counts as changing it";
+// A command's pipeline steps, split on | outside quotes: jq's `(.|length)` is one filter, not a pipe
+// into a program called "length)", and splitting there stopped a plain jq read (24 Oct 2026).
+function pipeSegs(part) {
+  const out = []; let cur = "", q = "";
+  for (let i = 0; i < part.length; i++) {
+    const ch = part[i];
+    if (q) { if (ch === q) q = ""; else if (ch === "\\" && q === '"') { cur += ch + (part[++i] || ""); continue; } cur += ch; continue; }
+    if (ch === "'" || ch === '"') { q = ch; cur += ch; continue; }
+    if (ch === "\\") { cur += ch + (part[++i] || ""); continue; }
+    if (ch === "|" && part[i + 1] !== "|" && part[i - 1] !== "|") { out.push(cur); cur = ""; continue; }
+    cur += ch;
+  }
+  out.push(cur); return out;
+}
 function changesOwn(part, { home, cwd, whole }) {
   const there = cwd === join(home, ".config", "symbiot") || /\.config\/symbiot\/?(?=$|[\s"';&|)])/.test(whole); // the folder itself, not a run's own under it (drafts/act-…)
   const names = (x) => { const v = unquote(x); return GATE_FILES.test(v) || /\.config\/symbiot\/overrides(?:\/|$)/.test(v) || under(expand(v.replace(/^[A-Za-z_][A-Za-z0-9_]*=/, ""), home, cwd), OVERRIDES_DIR(home)) || OWN.some((f) => v.includes(".config/symbiot/" + f) || symbiotConfig(expand(v.replace(/^[A-Za-z_][A-Za-z0-9_]*=/, ""), home, cwd), home)) || (there && OWN.some((f) => new RegExp(`(^|[^\\w.-])${f.replace(".", "\\.")}\\b`).test(v))); };
   if (!names(part)) return false;
-  const segs = part.split(/\|(?!\|)/);
+  const segs = pipeSegs(part);
   for (const seg of segs) {
+    for (const m of seg.matchAll(/<\(\s*(\S+)/g)) if (!OWN_READ.test(m[1].split("/").pop())) return true; // a process substitution runs a program too: <(jq …) reads, <(python …) doesn't count as reading
     const t = seg.trim(); if (!t) continue;
     for (const m of t.matchAll(/\d*>>?\s*(?!&)(\S+)/g)) if (names(m[1])) return true; // a redirect into it
     const w = t.split(/\s+/); let i = 0;
@@ -179,10 +201,10 @@ function judgeBash(cmd, { cwd, home, branch, session = "" }) {
       const own = w[0] === "scp" ? SCP_VALUE : null;
       for (const p of w.slice(1).filter((a, i, all) => !a.startsWith("-") && !(own && own.test(all[i - 1] || "")))) {
         const abs = expand(unquote(p), home, cwd);
-        if (secretPath(abs, home) && !(PUB_READ.test(w[0]) && PLAIN.test(unquote(p)) && publicKey(abs, home))) return { why: "your keys and cloud credentials stay yours" };
+        if (secretPath(abs, home) && !(PUB_READ.test(w[0]) && PLAIN.test(unquote(p)) && publicKey(abs, home))) return { why: READ_INSTEAD, read: true };
       }
     }
-    if (changesOwn(s, { home, cwd, whole: c })) return { why: "Symbiot's own settings are yours to change" };
+    if (changesOwn(s, { home, cwd, whole: c })) return { why: "Symbiot's own settings are yours to change" + OWN_READ_HINT };
   }
   if (/\b(curl|wget)\b[^|]*\|\s*(sudo\s+)?(ba|z|da)?sh\b/.test(c)) return { why: "running a script straight from the internet" };
   // a browser on the user's running Symbiot: each page it opened counted as a new window and
@@ -221,7 +243,7 @@ function refusal(tool, input = {}, { cwd = process.cwd(), home = homedir(), bran
   const p = input.file_path || input.path || input.notebook_path;
   if (!p) return null;
   const abs = expand(p, home, cwd);
-  if (secretPath(abs, home) && !(t === "Read" && publicKey(abs, home))) return { why: "your keys and cloud credentials stay yours" };
+  if (secretPath(abs, home) && !(t === "Read" && publicKey(abs, home))) return { why: t === "Read" ? READ_INSTEAD : "your keys and cloud credentials stay yours", ...(t === "Read" ? { read: true } : {}) };
   if (/^(Edit|Write|MultiEdit|NotebookEdit)$/.test(t) && symbiotConfig(abs, home)) return { why: "Symbiot's own settings are yours to change" };
   if (/^(Edit|Write|MultiEdit|NotebookEdit)$/.test(t) && selfFile(abs)) return { why: "Symbiot doesn't edit its own code" };
   if (/^(Edit|Write|MultiEdit|NotebookEdit)$/.test(t) && Array.isArray(writes) && writes.length && !writes.some((d) => under(abs, d))) return { why: "this run writes only in its repo and your folders (its sandbox), not " + p, setting: true };
@@ -245,7 +267,7 @@ if (main) {
   }
   let writes = null; try { writes = JSON.parse(process.env.SYMBIOT_WRITES || "null"); } catch {} // a sandboxed repo run's folders
   const r = judge(ev.tool_name, ev.tool_input || {}, { cwd: ev.cwd || process.cwd(), writes, session: String(ev.session_id || "") });
-  if (r) { process.stderr.write("Blocked by Symbiot's membrane: " + r.why + ". If it's needed, ask the user in .symbiot/QUESTIONS.md with options.\n"); process.exit(2); }
+  if (r) { process.stderr.write("Blocked by Symbiot's membrane: " + r.why + (r.read ? ".\n" : ". If it's needed, ask the user in .symbiot/QUESTIONS.md with options.\n")); process.exit(2); }
   process.exit(0);
 }
 

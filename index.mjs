@@ -531,6 +531,21 @@ async function cmdSecret() {
   if (r.error) { console.error(r.error); process.exitCode = 1; return; }
   console.log(sub === "get" ? r.value : "ok");
 }
+// symbiot sync init <repo> | pair <repo> | now | status: this Symbiot and another (a work laptop) keep the
+// same memory, rules, tasks, questions and answers, and vault, through a private repo only the vault PIN opens (sync.mjs, docs/SYNC.md).
+async function cmdSync() {
+  const [sub = "status", url] = argv.slice(1).filter((x) => !x.startsWith("--")), S = await import("./sync.mjs");
+  const pin = async () => (process.stdin.isTTY ? ask("Vault PIN: ", { secret: true }) : readFileSync(0, "utf8").trim());
+  const say = (r) => { if (r.error) { console.error(r.error); process.exitCode = 1; } else console.log(`Synced${r.from && r.from.length ? " with " + r.from.map((x) => x.name || x.machine).join(", ") : ""}: ${r.tasks} tasks, ${r.memory} facts${r.conflicts ? `, ${r.conflicts} changed on both sides (the newer kept; the other is in sync-conflicts.json)` : ""}.`); };
+  if (sub === "init" || sub === "pair") {
+    if (!url) { console.error(`symbiot sync ${sub} <private git repo url, or a folder both computers reach>`); process.exitCode = 1; return; }
+    const r = await S[sub](url, await pin(), { name: flag("name", "") || undefined }); if (r.error) return say(r);
+    console.log(sub === "init" ? `This computer set up sync in ${url}. On the other one: symbiot sync pair ${url}` : `Paired with ${url}${r.pinSet ? "; its vault PIN is now this computer's too" : ""}.`); return say(r);
+  }
+  if (sub === "now") return say((await viaApp("/api/sync/now", {})) || (await S.now()));
+  if (sub === "status") { const s = S.status(); console.log(s.paired ? `Paired with ${s.url} as ${s.name} (${s.machine}). Last sync: ${s.lastSync ? new Date(s.lastSync).toLocaleString() : "never"}${s.lastError ? " (" + s.lastError + ")" : ""}.` : "Not paired. symbiot sync init <repo> on the first computer, symbiot sync pair <repo> on the next."); return; }
+  console.error("symbiot sync init <repo> | pair <repo> | now | status"); process.exitCode = 1;
+}
 // symbiot shoot <url> [--out dir] [--sizes 1440x900,390x844] [--full]: screenshots of a page, for a
 // UI run to look at its own work (design.mjs). Here first; a sandboxed run whose Chrome won't start
 // asks the app to take them (its screens door), as `symbiot screens` does.
@@ -1231,6 +1246,7 @@ async function main() {
   if (cmd === "push") return cmdPush();
   if (cmd === "mail" || cmd === "email") return cmdMail();
   if (cmd === "secret" || cmd === "secrets") return cmdSecret();
+  if (cmd === "sync") return cmdSync();
   if (cmd === "deploy") return cmdDeploy();
   if (cmd === "screens" || cmd === "screen") return cmdScreens();
   if (cmd === "shoot") return cmdShoot();

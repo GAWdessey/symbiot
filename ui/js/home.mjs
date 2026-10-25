@@ -339,6 +339,13 @@ function blobTalk(t,nm){if(!t||!t.length)return '';return "<div class='btalk'>"+
 // A card opens with its agent saying what it's on and what it has done (y.doing from the card writer, else
 // "I'm on it: <its job>. So far: …"), then the one thing it needs: a card that was only the task's words read
 // as the user's job ("how should i know you are the one thats manning it not me", 22 Oct 2026).
+function fallbackCopy(t){try{var a=document.createElement("textarea");a.value=t;a.style.position="fixed";a.style.opacity="0";document.body.appendChild(a);a.select();document.execCommand("copy");document.body.removeChild(a);}catch(e){}}
+// A step that is commands to run: Open terminal, each command in a box of its own with Copy (run them one
+// at a time, in order, each is checked before the next), then Done. 24 Oct 2026: "if it needs me to do
+// something it needs to be more direct."
+function runHtml(y){var r=y.run||[],h="<div class='brun'><div class='brun-h'><b>Run "+(r.length>1?'these, one at a time':'this')+"</b><button type='button' class='brun-term' title='opens a terminal on this computer"+(y.path?', in '+escQ(y.path):'')+"'>Open terminal</button></div>";
+r.forEach(function(c,i){h+="<div class='brun-i'>"+(c.what||r.length>1?"<div class='brun-w'>"+(r.length>1?(i+1)+'. ':'')+esc(c.what||'')+"</div>":'')+"<div class='brun-c'><pre>"+esc(c.cmd)+"</pre><button type='button' class='brun-copy' data-i='"+i+"'>Copy</button></div></div>";});
+return h+"<div class='brun-n'>"+(r.length>1?'Run each, wait for it to finish, then the next. ':'')+"When it has run, press Done. If it fails, tell the agent what it said.</div><div class='bo'><button type='button' class='nopt rec brun-done'><span class='bt'>Done</span></button></div></div>";}
 function blobBody(y,home){var h='',nm=y.name||y.repo||(y.kind==='setup'?y.title:'')||'';
 if(!y.local)h+="<button type='button' class='bx' title='Dismiss: it won&#39;t show here again (Undo brings it back)' aria-label='Dismiss this card'>&times;</button>";
 var pc=projChip(y);
@@ -347,7 +354,8 @@ if(y.kind!=='ask')return h+"<div class='bq'>"+esc(y.kind==='approve'?String(y.su
 var os=y.options||[];if(y.draft)h+=draftHtml(y.draft);if(y.status)h+="<div class='bwait'><i class=ic-pause></i> "+esc(y.status)+"</div>";var tk=String(y.task||'').replace(/^Agent:\\s*/,'').replace(/^New job[^:.]{0,40}:\\s*/i,''),dn=y.doing||((tk&&tk.slice(0,24)!==String(nm).slice(0,24)?"I'm on it: "+tk+(/[.!?…]$/.test(tk)?'':'.'):'')+(y.done?' So far: '+y.done:'')).trim();if(dn)h+="<div class='bdoing' title='"+escQ(dn)+"'><i class=ic-bot></i>"+esc(dn)+"</div>";h+="<div class='bq' title='"+escQ((y.q||'')+(y.why?' ('+y.why+')':''))+"'>"+codeText(y.q||y.sub||'')+"</div>"+(y.why?"<div class='bwhy' title='"+escQ(y.why)+"'>"+esc(y.why)+"</div>":"")+blobTalk(y.talk||BLOBTALK[bdKey(y)],nm);
 if(y.report&&y.report.id)h+="<div class='bo'><button type='button' class='nopt brep' title='opens it on Reports'><span class='bt'>Read the report: "+esc(lqShort(y.report.title,60))+" &rsaquo;</span></button></div>";
 if(y.fix==='handover'&&y.sub)h+="<div class='bfor' title='"+escQ(y.sub)+"'>for: "+esc(y.sub)+"</div>";
-if(y.done)h+="<div class='bdone' title='"+escQ(y.done.text)+"'>"+esc(y.done.lane)+" has done this already: "+esc(y.done.text)+"</div>";
+if(y.done&&typeof y.done==='object'&&y.done.lane)h+="<div class='bdone' title='"+escQ(y.done.text)+"'>"+esc(y.done.lane)+" has done this already: "+esc(y.done.text)+"</div>"; // (a string is what the agent says it has done so far, shown above)
+if(y.run&&y.run.length)h+=runHtml(y);
 if(y.shared)h+="<div class='bdone' title='"+escQ("Your answer to "+y.shared.lane+": "+y.shared.a+" (its agent has it too, and checks whether it settles this)")+"'>Got your answer to "+esc(lqShort(y.shared.lane,40))+": &ldquo;"+esc(lqShort(y.shared.a,80))+"&rdquo;</div>";
 if(y.signInTo)h+="<div class='bo'><button type='button' class='nopt bsign' title='opens "+escQ(y.signInTo.name)+" in the Symbiot Browser: sign in there, then click Done'><span class='bt'>Sign in to "+esc(y.signInTo.name)+" &rsaquo;</span></button></div>";
 // the recommended answer first and marked (the card writer's pick, else the agent's "(recommended)"), each
@@ -399,6 +407,9 @@ box.querySelectorAll('.nopt[data-j]').forEach(function(b){b.addEventListener('cl
 var bs=box.querySelector('.bsign');if(bs)bs.addEventListener('click',function(){if(bs._busy)return;bs._busy=true;var sn=y.signInTo.name||y.signInTo.site||'the site';
 st('Opening '+sn+' in the Symbiot Browser… a few seconds, longer if an agent is using it.');try{bs.focus();}catch(e){}
 openSignIn(y.signInTo,function(t,ok){bs._busy=false;st(t,!ok);say(t,!ok);});});
+var bt2=box.querySelector('.brun-term');if(bt2)bt2.addEventListener('click',function(){bt2.disabled=true;fetch('/api/terminal/open',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:y.path||''})}).then(function(r){return r.json();}).then(function(r){bt2.disabled=false;st(r&&r.ok?'Opened a terminal ('+r.via+').':(r&&r.error)||'Could not open a terminal.',!(r&&r.ok));}).catch(function(){bt2.disabled=false;st('Could not open a terminal.',true);});});
+box.querySelectorAll('.brun-copy').forEach(function(b){b.addEventListener('click',function(){var c=(y.run||[])[+b.getAttribute('data-i')];if(!c)return;var done=function(){b.textContent='Copied';setTimeout(function(){b.textContent='Copy';},1500);};try{navigator.clipboard.writeText(c.cmd).then(done,function(){fallbackCopy(c.cmd);done();});}catch(e){fallbackCopy(c.cmd);done();}});});
+var bdn=box.querySelector('.brun-done');if(bdn)bdn.addEventListener('click',function(){var tgt=(y.options||[]).length?box.querySelector('.nopt[data-j].rec')||box.querySelector('.nopt[data-j]'):null;if(tgt)tgt.click();else st('Tell the agent it is done in the box below.');}); // Done is the card's own recommended answer, the one that says it is done
 var brp=box.querySelector('.brep');if(brp)brp.addEventListener('click',function(){showReport(y.report.id);});
 var btl=box.querySelector('.btell');if(btl)btl.addEventListener('click',function(){var fr=box.querySelector('.bfree');if(fr&&fr.getAttribute('aria-expanded')!=='true')fr.click();var inp=box.querySelector('.bfx input');if(inp){inp.placeholder='what you found';inp.focus();}}); // the report its agent wrote, open on Reports
 var bqx=box.querySelector('.bq');if(bqx)bqx.addEventListener('click',function(ev){if(ev&&ev.target&&ev.target.closest&&ev.target.closest('a,button'))return;bqx.classList.toggle('open');}); // two lines; a tap shows it all

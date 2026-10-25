@@ -187,10 +187,16 @@ const NAMEISH = /^[A-Za-z]+(?:[-_][A-Za-z]+)*[-_]?v?\d+(?:\.\d+)*[a-z]?$/; // a 
 // in a sentence about an account was vaulted as a password and blanked from every stored copy of the
 // chat and tasks, and an Azure subscription id as a twitter password (19 Oct 2026). One in the middle
 // of a sentence (min 3) has a digit too.
+// Nor is a product's own name ("a password vault: 1Password or Bitwarden", an example in every
+// design brief, was vaulted as "stripe password" each time a brief was pasted on Home, 24 Oct 2026).
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i, WORDY = /^[A-Za-z]+(?:['’][A-Za-z]{1,3})?[.,;:!?]*$/;
-const notPassword = (v) => WORDY.test(v) || UUID.test(v);
+const PRODUCT = /^(?:1Password|Auth0|Office365|Microsoft365|M365|Neo4j|Web3|Base64|Win32|Win64|Y2K|K8s|S3|EC2)(?:['’]s)?[.,;:!?)]*$/i;
+const notPassword = (v) => WORDY.test(v) || UUID.test(v) || PRODUCT.test(v);
 const pwShaped = (v, min = 3) => v.length >= 6 && v.length <= 64 && kinds(v) >= min && /\d|[^A-Za-z0-9]/.test(v) && /[A-Za-z]/.test(v) && !EMAIL.test(v) && !NOT_PW.test(v) && !notPassword(v) && (min < 3 || (!NAMEISH.test(v) && /\d/.test(v)));
 const ACCOUNT = /\b(?:sign(?:ed|ing)?[ -]?(?:up|in)|log(?:ged|ging)?[ -]?in|login|account|registered|password|passwd|pw|creds|credentials)\b/i;
+// "a password vault", "password managers", "the login page": a sentence about a kind of product or screen, not an account's own credential
+const ABOUT_KIND = /\b(?:password|passwd|login|sign[ -]?in|account)s?\s+(?:vaults?|managers?|apps?|keepers?|stores?|generators?|fields?|forms?|pages?|screens?|flows?|policy|policies|rules?|resets?|strength|settings|menus?)\b/gi;
+const aboutAccount = (s) => { const t = s.replace(ABOUT_KIND, " "); return EMAIL.test(t) || ACCOUNT.test(t); };
 const sentenceAt = (text, at) => { const a = Math.max(text.lastIndexOf("\n", at - 1), ...[". ", "! ", "? "].map((p) => text.lastIndexOf(p, at - 1))); const b = text.slice(at).search(/[.!?](?:\s|$)|\n/); return text.slice(a + 1, b < 0 ? text.length : at + b); };
 const trimPw = (v) => v.replace(/[.,;:'")\]]+$/, "");
 // sentence: false leaves out the last rule (a password-shaped word anywhere in a sentence about
@@ -201,7 +207,7 @@ function loosePasswords(text, { sentence = true } = {}) {
   for (const m of text.matchAll(new RegExp(EMAIL.source + "[\\s,;:]+(?:(?:and|pw|pass(?:word)?)\\s*[:=-]?\\s*)?(\\S+)", "g"))) add(m[1], m.index + m[0].length - m[1].length, 2);
   for (const m of text.matchAll(/\b(?:password|passwd|pwd|pw|pass)(?:['’]s)?\s+(?!is\b|=)(\S+)/gi)) add(m[1], m.index + m[0].length - m[1].length, 2);
   for (const m of text.matchAll(/\bpw\s*(?:is|=|:)\s*(\S{4,})/gi)) { const v = trimPw(m[1]), at = m.index + m[0].length - m[1].length; if (v.length >= 4 && !out.some((h) => h.at === at)) out.push({ value: v, at }); }
-  if (sentence) for (const m of text.matchAll(/(?<=^|\s)(\S{8,64})(?=\s|$)/g)) { const s = sentenceAt(text, m.index); if (EMAIL.test(s) || ACCOUNT.test(s)) add(m[1], m.index, 3); }
+  if (sentence) for (const m of text.matchAll(/(?<=^|\s)(\S{8,64})(?=\s|$)/g)) { const s = sentenceAt(text, m.index); if (aboutAccount(s)) add(m[1], m.index, 3); }
   return out;
 }
 // The site a password is for, from its sentence: "signed up to <site> with …", a site's
@@ -384,7 +390,7 @@ function scrubStored({ force = false } = {}) {
 // marks the 0.66.x scrub left with no journal: "[saved: … password …]" right before a word that
 // only ever follows "Symbiot's" in Symbiot's own words ("Blocked by [saved: password] membrane",
 // 77 times in agent logs) is "Symbiot's" again. Once per REPAIR_V, at start. { restored: [name], files, dropped }.
-const REPAIR_V = 2, REPAIR_MARK = () => join(CONFIG_DIR, "repaired.json");
+const REPAIR_V = 3, REPAIR_MARK = () => join(CONFIG_DIR, "repaired.json");
 const AFTER_SYMBIOT = "own|browser|signed|app|screens|vault|settings|memory|hidden|config|android|membrane|chat|sandbox|profile|pages|address|window|voice|version|repo|folder|home|guard|brief|agents?|work|workdesk|dashboard|reports|lanes?|makers|marketing|icon|liquid|scratch|saves|picks|mark|tasks|answers?|questions?|cards?|run|runs|copy|update|key|token|relay|link|phone|server|api|cli|command|tool|tools|data|state|files?";
 const SYMBIOTS = new RegExp(`\\[saved: [^\\]\\n]*?password[^\\]\\n]*\\](?=\\s+(?:${AFTER_SYMBIOT})\\b)`, "gi");
 // soon: the files are read one at a time, letting the app answer between them (at start: 464 MB

@@ -115,6 +115,9 @@ try {
   ok("…but an approval it needs never sinks to a log line", I.channelOf({ kind: "act", lane: "x", interrupt: "never", tier: 2, does: "ask" }, { noise: {} }) === "digest");
   const shy = I.choose([{ kind: "act", what: "Check the booking calendar sync again", why: "w", lane: "bookly", confidence: 0.9 }], { st: { passes: [], weights: { "act|bookly": -2 }, noise: {}, tiers: {} }, recent: [], cfg: {}, now });
   ok("turned down enough: that kind of move there isn't made", !shy.moves.length && /turned down/.test(shy.rejected[0].why));
+  // 24 Oct 2026: a run to close run 7740d069's review card ended with a review card of its own
+  const tidy = I.choose(["Close the review card from run 7740d069 as done, since it asked nothing.", "Clear the Fly.io send review card from run bf02c1b3 and mark it done.", "Mark run 9b642234 done in the job record"].map((what) => ({ kind: "act", what, why: "w", confidence: 0.9 })).concat([{ kind: "act", what: "Check the booking calendar card layout on the Week page", why: "w", confidence: 0.9 }]), { st: { passes: [], weights: {}, noise: {}, tiers: {} }, recent: [], cfg: {}, now, mode: "act" });
+  ok("closing Symbiot's own cards is never a move (no run, so no new card); other work naming a card still is", tidy.moves.length === 1 && /Week page/.test(tidy.moves[0].what) && tidy.rejected.filter((x) => /settle on their own/.test(x.why)).length === 3, tidy);
   const many = Array.from({ length: 8 }, (_, i) => ({ kind: "act", what: `Look into lane item number ${i} carefully`, why: "w", lane: "", confidence: 0.9 }));
   const chosen = I.choose(many, { st: { passes: [], weights: {}, noise: {}, tiers: {} }, recent: [], cfg: { intuitionBudget: 3 }, now, mode: "act" });
   ok("a daily budget of starts (config.intuitionBudget)", chosen.moves.length === 3 && chosen.rejected.filter((x) => /budget/.test(x.why)).length >= 2);
@@ -124,6 +127,9 @@ try {
   const evening = new Date(2026, 9, 22, 17, 5).getTime(), dir = join(HOME, "digests");
   const out = await I.digestDue(dg, { digestDir: dir }, evening);
   ok("at 17:00 the waiting lines go into a report under Reports, and one Update says so", out && out.items === 2 && readdirSync(dir).some((f) => /^SYMBIOT-DIGEST-/.test(f)) && /Worth knowing: a deadline tomorrow/.test(readFileSync(out.file, "utf8")) && dg.passes[0].report && /Digest: 2 things/.test(dg.passes[0].title));
+  const dm = { digest: [{ at: now - 3 * H, line: "I would have done this on my own: x", mode: "watch", how: "only suggested" }, { at: now - H, line: "On my own: y", mode: "act", how: "done" }], digestAt: 0, passes: [] };
+  const dmo = await I.digestDue(dm, { digestDir: join(HOME, "digests2") }, evening), dtx = dmo ? readFileSync(dmo.file, "utf8") : "";
+  ok("the digest opens with its mode and why, notes the change when it happened, and marks each line", /\*\*Mode: watching only\*\*: it watches its first day/.test(dtx) && /it changed from watching only to acting/.test(dtx) && /\[only suggested\] I would have/.test(dtx) && /\[done\] On my own/.test(dtx), dtx);
   ok("…not twice for the same slot", (await I.digestDue(dg, { digestDir: dir }, evening + 60000)) === null);
 
   console.log("INTUITION — a broken answer gets one more try");

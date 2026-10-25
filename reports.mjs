@@ -233,11 +233,11 @@ function list(lines, i, out, o) {
 // "fix" and "plan" alone head the record of what was done ("The fix", "Battery scorer fix") as often as
 // what is left, so they count only with a qualifier; a heading that says what was done or wrong
 // (DONE_HEAD) never counts. The report's own title (its `# ` line) never counts (2026-10-16).
-const NEXT_HEAD = /\b(?:next|top \d+|recommend\w*|suggest\w*|ideas?|actions?|action items?|to ?dos?|follow[- ]?ups?|what to do|priorit\w*|(?:implementation|rollout|migration|action|fix) plan|fixes? (?:to make|needed|left|still)|still to fix)\b/i;
+const NEXT_HEAD = /\b(?:next(?: steps?)?|top \d+|recommend\w*|suggest\w*|ideas?|actions?|action items?|to ?dos?|follow[- ]?ups?|what to do|priorit\w*|(?:implementation|rollout|migration|action|fix|launch|improvement) plan|plan, in order|plan for|fixes? (?:to make|needed|left|still)|still to fix|(?:what )?must change|needs? (?:to|your|doing|attention)|remaining|still open|left for you|open (?:items?|issues?|questions?)|outstanding|not done|to (?:fix|change|build|do|add|decide)|gaps)\b/i;
 const DONE_HEAD = /\b(?:done|fixed|changed|ticked|shipped|completed|flaws?|causes?)\b/i;
 // A bullet that asks for nothing: it says to leave things be, or reports what is already so.
 const NOT_ACTION = /^(?:paused\b|hold\b|do not|don'?t|never|keep\b|leave\b|no action|nothing (?:to|more)|no [\w ]{0,40}(?:so far|yet)|revisit only if|ticked:|release:)|\b(?:is|are|was|were) now\b|\bhas been\b|\bhad actually\b|\bnot worth\b|\bnothing more for you\b|\bin progress\)/i;
-const IDEAS_MAX = 4;
+const IDEAS_MAX = 8;
 // A half-sentence lifted off a wrapped line is not an action (2026-10-13): one word, one that
 // carries on from something before it ("and then…", "which…"), one that stops on a joining word
 // or a comma, or one with a bracket or quote left open.
@@ -254,7 +254,7 @@ const cleanIdea = (s) => String(s).replace(/^\[[ xX~]\]\s+/, "").replace(/\[([^\
 function reportIdeas(text, max = IDEAS_MAX) {
   const out = []; let on = false, base = -1;
   for (const l of String(text || "").replace(/\r\n?/g, "\n").split("\n")) {
-    const h = l.match(/^(#{1,6})\s+(.*)$/) || l.match(/^\s*()\*\*([^*]+)\*\*:?\s*$/);
+    const h = l.match(/^(#{1,6})\s+(.*)$/) || l.match(/^\s*()\*\*([^*]+)\*\*:?\s*$/) || l.match(/^\s*()\*\*([^*]+)\*\*[^\n]{0,80}:\s*$/); // "**What must change** (full fixes in x.json):" leads a list too
     if (h) { on = h[1].length !== 1 && NEXT_HEAD.test(h[2]) && !DONE_HEAD.test(h[2]); base = -1; continue; }
     if (!on) continue;
     const m = l.match(/^(\s*)(?:[-*+]|\d+[.)])\s+(.+)$/); if (!m) continue;
@@ -266,9 +266,22 @@ function reportIdeas(text, max = IDEAS_MAX) {
 }
 // Which of a report's ideas were handed to an agent or dismissed, kept by the report's mtime
 // (a rewritten report offers its ideas again). A report leaves "Read, open actions" once none is open.
-function handledIdeas(r, file = SEEN_FILE) { const h = loadSeen(file).handed[r.id]; return h && h.mtime === r.mtime && h.done && typeof h.done === "object" ? h.done : {}; }
+// An idea handed, done or dismissed in ANY report stays so in the others: an agent saved its plan again under a new name
+// nine times (KAGGLE-SQUARES-PLAN-xxxxxx.md, 25 Oct 2026), each copy a new report with the same ideas, so "Hand to agent" was
+// pressed again and again and the idea was always back. Long enough that it is the same idea, not a common few words.
+const SAME_IDEA = 30, HANDLED = /^(?:handed|done|dismissed)$/;
+function handledIdeas(r, file = SEEN_FILE) {
+  // Keys are trimmed: an idea cut at IDEAS' length keeps or loses its last space from one copy to the next (ed54e8, 25 Oct 2026).
+  const all = loadSeen(file).handed, h = all[r.id], out = {};
+  if (h && h.mtime === r.mtime && h.done && typeof h.done === "object") for (const [t, st] of Object.entries(h.done)) out[t.trim()] = st;
+  for (const [id, x] of Object.entries(all)) {
+    if (id === r.id || !x || typeof x.done !== "object" || !x.done) continue;
+    for (const [t, st] of Object.entries(x.done)) if (t.trim().length >= SAME_IDEA && HANDLED.test(st) && !out[t.trim()]) out[t.trim()] = st;
+  }
+  return out;
+}
 const openIdeas = (r, text, file = SEEN_FILE, ctx) => {
-  const done = handledIdeas(r, file), open = reportIdeas(text, 40).filter((t) => !done[t]).slice(0, IDEAS_MAX); // handled ones don't use up the slots
+  const done = handledIdeas(r, file), open = reportIdeas(text, 40).filter((t) => !done[t.trim()]).slice(0, IDEAS_MAX); // handled ones don't use up the slots
   if (!open.length) return open;
   const why = supersededIdeas(r, open, ctx || supersedeContext({ file }));
   return open.filter((t) => !why.has(t));
@@ -294,7 +307,7 @@ function supersedeContext({ list, tasks, file = SEEN_FILE } = {}) {
     tasks: { get() { if (!this._t) { try { this._t = loadTasks(); } catch { this._t = []; } } return this._t; } },
   });
   ctx.ideasOf = (r) => { // a report's open ideas, read once
-    if (!ctx._i.has(r.id)) { let t = ""; try { t = readFileSync(r.file, "utf8").slice(0, MAX_READ); } catch {} const done = handledIdeas(r, file); ctx._i.set(r.id, isDraftReport(r.title, r.name) ? [] : reportIdeas(t, 40).filter((x) => !done[x]).slice(0, IDEAS_MAX)); }
+    if (!ctx._i.has(r.id)) { let t = ""; try { t = readFileSync(r.file, "utf8").slice(0, MAX_READ); } catch {} const done = handledIdeas(r, file); ctx._i.set(r.id, isDraftReport(r.title, r.name) ? [] : reportIdeas(t, 40).filter((x) => !done[x.trim()]).slice(0, IDEAS_MAX)); }
     return ctx._i.get(r.id);
   };
   return ctx;
