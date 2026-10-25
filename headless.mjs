@@ -472,19 +472,9 @@ async function openTab(b, who, targetId) {
   const { sessionId } = await c.send("Target.attachToTarget", { targetId, flatten: true });
   const send = (method, params) => c.send(method, params, sessionId);
   const until = (method, ms) => c.until((m) => m.sessionId === sessionId && m.method === method, ms);
-  // Requests in flight, so "loaded" can wait for a page that fills itself in.
-  const inflight = new Set();
-  const unhookNet = c.on((m) => {
-    if (!m || m.sessionId !== sessionId) return;
-    if (m.method === "Network.requestWillBeSent") inflight.add(m.params.requestId);
-    else if (m.method === "Network.loadingFinished" || m.method === "Network.loadingFailed") inflight.delete(m.params.requestId);
-  });
-  // Quiet: no more than one request (a long poll, say) open for 600 ms, or 8 s at most.
-  const idle = async () => {
-    const end = Date.now() + 8000; let calm = 0;
-    await sleep(400);
-    while (Date.now() < end && calm < 600) { await sleep(100); calm = inflight.size <= 1 ? calm + 100 : 0; }
-  };
+  // Requests in flight, so "loaded" can wait for a page that fills itself in (netWatch).
+  const net = netWatch(), idle = net.idle;
+  const unhookNet = c.on((m) => { if (m && m.sessionId === sessionId) net.seen(m); });
   await send("Page.enable"); await send("Network.enable"); const unauth = await proxyAuth(c, sessionId, send);
   const ss = loadSessions(); if (Object.keys(ss).length) try { await send("Page.addScriptToEvaluateOnNewDocument", { source: sessionFill(ss), worldName: "symbiot-sessions" }); } catch {}
   await send("Emulation.setDeviceMetricsOverride", { width: VIEW.w, height: VIEW.h, deviceScaleFactor: 1, mobile: false });
@@ -544,25 +534,56 @@ async function withPage(fn, keep = true, who = MAIN) {
   }
 }
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const nap = (ms) => new Promise((r) => setTimeout(r, ms).unref());
+
+// When a page has finished loading, for every page Symbiot opens (the Symbiot Browser's tabs,
+// symbiot capture, symbiot shoot): one rule, so they can't drift apart. seen(m) takes each CDP
+// event of the page's session. idle(): after 0.4 s, quiet means no more than one request (a long
+// poll, say) open for 0.6 s; it gives up at 8 s (or `max` ms) and says whether it got quiet.
+// A request that failed or answered 4xx/5xx is finished, not in flight; an image that did is
+// kept in broken, so a missing picture can be told from one shoot took too early.
+const IDLE = { first: 400, calm: 600, max: 8000 };
+const shortUrl = (u) => { try { const x = new URL(u); return x.host + x.pathname; } catch { return String(u || "").slice(0, 120); } };
+function netWatch() {
+  const inflight = new Map(), broken = new Map();
+  const seen = (m) => {
+    const p = (m && m.params) || {};
+    if (m.method === "Network.requestWillBeSent") { if (!/^data:|^blob:/i.test((p.request && p.request.url) || "")) inflight.set(p.requestId, { url: p.request.url, type: p.type }); }
+    else if (m.method === "Network.responseReceived") { if (p.type === "Image" && p.response && p.response.status >= 400) broken.set(p.requestId, p.response.url); }
+    else if (m.method === "Network.loadingFinished") inflight.delete(p.requestId);
+    else if (m.method === "Network.loadingFailed") { const r = inflight.get(p.requestId); inflight.delete(p.requestId); if (r && !p.canceled && (p.type || r.type) === "Image") broken.set(p.requestId, r.url); }
+  };
+  const idle = async ({ max = IDLE.max } = {}) => {
+    const end = Date.now() + max; let calm = 0;
+    await sleep(Math.min(IDLE.first, max));
+    while (Date.now() < end && calm < IDLE.calm) { await sleep(100); calm = inflight.size <= 1 ? calm + 100 : 0; }
+    return calm >= IDLE.calm;
+  };
+  return { seen, idle, late: () => [...new Set([...inflight.values()].map((r) => shortUrl(r.url)))], broken: () => [...new Set([...broken.values()].map(shortUrl))], clear: () => broken.clear() };
+}
 
 // A login wall on a site the user linked (Settings → Connections) or trusted: their own Chrome's
 // sign-in for it (the profile agents act as, config.chromeProfile) is put in and the page opened
 // again, before anything asks them to sign in. Once a site per CHROME_AGAIN, so a sign-in Chrome
 // doesn't have isn't read for on every page (2026-10-20). chrome: false is takeChromeSignIn's own check.
 const CHROME_TRIED = new Map(), CHROME_AGAIN = 10 * 60000;
-async function open(page, url, { chrome = true, session = chromeSession } = {}) {
-  const loaded = page.until("Page.loadEventFired", 30000);
+// budget: ms for the load and the network settling together (symbiot shoot's 8 s), so an image
+// that holds up the load event can't hold up the picture; else 30 s for the load, then idle().
+// Says { loaded, quiet }: whether the load event came and the network went quiet in time.
+async function open(page, url, { chrome = true, session = chromeSession, budget = 0 } = {}) {
+  const t0 = Date.now(), loaded = page.until("Page.loadEventFired", budget || 30000);
   const r = await page.send("Page.navigate", { url });
   if (r.errorText) throw new Error(`Couldn't open ${url} (${r.errorText}).`);
-  await loaded; await page.idle();
+  const done = { loaded: !!(await loaded) };
+  done.quiet = await page.idle(budget ? { max: Math.max(0, budget - (Date.now() - t0)) } : undefined) !== false;
   const host = chrome ? hostOf(url) : "";
-  if (!host || !linkedSite(host) || !signInPage(String((await evaluate(page, "location.href")) || ""))) return;
-  if (Date.now() - (CHROME_TRIED.get(host) || 0) < CHROME_AGAIN) return;
+  if (!host || !linkedSite(host) || !signInPage(String((await evaluate(page, "location.href")) || ""))) return done;
+  if (Date.now() - (CHROME_TRIED.get(host) || 0) < CHROME_AGAIN) return done;
   CHROME_TRIED.set(host, Date.now());
   const s = session(host, { profile: loadConfig().chromeProfile });
-  if (!s.cookies.length) return;
-  try { await page.send("Network.setCookies", { cookies: s.cookies }); } catch { return; }
-  await open(page, url, { chrome: false });
+  if (!s.cookies.length) return done;
+  try { await page.send("Network.setCookies", { cookies: s.cookies }); } catch { return done; }
+  return open(page, url, { chrome: false, budget });
 }
 // A site in Settings → Connections (config.sites) or trusted, or a subdomain of one.
 function linkedSite(host, cfg = loadConfig()) {
@@ -1115,22 +1136,22 @@ async function scratchPage(fn, { width = 1440, height = 900 } = {}) {
       const { sessionId } = await c.send("Target.attachToTarget", { targetId, flatten: true });
       const send = (method, params) => c.send(method, params, sessionId);
       const until = (method, ms) => c.until((m) => m.sessionId === sessionId && m.method === method, ms);
-      const inflight = new Set();
-      c.on((m) => { if (!m || m.sessionId !== sessionId) return; if (m.method === "Network.requestWillBeSent") inflight.add(m.params.requestId); else if (m.method === "Network.loadingFinished" || m.method === "Network.loadingFailed") inflight.delete(m.params.requestId); });
-      const idle = async () => { const end = Date.now() + 8000; let calm = 0; await sleep(400); while (Date.now() < end && calm < 600) { await sleep(100); calm = inflight.size <= 1 ? calm + 100 : 0; } };
+      const net = netWatch(), idle = net.idle;
+      c.on((m) => { if (m && m.sessionId === sessionId) net.seen(m); });
       const on = (method, f) => c.on((m) => { if (m && m.sessionId === sessionId && m.method === method) f(m.params || {}); });
       await send("Page.enable"); await send("Network.enable");
       await send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 1, mobile: false });
       const { userAgent } = await c.send("Browser.getVersion");
       if (userAgent) await send("Network.setUserAgentOverride", { userAgent: userAgent.replace(/HeadlessChrome/g, "Chrome") });
-      return { send, until, idle, on };
+      return { send, until, idle, on, net };
     })()]);
     clearTimeout(kill);
     return await fn(page);
   } finally {
     clearTimeout(kill);
-    try { await Promise.race([c.send("Browser.close"), sleep(3000)]); } catch {}
-    if (proc.exitCode === null) await Promise.race([new Promise((r) => proc.once("exit", r)), sleep(3000)]);
+    // the 3 s limits don't hold the process up once Chrome has gone (symbiot shoot exits at once)
+    try { await Promise.race([c.send("Browser.close"), nap(3000)]); } catch {}
+    if (proc.exitCode === null) await Promise.race([new Promise((r) => proc.once("exit", r)), nap(3000)]);
     if (proc.exitCode === null) try { proc.kill("SIGKILL"); } catch {}
     try { rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch {}
   }
@@ -1776,4 +1797,4 @@ function watchWindow({ every = 2000, start = 30000, idle = 0 } = {}) {
   if (WATCH.unref) WATCH.unref();
 }
 
-export { windowSince, snapProfile, SNAP, BROWSER_IDLE_MIN, takeChromeSignIn, open as openSite, linkedSite, CHROME_TRIED, typeInto, watcherBusy, WATCH_GRACE, noteAgentUse, windowMoved, saveSessions, showScreen, fillForm, verifyPage, sessionCookie, historyPage, SESSION_COOKIE, tabKey, siteUrl, browserArgs, sandboxProxy, reducedUa, windowUa, mapPage, wholePage, readPage, readTexts, readLinkedIn, LI_READ, pagePicture, pageClip, CLIP, isSend, pressRegion, typeRegion, chooseRegion, uploadRegion, uploadFiles, attachFiles, FILE_BOX, scrollPage, SCROLLS, signIn, keepBrowserOpen, closeBrowser, browserOpen, keepSessions, SESSION_KEEP, SESSIONS, loadSessions, trustedSites, isTrusted, trustSite, untrustSite, PROFILE , openSymbiotBrowser, closeSymbiotBrowser, onBrowserClosed, scratchPage, open as openPage, evaluate, SCROLLER, watchWindow, windowOpen, lockHolder, setBrowserHub , browserHub };
+export { windowSince, snapProfile, SNAP, BROWSER_IDLE_MIN, takeChromeSignIn, open as openSite, linkedSite, CHROME_TRIED, typeInto, watcherBusy, WATCH_GRACE, noteAgentUse, windowMoved, saveSessions, showScreen, fillForm, verifyPage, sessionCookie, historyPage, SESSION_COOKIE, tabKey, siteUrl, browserArgs, sandboxProxy, reducedUa, windowUa, mapPage, wholePage, readPage, readTexts, readLinkedIn, LI_READ, pagePicture, pageClip, CLIP, isSend, pressRegion, typeRegion, chooseRegion, uploadRegion, uploadFiles, attachFiles, FILE_BOX, scrollPage, SCROLLS, signIn, keepBrowserOpen, closeBrowser, browserOpen, keepSessions, SESSION_KEEP, SESSIONS, loadSessions, trustedSites, isTrusted, trustSite, untrustSite, PROFILE , openSymbiotBrowser, closeSymbiotBrowser, onBrowserClosed, scratchPage, open as openPage, netWatch, IDLE, shortUrl, evaluate, SCROLLER, watchWindow, windowOpen, lockHolder, setBrowserHub , browserHub };
