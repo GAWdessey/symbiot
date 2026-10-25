@@ -240,21 +240,68 @@ function startDesign(path, md, { now = Date.now() } = {}) {
 // ---- symbiot shoot ---------------------------------------------------------------------
 // Screenshots of a page at the given sizes with headless Chrome, as PNG files in `out`.
 // sizes: "1440x900,390x844". full: a tall window, so a long page is captured whole.
-function shoot(url, { out, sizes = "1440x900,390x844", full = false, bin, now = Date.now(), run = spawnSync } = {}) {
+// Each is taken once the page has loaded and its network has settled (headless.mjs open and
+// netWatch, the rule symbiot capture waits by), then its fonts and the images in the window are
+// decoded, all inside SHOOT_MS, and one more frame drawn. Not on Chrome's simulated (virtual time)
+// clock: that one didn't wait for the first request to another site, so a CDN's photos came out
+// late or missing in pictures of a page that was fine (the Daaymn demo, 24 Oct 2026). One browser
+// of its own (scratchPage), the page opened again at each size, so what reads the width as it
+// loads sees the size it's shot at. A page that never goes quiet is still shot, with what was
+// still loading in `late`; images that failed are in `broken` (the page's, not the picture's).
+const SHOOT_MS = 8000;
+// Runs in the page, with the ms left: fonts ready and every image in the window loaded and
+// decoded, or the time's up; then a frame. Gives the images still not there.
+const SETTLE_JS = (ms) => `(async () => {
+  const end = Date.now() + ${Math.max(0, ms)}, left = () => new Promise((r) => setTimeout(r, Math.max(0, end - Date.now())));
+  const by = (p) => Promise.race([Promise.resolve(p).catch(() => {}), left()]);
+  await by(document.fonts && document.fonts.ready);
+  const seen = [...document.images].filter((i) => { const b = i.getBoundingClientRect(); return b.width && b.height && b.bottom > 0 && b.top < innerHeight && b.right > 0 && b.left < innerWidth; });
+  await by(Promise.all(seen.map((i) => (i.complete ? Promise.resolve() : new Promise((r) => { i.addEventListener("load", r, { once: true }); i.addEventListener("error", r, { once: true }); }))
+    .then(() => (i.naturalWidth ? i.decode() : null)).catch(() => {}))));
+  await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+  return seen.filter((i) => !i.complete).map((i) => i.currentSrc || i.src);
+})()`;
+const things = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+const andList = (a) => (a.length > 1 ? `${a.slice(0, -1).join(", ")} and ${a.at(-1)}` : a.join(""));
+// The words for what shoot couldn't help: still loading at the limit first, then broken images.
+function shootNote(late, broken) {
+  const sizes = Object.keys(late), all = [...new Set(Object.values(late).flat())], out = [];
+  if (sizes.length) out.push(`The page was still loading ${things(all.length, "thing", "things")} after ${SHOOT_MS / 1000} seconds (${all.slice(0, 3).join(", ")}), so the ${andList(sizes)} ${sizes.length === 1 ? "picture" : "pictures"} may be missing them.`);
+  if (broken.length) out.push(`${things(broken.length, "image", "images")} on the page didn't load (${broken.slice(0, 3).join(", ")}): that's the page, not the screenshot.`);
+  return out.join(" ");
+}
+async function shoot(url, { out, sizes = "1440x900,390x844", full = false, bin, now = Date.now(), page: withPage, open, short } = {}) {
   url = String(url || ""); if (!/^https?:\/\//i.test(url)) return { error: "Give a page's address, starting http:// or https://." };
   if (!bin) return { error: "No Chrome or Chromium found here." };
+  if (!withPage || !open || !short) { const H = await import("./headless.mjs"); withPage = withPage || H.scratchPage; open = open || H.openPage; short = short || H.shortUrl; }
   mkdirSync(out, { recursive: true });
-  const prof = join(out, `.chrome-${process.pid}-${now}`), shots = [], failed = [];
+  const shots = [], failed = [], todo = [], late = {}, broken = new Set();
   const slug = (url.replace(/^https?:\/\/[^/]+/i, "").replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "") || "home").slice(0, 40);
   for (const s of String(sizes).split(",").map((x) => x.trim()).filter(Boolean)) {
     const m = s.match(/^(\d{3,4})x(\d{3,4})$/); if (!m) continue;
-    const [w, h] = [Number(m[1]), full ? Math.max(Number(m[2]), 4000) : Number(m[2])], file = join(out, `${slug}-${m[1]}x${m[2]}${full ? "-full" : ""}.png`);
-    run(bin, ["--headless=new", "--disable-gpu", "--hide-scrollbars", "--no-first-run", "--no-default-browser-check", "--disable-crash-reporter", "--no-sandbox",
-      `--user-data-dir=${prof}`, `--window-size=${w},${h}`, "--virtual-time-budget=4000", `--screenshot=${file}`, url], { timeout: 60000, stdio: "ignore" });
-    (existsSync(file) ? shots : failed).push(file);
+    todo.push({ size: s, w: Number(m[1]), h: full ? Math.max(Number(m[2]), 4000) : Number(m[2]), file: join(out, `${slug}-${m[1]}x${m[2]}${full ? "-full" : ""}.png`) });
   }
-  try { rmSync(prof, { recursive: true, force: true }); } catch {}
-  return failed.length && !shots.length ? { error: "Chrome didn't take the screenshots here.", failed } : { shots, ...(failed.length ? { failed } : {}) };
+  let why = "";
+  try {
+    await withPage(async (page) => {
+      for (const t of todo) {
+        try {
+          await page.send("Emulation.setDeviceMetricsOverride", { width: t.w, height: t.h, deviceScaleFactor: 1, mobile: false });
+          const t0 = Date.now(), r = (await open(page, url, { chrome: false, budget: SHOOT_MS })) || {};
+          const { result } = (await page.send("Runtime.evaluate", { expression: SETTLE_JS(SHOOT_MS - (Date.now() - t0)), awaitPromise: true, returnByValue: true })) || {};
+          const still = [...(r.quiet === false && page.net ? page.net.late() : []), ...((result && Array.isArray(result.value) ? result.value : []).map(short))];
+          if (still.length) late[t.size] = [...new Set(still)].slice(0, 5);
+          if (page.net) for (const b of page.net.broken()) broken.add(b);
+          const { data } = await page.send("Page.captureScreenshot", { format: "png" });
+          writeFileSync(t.file, Buffer.from(data, "base64")); shots.push(t.file);
+        } catch (e) { why = why || String((e && e.message) || e); failed.push(t.file); delete late[t.size]; }
+      }
+    }, { width: todo.length ? todo[0].w : 1440, height: todo.length ? todo[0].h : 900 });
+  } catch (e) { why = String((e && e.message) || e); }
+  for (const t of todo) if (!shots.includes(t.file) && !failed.includes(t.file)) failed.push(t.file);
+  if (failed.length && !shots.length) return { error: "Chrome didn't take the screenshots here." + (why ? ` (${why})` : ""), failed };
+  const bad = [...broken].slice(0, 5), note = shootNote(late, bad);
+  return { shots, ...(failed.length ? { failed } : {}), ...(Object.keys(late).length ? { late } : {}), ...(bad.length ? { broken: bad } : {}), ...(note ? { note } : {}) };
 }
 
-export { isBrief, taskOf, sameJob, dropDesign, designWorthy, toDesign, designerBrief, settleDesign, specsFor, startDesign, designOf, DESIGNER_PROMPT, DESIGN, MIN_SPEC, slugOf, folderSlug, noteOpen, holdsMerge, OPEN_MS, isUiWork, designBrief, CHECKLIST, toReview, criticBrief, CRITIC_PROMPT, settleVerdict, reviewOf, saveReview, itemKey, shoot, REVIEW, VERDICT, MAX_ROUNDS };
+export { dropDesign, designWorthy, toDesign, designerBrief, settleDesign, specsFor, startDesign, designOf, DESIGNER_PROMPT, DESIGN, MIN_SPEC, slugOf, folderSlug, noteOpen, holdsMerge, OPEN_MS, isUiWork, designBrief, CHECKLIST, toReview, criticBrief, CRITIC_PROMPT, settleVerdict, reviewOf, saveReview, itemKey, shoot, shootNote, SHOOT_MS, REVIEW, VERDICT, MAX_ROUNDS };
