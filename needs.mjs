@@ -23,7 +23,7 @@ import { CONFIG_DIR, readState, writeJsonAtomic } from "./core.mjs";
 import { promptFor } from "./overrides.mjs";
 
 const CARDTEXT = () => join(CONFIG_DIR, "cardtext.json");
-const MAX_KEEP = 300, CARD_V = 2; // CARD_V: a card written before its agent's own line (doing) is written again
+const MAX_KEEP = 300, CARD_V = 3; // CARD_V: a card written before its agent's own line (doing), or before its check (proof, run), is written again
 const clip = (s, n) => { s = String(s || "").replace(/\s+/g, " ").trim(); return s.length > n ? s.slice(0, n - 1).replace(/\s+\S*$/, "") + "…" : s; };
 const words = (s) => String(s || "").trim().split(/\s+/).filter(Boolean).length;
 
@@ -86,7 +86,7 @@ const SYSTEM = `You rewrite one card on a person's "Needs you" list so they can 
 - tips: one per option, same order: one sentence on what happens if they press it.
 - recommended: the index of the option to press first, or -1 if none stands out.
 - run: when their step is to run commands in a terminal on their own computer (or over ssh), each command as one item: "what" is at most 8 words on what it does, "cmd" is the exact command copied from the card, one command or one short pipeline that runs as a unit. In the order to run them. At most 5. Never invent or change a command, and leave it out ([]) when the card holds no exact command.
-- proof: when their step changes something a command can read afterwards (a service running, a file there, a version installed), one read-only command that shows it's done, and "expect": a short regular expression its output matches only once it is ("^active$"). Only reading commands (systemctl is-active, test -f, ls, cat, grep, git status, md5sum), over ssh if the step is on a server (same ssh options as the card's), never one that changes anything. Leave it out ({}) when nothing can be read.
+- proof: when their step changes something a command can read afterwards (a service running, a file there, a version installed), one read-only command that shows it's done, and "expect": a short regular expression its output matches only once it is ("^active$"). Only reading commands (systemctl is-active, test -f, ls, cat, grep, git status, md5sum), over ssh if the step is on a server (same ssh options as the card's), never one that changes anything. For a script (a deploy), what it changes: a file's checksum the same in both places (md5sum a b | cut -d" " -f1 | uniq | wc -l, expect "^1$"), a version string, how long a service has run. Leave it out ({}) when nothing can be read.
 - judgement: true when their step is to look, listen or try something and report what they found (which voice sounds better, whether it works), so they need to tell the agent the result, not just "done".
 - notTheirs: true when the card asks them whether something has happened or what state something is in (is it moved, have you scheduled it, did it arrive), or asks for something an agent could check or do itself: a login, key, document or detail the saved keys or the linked sites and mailboxes listed hold, or a file on their computer. Those are the agent's to find out, never a card for them. Only a password nobody saved, a code sent to them, a payment, or a yes to something hard to undo is theirs. Then the other fields don't matter.`;
 
