@@ -1376,8 +1376,12 @@ try {
       '<button type="button" role="tab" onclick="location=\\'/search?q=' + tab + '\\'" style="position:absolute;left:10px;top:10px">Scheduled (8)</button>' +
       '<form action="/typed" style="position:absolute;left:10px;top:200px"><input name="' + field[0] + '" aria-label="' + field[1] + '" value="' + field[2] + '"></form></div></div>';
     const stack = '<title>Stack</title><body style="margin:0">' + dlg("Create a post", "left:0;top:0;width:700px;height:500px", "clock", ["post", "Text editor", "My post"]) + dlg("Schedule post", "left:150px;top:60px;width:500px;height:300px", "scheduled", ["date", "Date*", ""]) + '</body>';
+    // Kaggle's "Join Competition" box: open over a rules page that scrolls, its own text scrolls inside it, Accept at its bottom
+    const modal = '<title>Join</title><body style="margin:0;height:4000px"><button style="position:absolute;left:10px;top:3900px">Rules end</button>' +
+      '<div style="position:fixed;inset:0;background:rgba(0,0,0,.5)"></div><div role="dialog" aria-modal="true" aria-label="Join Competition" style="position:fixed;left:100px;top:50px;width:500px;height:500px;background:#fff;display:flex;flex-direction:column">' +
+      '<h2 style="margin:0;height:40px">Join Competition</h2><div id="rules" style="flex:1;overflow:auto"><div style="height:1500px">Rules text</div><button>Accept</button></div></div></body>';
     const typed = (u) => "<title>Typed " + [...new URL(u, "http://x").searchParams].map(([k, v]) => k + "=" + v).join("&") + "</title><button>Back</button>";
-    const srv = createServer((q, r) => { r.writeHead(200, { "content-type": "text/html" }); r.end(q.url === "/stack" ? stack : q.url.startsWith("/typed?") ? typed(q.url) : q.url === "/sched" ? sched : q.url === "/chats" ? chats : q.url === "/virt" ? virt : q.url === "/tall" ? tall : q.url === "/long" ? long : q.url === "/pane" ? pane : q.url === "/two" ? "<title>Page two</title><button>Back</button>" : q.url === "/form" ? form : q.url === "/form2" ? form2 : q.url === "/rows" ? inbox() : q.url.startsWith("/search?") ? "<title>Results for " + new URL(q.url, "http://x").searchParams.get("q") + "</title><button>Back</button>" : page); }).listen(0, "127.0.0.1");
+    const srv = createServer((q, r) => { r.writeHead(200, { "content-type": "text/html" }); r.end(q.url === "/stack" ? stack : q.url === "/modal" ? modal : q.url.startsWith("/typed?") ? typed(q.url) : q.url === "/sched" ? sched : q.url === "/chats" ? chats : q.url === "/virt" ? virt : q.url === "/tall" ? tall : q.url === "/long" ? long : q.url === "/pane" ? pane : q.url === "/two" ? "<title>Page two</title><button>Back</button>" : q.url === "/form" ? form : q.url === "/form2" ? form2 : q.url === "/rows" ? inbox() : q.url.startsWith("/search?") ? "<title>Results for " + new URL(q.url, "http://x").searchParams.get("q") + "</title><button>Back</button>" : page); }).listen(0, "127.0.0.1");
     await new Promise((r) => srv.on("listening", r));
     const out = {};
     out.map = await h.mapPage("127.0.0.1:" + srv.address().port, "");
@@ -1445,6 +1449,8 @@ try {
     out.pdown = await h.scrollPage(out.pmap.id);
     out.pup = await h.scrollPage(out.pdown.id, "up");
     out.fits = await h.scrollPage(out.fmap.id);
+    out.mmap = await h.mapPage(base + "/modal", "");
+    out.mbottom = await h.scrollPage(out.mmap.id, "bottom");
     // the whole page at once: one tall screen, for a page that scrolls as a whole (not Gmail's list)
     out.wmap = await h.mapPage(base + "/long", "", { whole: true });
     out.wpane = await h.mapPage(base + "/pane", "", { whole: true });
@@ -1514,6 +1520,7 @@ try {
     ok("scrollPage: to the bottom, and past it says so without a new screen", sy(ho.lbottom).y === 2200 && rl(ho.lbottom).join() === "Last button" && ho.lbottom.name === "Long ↓ 100%" && /bottom of the page already/.test((ho.lpast || {}).error || "") && !ho.lpast.id && /Scroll down, up, top, bottom/.test((ho.lsideways || {}).error || ""), [sy(ho.lbottom), ho.lpast, ho.lsideways]);
     ok("scrollPage: an older screen, once closed, opens again where it was, then scrolls on from there", ho.lagain && !ho.lagain.kept && sy(ho.lagain).y === 1360, ho.lagain && (ho.lagain.error || sy(ho.lagain)));
     ok("scrollPage: a list that scrolls inside the page (Gmail's) is what scrolls, found again by its selector", sy(ho.pmap).selector === "#list" && sy(ho.pmap).max === 1660 && !rl(ho.pmap).includes("Row 25") && rl(ho.pdown).includes("Row 25") && sy(ho.pdown).y === 629 && sy(ho.pup).y === 0 && rl(ho.pup).includes("Row 0"), [sy(ho.pmap), sy(ho.pdown), rl(ho.pdown).slice(0, 3), ho.pup && (ho.pup.error || sy(ho.pup))]);
+    ok("scrollPage: a box open over the page (Kaggle's Join Competition) is what scrolls, not the rules page behind it, so its Accept button is reached", sy(ho.mmap).selector && !/^(html|body)$/i.test(sy(ho.mmap).selector) && sy(ho.mmap).max > 1000 && ho.mbottom && !ho.mbottom.error && sy(ho.mbottom).selector === sy(ho.mmap).selector && sy(ho.mbottom).y === sy(ho.mbottom).max && rl(ho.mbottom).includes("Accept") && !rl(ho.mbottom).includes("Rules end"), { mmap: ho.mmap && { scroll: sy(ho.mmap), regions: rl(ho.mmap) }, mbottom: ho.mbottom && (ho.mbottom.error || { scroll: sy(ho.mbottom), regions: rl(ho.mbottom) }) });
     ok("scrollPage: a page that fits in the window has nothing to scroll", /Nothing scrolls/.test((ho.fits || {}).error || "") && !sy(ho.fmap).max, ho.fits);
     const wm = ho.wmap || {}, wlast = (wm.regions || []).find((r) => r.label === "Last button") || {};
     ok("mapPage --whole: one screenshot as tall as the page, with every button on it where it is on the page", wm.w === 1280 && wm.h === 3000 && wm.name === "Long (whole page)" && (wm.page || {}).full === true && !sy(wm).max && rl(wm).join() === "Top button,Middle button,Last button" && wlast.y === 2950, wm.error || [wm.w, wm.h, wm.name, wm.page, rl(wm), wlast]);
