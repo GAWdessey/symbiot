@@ -567,7 +567,7 @@ const CUSTOMER = [
 // costs; and npm installs of the packages your posts are about. Profile visits are
 // only in LinkedIn's own analytics. null before there's a first draft.
 const TEST_WEEKS = 4;
-const isReply = (n) => !!n.social && (n.li === "message" || ["comment", "reply", "mention"].includes(n.type) || !!n.customer);
+const isReply = (n) => !!n.social && !n.automated && (n.li === "message" || ["comment", "reply", "mention"].includes(n.type) || !!n.customer);
 const dayStart = (ts) => { const d = new Date(ts); d.setHours(0, 0, 0, 0); return d.getTime(); };
 const addDays = (ts, n) => { const d = new Date(ts); d.setDate(d.getDate() + n); return d.getTime(); };
 const ymd = (ts) => { const d = new Date(ts); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
