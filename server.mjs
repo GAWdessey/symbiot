@@ -622,7 +622,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       if (u.pathname === "/api/screens/shoot" && req.method === "POST") {
         const b = await readBody(req), out = resolve(String(b.out || "")), home = homedir();
         if (!b.out || !out.startsWith(home + "/") || (out.startsWith(CONFIG_DIR + "/") && !out.startsWith(join(CONFIG_DIR, "drafts") + "/"))) return json(res, { error: "Screenshots go in the run's own folder." });
-        return json(res, shoot(String(b.url || ""), { out, sizes: String(b.sizes || "1440x900,390x844"), full: b.full === true, bin: chromeBinary() }));
+        return json(res, await shoot(String(b.url || ""), { out, sizes: String(b.sizes || "1440x900,390x844"), full: b.full === true, bin: chromeBinary() }));
       }
       if (u.pathname === "/api/screens/map" && req.method === "POST") { const b = await readBody(req); return json(res, screenOut(await mapPage(b.site, b.name, { whole: b.whole === true, who: String(b.who || "") }))); }
       // press / type: refused unless confirmed, or the page's site is one you trust

@@ -73,12 +73,40 @@ try {
   ok("passed: kept as passed, nothing reopened, and not reviewed again", s3.passed.join() === "Redesign the landing page" && D.reviewOf(lane)["Redesign the landing page"].passed && A.uiReview(lane, { id: "r5" }, go) === null);
 
   console.log("DESIGN — symbiot shoot");
-  ok("only a page's address", /http/.test(D.shoot("file:///etc/passwd", { out: join(HOME, "s"), bin: "chrome" }).error));
+  ok("only a page's address", /http/.test((await D.shoot("file:///etc/passwd", { out: join(HOME, "s"), bin: "chrome" })).error));
+  // a fake browser: what it was asked, in order. open() stands for headless.mjs's, which
+  // waits for the load and then for the network to settle before it returns.
   const calls = [], out = join(HOME, "shots");
-  const sh = D.shoot("http://localhost:3100/orders", { out, bin: "chrome", run: (bin, args) => { calls.push(args); const f = args.find((a) => a.startsWith("--screenshot=")).slice(13); writeFileSync(f, "png"); } });
-  ok("one PNG per size, named for the page and size, at the window size asked", sh.shots.length === 2 && /orders-1440x900\.png$/.test(sh.shots[0]) && /orders-390x844\.png$/.test(sh.shots[1]) && calls[0].includes("--window-size=1440,900") && calls[1].includes("--window-size=390,844"), [sh, calls[0]]);
-  ok("…--full takes a tall window for a long page", D.shoot("http://localhost:3100/", { out, bin: "chrome", full: true, sizes: "1440x900", run: (b, args) => { calls.push(args); writeFileSync(args.find((a) => a.startsWith("--screenshot=")).slice(13), "png"); } }).shots[0].endsWith("-full.png") && calls.at(-1).includes("--window-size=1440,4000"));
-  ok("…and says so when Chrome took none", /didn't take/.test(D.shoot("http://localhost:3100/", { out: join(HOME, "none"), bin: "chrome", run: () => {} }).error));
+  const fake = (log, { fail = () => false } = {}) => ({
+    page: async (fn, size) => { log.push(["start", size]); return fn({ send: async (method, params) => { log.push([method, params]); if (method === "Page.captureScreenshot") { if (fail(log)) throw new Error("tab crashed"); return { data: Buffer.from("png").toString("base64") }; } return {}; } }); },
+    open: async (page, url, o) => { log.push(["open", url, o]); log.push(["settled"]); },
+  });
+  const sh = await D.shoot("http://localhost:3100/orders", { out, bin: "chrome", ...fake(calls) });
+  const sized = calls.filter((c) => c[0] === "Emulation.setDeviceMetricsOverride").map((c) => `${c[1].width},${c[1].height}`);
+  ok("one PNG per size, named for the page and size, at the window size asked", sh.shots.length === 2 && /orders-1440x900\.png$/.test(sh.shots[0]) && /orders-390x844\.png$/.test(sh.shots[1]) && readFileSync(sh.shots[0], "utf8") === "png" && sized.join(" ") === "1440,900 390,844", [sh, sized]);
+  const order = calls.map((c) => c[0]), shot1 = order.indexOf("Page.captureScreenshot");
+  ok("…each taken after the page has loaded and its network settled, not on a timer: open, settle, then the picture, the page opened again at each size", order.filter((x) => x === "start").length === 1 && order.filter((x) => x === "open").length === 2 && order.indexOf("settled") < shot1 && order.lastIndexOf("open") > shot1 && !JSON.stringify(calls).includes("virtual-time-budget") && calls.find((c) => c[0] === "open")[2].chrome === false, order);
+  const tall = []; const full = await D.shoot("http://localhost:3100/", { out, bin: "chrome", full: true, sizes: "1440x900", ...fake(tall) });
+  ok("…--full takes a tall window for a long page", full.shots[0].endsWith("-full.png") && tall.some((c) => c[0] === "Emulation.setDeviceMetricsOverride" && c[1].height === 4000));
+  const none = await D.shoot("http://localhost:3100/", { out: join(HOME, "none"), bin: "chrome", page: async () => { throw new Error("The browser didn't start: no display"); }, open: async () => {} });
+  ok("…and says so when Chrome took none, with why", /didn't take/.test(none.error) && /no display/.test(none.error) && none.failed.length === 2, none);
+  const half = await D.shoot("http://localhost:3100/", { out, bin: "chrome", ...fake([], { fail: (log) => log.filter((c) => c[0] === "Page.captureScreenshot").length > 1 }) });
+  ok("…one size that fails is listed, the other kept", half.shots.length === 1 && half.failed.length === 1 && /390x844/.test(half.failed[0]), half);
+  ok("…a clean shot says only where its pictures are: no late, broken or note", JSON.stringify(Object.keys(sh)) === '["shots"]', sh);
+  ok("…the load and the settling share one 8 s limit, and fonts and the images in the window are waited for after it", calls.find((c) => c[0] === "open")[2].budget === 8000 && calls.some((c) => c[0] === "Runtime.evaluate" && /document\.fonts/.test(c[1].expression) && /decode\(\)/.test(c[1].expression) && c[1].awaitPromise), calls.find((c) => c[0] === "open"));
+  // a page that never went quiet, and an image still not in at the limit, and one that 404'd
+  const busy = (log) => ({
+    page: async (fn) => fn({ net: { late: () => ["api.example.com/poll"], broken: () => ["cdn.example.com/missing.png"] }, send: async (method, params) => { log.push([method, params]); if (method === "Runtime.evaluate") return { result: { value: ["https://cdn.example.com/hero.jpg?w=800"] } }; if (method === "Page.captureScreenshot") return { data: Buffer.from("png").toString("base64") }; return {}; } }),
+    open: async () => ({ loaded: false, quiet: false }), short: (u) => { const x = new URL(u); return x.host + x.pathname; },
+  });
+  const slow = await D.shoot("http://localhost:3100/", { out, bin: "chrome", ...busy([]) });
+  ok("never quiet: the pictures are still taken, with what was still loading per size, host and path only", slow.shots.length === 2 && JSON.stringify(slow.late) === JSON.stringify({ "1440x900": ["api.example.com/poll", "cdn.example.com/hero.jpg"], "390x844": ["api.example.com/poll", "cdn.example.com/hero.jpg"] }), slow);
+  ok("…a broken image is listed once, as the page's", JSON.stringify(slow.broken) === '["cdn.example.com/missing.png"]', slow.broken);
+  ok("…and the note says both, in the designer's words, still loading first", slow.note === "The page was still loading 2 things after 8 seconds (api.example.com/poll, cdn.example.com/hero.jpg), so the 1440x900 and 390x844 pictures may be missing them. 1 image on the page didn't load (cdn.example.com/missing.png): that's the page, not the screenshot.", slow.note);
+  ok("…one size late, one thing: singular words", D.shootNote({ "1440x900": ["cdn.example.com/hero.jpg"] }, []) === "The page was still loading 1 thing after 8 seconds (cdn.example.com/hero.jpg), so the 1440x900 picture may be missing them.");
+  ok("…at most 5 addresses per size, 3 in the note", D.shootNote({ "1440x900": ["a/1", "a/2", "a/3", "a/4"] }, ["b/1", "b/2"]).includes("(a/1, a/2, a/3), so") && D.shootNote({}, ["b/1", "b/2"]) === "2 images on the page didn't load (b/1, b/2): that's the page, not the screenshot.");
+  const shootSrc = readFileSync(new URL("../design.mjs", import.meta.url), "utf8");
+  ok("…no simulated clock left in shoot", !/virtual-time-budget/.test(shootSrc.slice(shootSrc.indexOf("---- symbiot shoot"))));
 
   console.log("THE JOB FIRST — the standard asks for the flows the best product of its kind has, not only tidiness");
   ok("the builder's brief and the critic's both start from the job and the flows people expect", /The job first/.test(D.CHECKLIST[0]) && /removing, undoing/.test(D.CHECKLIST[0]) && D.designBrief().join("\n").includes("The job first") && D.criticBrief([{ item: "x", rounds: 0 }]).includes("The job first"));
