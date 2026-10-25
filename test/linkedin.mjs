@@ -61,7 +61,8 @@ try {
   ok("the two notifications are news, by who and what", (r2.new || []).length === 2 && r2.new.every((n) => n.li === "notification" && n.actor && n.type), r2.new);
   const last = briefed[briefed.length - 1];
   ok("the brief is told it's LinkedIn", last && last.o && last.o.social === true, last && last.o);
-  ok("the brief gets every item the card lists, the earlier message too", last && last.news.length === 3 && last.news.some((n) => n.text === "Messaging, 1 new notification") && last.news.filter((n) => n.li === "notification").length === 2, last && last.news);
+  // a reaction is LinkedIn's own notification, not a person's words: nobody reads a reply, so it doesn't wait on you (watch.mjs systemSender)
+  ok("the brief gets every item that waits on you, the earlier message too, not the reaction", last && last.news.length === 2 && last.news.some((n) => n.text === "Messaging, 1 new notification") && last.news.some((n) => /team of 5/.test(n.text)) && !last.news.some((n) => /Lerato/.test(n.text)), last && last.news);
   ok("and what it said is the card's brief", W.watchBoard(72).cards.find((c) => c.id === w.id).brief.text === "Messages: Ann Lee asks about a demo.", W.watchBoard(72).cards);
   const r3 = await W.checkWatch(w.id, opts(async (k) => ({ items: LISTS[k] })));
   ok("read again with nothing new: nothing is news twice", !(r3.new || []).length, r3.new);
