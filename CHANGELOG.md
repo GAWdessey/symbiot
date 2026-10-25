@@ -4,7 +4,9 @@ What each Symbiot release brought, newest first. When Approve bumps the version,
 
 ## 0.90.12 — 2026-10-25
 
-- Bug: Home's 'Handovers under way' list shows the wrong state.
+- **Handovers under way shows only live work.** Home's list now holds only handovers whose agent is running, waiting to start, or waiting on your answer.
+- **Approvals pass their tests again.** A merge had dropped three helpers from the design module, so every approval failed its tests and its lane sat waiting. They are back.
+- **Agent runs open their own pull request.** A finished run commits its work, syncs with main, runs the tests and opens the PR with auto-merge on green checks, instead of leaving changes for you to approve.
 
 ## 0.90.11 — 2026-10-25
 

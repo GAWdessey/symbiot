@@ -304,4 +304,4 @@ async function shoot(url, { out, sizes = "1440x900,390x844", full = false, bin, 
   return { shots, ...(failed.length ? { failed } : {}), ...(Object.keys(late).length ? { late } : {}), ...(bad.length ? { broken: bad } : {}), ...(note ? { note } : {}) };
 }
 
-export { dropDesign, designWorthy, toDesign, designerBrief, settleDesign, specsFor, startDesign, designOf, DESIGNER_PROMPT, DESIGN, MIN_SPEC, slugOf, folderSlug, noteOpen, holdsMerge, OPEN_MS, isUiWork, designBrief, CHECKLIST, toReview, criticBrief, CRITIC_PROMPT, settleVerdict, reviewOf, saveReview, itemKey, shoot, shootNote, SHOOT_MS, REVIEW, VERDICT, MAX_ROUNDS };
+export { isBrief, taskOf, sameJob, dropDesign, designWorthy, toDesign, designerBrief, settleDesign, specsFor, startDesign, designOf, DESIGNER_PROMPT, DESIGN, MIN_SPEC, slugOf, folderSlug, noteOpen, holdsMerge, OPEN_MS, isUiWork, designBrief, CHECKLIST, toReview, criticBrief, CRITIC_PROMPT, settleVerdict, reviewOf, saveReview, itemKey, shoot, shootNote, SHOOT_MS, REVIEW, VERDICT, MAX_ROUNDS };
