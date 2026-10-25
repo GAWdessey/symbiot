@@ -208,6 +208,9 @@ console.log("REPORTS — a handed-off or dismissed next step leaves 'Read, to ac
   const nb = R.withNeeds(lc, { seenFile: sc }).find((x) => x.id === b.id);
   ok("a long idea handed in one copy stays handed in the next copy of the report", !R.readReport(b.id, { list: lc, mark: false, seenFile: sc }).ideas.includes(long), nb);
   ok("…while a short one (a few common words) is not taken for the same idea", R.readReport(b.id, { list: lc, mark: false, seenFile: sc }).ideas.includes("short one"));
+  const sp = join(CFG, "seen-space.json"), cut = "Extension constructions: cut at the length limit, the last space kept in one copy and lost in the next one";
+  R.markIdeas(a, [cut + " "], "handed", sp);
+  ok("an idea cut with a trailing space in one copy is the same idea without it in the next", R.handledIdeas(b, sp)[cut] === "handed");
   ok("nothing was handed over when the Workdesk add failed", (reportIdeasAdd(id, ["x"], { list: () => l, add: () => ({ error: "no" }), mark: () => { throw new Error("marked"); } })).error === "Couldn't add them.");
   put(d, "MOVE-PLAN.md", "# Move plan\n\n## Next steps\n\n- move the repo\n- update the links\n- a new one\n");
   ok("a rewritten report offers its steps again", needs().needs === "ideas" && needs().ideas === 3);

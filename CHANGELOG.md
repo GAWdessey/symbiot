@@ -2,6 +2,10 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one), for anyone who installs the app: what changed in it, never whose work it was (no projects, people, accounts, services, run ids or task wording of the person who made it). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.90.11 — 2026-10-25
+
+- **A handed next step stays handed even when its last space differs.** The Kaggle plan's longest step was cut at the length limit, keeping its trailing space in one saved copy and losing it in the next, so each new copy listed the same step as open again. Steps are now compared without that space.
+
 ## 0.90.10 — 2026-10-25
 
 - **A next step you handed to an agent stays handed.** An agent saved its plan again under a new name nine times, and each copy was a new report whose steps showed up as open again, so "Hand to agent" came back every time you pressed it. A step handed over, done or dropped in one report now counts as handled in every other report that lists the same step.
