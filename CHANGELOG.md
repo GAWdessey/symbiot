@@ -2,6 +2,10 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one), for anyone who installs the app: what changed in it, never whose work it was (no projects, people, accounts, services, run ids or task wording of the person who made it). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.90.7 — 2026-10-25
+
+- **A step that is already done closes itself.** The Steve deploy and restart cards stayed on Needs you for hours after the work was done, because only the agent's own words said it wasn't. Each step card now carries a check that only reads: read off the command it gives (`systemctl start` or `restart` here or over ssh: the service is running, and for a restart, started after the card was asked), or one its writer gives (a service, a file, a version). Every 30 seconds Symbiot runs them; when one reads true it answers the card "Done: Symbiot checked, …" and its agent carries on. A check that changes anything (sudo, rm, a redirect, a restart) is never run, and one that can't reach the server or doesn't pass leaves the card for you.
+
 ## 0.90.6 — 2026-10-24
 
 - **A step that is commands to run is direct.** When a card needs you to run something, it now shows an **Open terminal** button (opens a terminal on this computer, in the project's folder), each command in a box of its own with a **Copy** button (run them one at a time, in order), and a **Done** button. Before, you got a question and had to find a terminal and work out what to paste. The card writer picks the exact commands out of the agent's words; with no AI connected it uses the ones the agent fenced in a code block.

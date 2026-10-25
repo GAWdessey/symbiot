@@ -48,6 +48,7 @@ import { archivedTasks } from "./sweep.mjs";
 import { sentTick } from "./sentmail.mjs";
 import { keepFacts, skipFacts, awaitTick, awaitingState, stopWaiting } from "./handback.mjs";
 import { adaptState, noteUse } from "./adapt.mjs";
+import { settleDone } from "./proof.mjs";
 import { writeCards, loadCardText, keyOf as cardKeyOf } from "./needs.mjs";
 import { shoot } from "./design.mjs";
 import { updateAsk, cardTalk, dismissCard, reportIdeasAdd, reportIdeasDismiss, reportAsk, reportDraftAnswer, homeState, homeTick, homeAsk, homeAnswer, homeNext, workScene, forgetWork, workGo, workTick, firstSteps, marketingState, marketingGo, marketingDraftAnswer, marketingTask, moveToMarketing, onboarding, setOnboarding, startOnboarding, phoneSetupFirst, loadDismissed } from "./home.mjs";
@@ -999,6 +1000,9 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
   let carding = false;
   const cardSweep = async () => { if (carding) return; carding = true; try { let ai = null; try { ai = resolveProvider() ? aiWrite : null; } catch {} if (!ai) return; let keys = [], sites = []; try { keys = listSecrets().map((x) => x.name); } catch {} try { sites = [...new Set(Object.entries(loadConfig().linked || {}).flatMap(([id, v]) => [id, ...((v && v.hosts) || [])]))]; } catch {} const n = await writeCards((homeState() || {}).you || [], { write: ai, known: { keys, sites } }); if (n) homeState({ fresh: true }); } catch {} finally { carding = false; } };
   every("cards", 20000, () => cardSweep(), { first: 8000 });
+  // a step that's already done (its proof reads true, proof.mjs) is answered "Done" for them, not kept as a card
+  let proving = false;
+  every("proofs", 30000, async () => { if (proving) return; proving = true; try { const n = (await settleDone((homeState() || {}).you || [], { answer: (id, o) => homeAnswer(id, o) })).length; if (n) homeState({ fresh: true }); } catch {} finally { proving = false; } }, { first: 15000 });
   every("goals", 10 * 60000, () => goalsTick(goalDeps()), { first: 60000 });
   every("continue lanes", 60000, () => continueLanes());
   every("lane ids", 10 * 60000, () => noteLaneIds(), { first: 20000 }); // each lane by what it is, so a renamed folder keeps its tasks (laneids.mjs) // a lane with open tasks and no run going starts again, while it gets somewhere
