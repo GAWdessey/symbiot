@@ -9,7 +9,7 @@ import { SCAN, scanBegin, scanPhase, scanTick, scanExpired, scanEnd, scanBase, f
 function gitDefaultBranch(repo) {
   const d = gitOut(repo, ["symbolic-ref", "--short", "refs/remotes/origin/HEAD"]).trim();
   if (d) return d.replace(/^origin\//, "");
-  // No origin/HEAD here: the first of main/master/develop that shares history with this checkout. daaymn's GitHub default
+  // No origin/HEAD here: the first of main/master/develop that shares history with this checkout. one project's GitHub default
   // is master, but a stale `origin/main` with no history in common was picked, and every PR failed with "no history in
   // common with main" (25 Oct 2026), so its approved work sat on Needs you as "Send … not on GitHub yet: no PR opened".
   const have = ["main", "master", "develop"].filter((b) => gitOut(repo, ["rev-parse", "--verify", "-q", `refs/remotes/origin/${b}`]).trim());
