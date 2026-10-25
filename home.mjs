@@ -18,7 +18,7 @@ import { readFileSync, writeFileSync, mkdirSync, statSync } from "node:fs";
 import { watchBoard, draftReply, draftCards, draftAnswer } from "./watch.mjs";
 import { pendingReview, pushTasks, addTask, taskType, releaseNotIn, unplacedTasks } from "./tasks.mjs";
 import { estimate, estimateWords } from "./estimate.mjs";
-import { launchFault, ensureRunnable, agentQuestions, answerQuestions, heldAsk, grantCard, cardIsPermission, onCardGone, setHandoffCmd, agentsList, agentsNow, forgetAgents, runHandoff, runningHandoff, handoffCmd, loadRuns, connectorsInfo, parkedPaths, agentMissing, settleNeeds, closeAsk, pickAgent, detectHandoffs, linkReach, unchangedStep, whereOf, claudePause, parkLane, waitingTask } from "./agents.mjs";
+import { launchFault, ensureRunnable, agentQuestions, answerQuestions, heldAsk, grantCard, cardIsPermission, onCardGone, setHandoffCmd, agentsList, agentsNow, forgetAgents, runHandoff, runningHandoff, handoffCmd, loadRuns, connectorsInfo, parkedPaths, agentMissing, settleNeeds, closeAsk, pickAgent, detectHandoffs, linkReach, unchangedStep, whereOf, claudePause, parkLane, waitingTask, namedBlocker, autoStart } from "./agents.mjs";
 import { stallCards, loadStall, saveStall } from "./stall.mjs";
 import { isDone, recordDone, doneList, asksBack, askBackNote, wantsReport, closesAsk, heldBy, reportsSince, talkOf, addTalk, talkText, YES, asksQ, saysDone, wantsToRead } from "./asksdone.mjs";
 import { captureSecrets } from "./vault.mjs";
@@ -1246,10 +1246,18 @@ function waitWhy({ map, named, running, held, ready, isParked, deps = {} }) {
     if (h) return h.approve ? { kind: "approve", noGo: true, text: `Waiting on your OK for ${name}'s last run, on the Workdesk`, path: h.path } : h.step ? { kind: "step", noGo: true, text: `Waiting on a step only you can do for ${name}: its card is under Needs you`, path: h.path } : { kind: "asks", noGo: true, text: `Waiting on your answer to ${name}'s question, on the Workdesk`, path: h.path };
     if (inBrief && ready.has(lane)) return { kind: "approve", noGo: true, text: `Waiting on your OK for ${name}'s work, on the Workdesk`, path };
     // its agent marked it [~]: it waits on something outside the run, and an answer coming in starts the lane again
+    // only a real, named blocker holds it (agents.mjs namedBlocker): "waits on: someone with root" when
+    // the lane has root left steve's OOM fix idle with no card to release it (25 Oct 2026)
     const on = inBrief ? (deps.waiting || waitingTask)(path, t.text) : "";
-    if (on) return { kind: "waiting", noGo: true, text: `Waiting on ${on.replace(/^(?:waits|waiting) (?:on|for):?\s*/i, "").replace(/[.\s]+$/, "")}. ${name}'s agent carries on once that's in` };
+    if (on && (deps.named || namedBlocker)(on)) return { kind: "waiting", noGo: true, text: `Waiting on ${on.replace(/^(?:waits|waiting) (?:on|for):?\s*/i, "").replace(/[.\s]+$/, "")}. ${name}'s agent carries on once that's in` };
     if (fail) return { kind: "blocked", failAt: fail.at, text: `Blocked: ${name}'s agent didn't start: ${String(fail.note).replace(/^Not started:\s*/i, "")}` };
-    if (inBrief && lastRun(path) >= b.at) return { ...flag(`${name}'s last run ended without finishing it: Go starts it again`), ended: true };
+    // its last run ended without finishing it: it starts again by itself, a few times an hour at most
+    // (autoStart, keyed to this task), and only then waits for Go: it used to wait for Go at once, and
+    // a full Workdesk sat with no agent running (25 Oct 2026)
+    if (inBrief && lastRun(path) >= b.at) {
+      const key = `ended:${t.id}`, room = now - lastRun(path) >= RETRY_AFTER && (deps.autoStart || autoStart)(path, { key, take: false, now });
+      return room ? { kind: "next", retryKey: key, text: `Next: ${name}'s last run ended without finishing it, so it starts again on its own` } : { ...flag(`${name}'s last run ended without finishing it: Go starts it again`), ended: true };
+    }
     return age > STUCK_AFTER ? flag(`Not started after ${minutes(age)}, with nothing in its way`) : { kind: "next", text: `Next: starts on its own, ${name}'s lane is free` };
   };
 }
@@ -1286,6 +1294,7 @@ function workTick({ deps = {} } = {}) {
     const e = run(wr.path);
     if (e && e.id && !e.busy && !e.blocked) {
       delete fails[lane]; out.started.push(lane);
+      for (const x of w.all.filter((y) => y.repo === lane && y.why.retryKey)) (deps.autoStart || autoStart)(wr.path, { key: x.why.retryKey, now }); // a restart counts towards its task's cap
       for (const id of exclude) go(lane, mine.find((x) => x.id === id));
     }
     else if (!e || (e.blocked && !e.parked)) { fails[lane] = { at: now, note: plain((e && e.note) || "the agent command didn't run", 120) }; out.failed.push(lane); }

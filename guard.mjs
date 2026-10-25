@@ -192,7 +192,7 @@ function judgeBash(cmd, { cwd, home, branch, session = "" }) {
     if (w[0] === "gh" && w[1] === "pr" && w[2] === "merge") {
       const r = w.indexOf("--repo") >= 0 ? w[w.indexOf("--repo") + 1] : w.indexOf("-R") >= 0 ? w[w.indexOf("-R") + 1] : "", url = w.find((x) => /github\.com\/[^/]+\/[^/]+\/pull\//.test(x));
       const slug = r ? unquote(r).toLowerCase() : url ? slugOf(unquote(url).replace(/\/pull\/.*$/, "")) : folderSlug(cwd);
-      const held = holdsMerge(slug, { home });
+      const held = holdsMerge(slug, { home, branch: prBranch(w.slice(3), r ? unquote(r) : "", cwd) });
       if (held.length) return { why: `merging waits for Symbiot's design critic: it hasn't passed “${held[0].item.slice(0, 120)}” in this repo yet (what it wants fixed: .symbiot/UI-REVIEW.md in ${held[0].folder}). Fix what it lists and end your run: the critic looks again, and once it passes, merging is open. Don't ask the user to merge it as it is; after two rounds it's their call, and Symbiot asks them itself` };
     }
     if (/^(npm|yarn|pnpm|bun)$/.test(w[0]) && w[1] === "publish") return { why: "publishing a package is yours to do (Approve ships it)" };
@@ -230,6 +230,16 @@ function judgeBash(cmd, { cwd, home, branch, session = "" }) {
 // the same card came back (21 Oct 2026). Only those a setting does lift (setting: the sandbox's
 // folders, acting in their Chrome) and held ones, which the user's Go lifts, go without it.
 const NO_SETTING = "no setting allows this";
+// The branch a `gh pr merge` merges (its args after "merge"): a branch named, a PR's number or address
+// looked up, or the folder's own branch when none is named. "" when it can't be told.
+const MERGE_VALUE = /^(-R|--repo|-t|--subject|-b|--body|-F|--body-file|-A|--author-email|--match-head-commit)$/;
+function prBranch(args, repo, cwd) {
+  const pos = args.filter((a, i) => !a.startsWith("-") && !MERGE_VALUE.test(args[i - 1] || "")).map(unquote)[0] || "";
+  const run = (cmd, a) => { try { return String(execFileSync(cmd, a, { cwd, encoding: "utf8", timeout: 10000, stdio: ["ignore", "pipe", "ignore"] }) || "").trim(); } catch { return ""; } };
+  if (!pos) return run("git", ["branch", "--show-current"]);
+  if (/^#?\d+$/.test(pos) || /\/pull\/\d+/.test(pos)) return run("gh", ["pr", "view", pos.replace(/^#/, ""), ...(repo ? ["--repo", repo] : []), "--json", "headRefName", "-q", ".headRefName"]);
+  return pos;
+}
 function judge(tool, input = {}, opts = {}) {
   const r = refusal(tool, input, opts);
   return r && !r.setting && !r.held && !r.why.includes(NO_SETTING) ? { ...r, why: `${r.why} (${NO_SETTING})` } : r;

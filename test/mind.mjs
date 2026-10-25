@@ -15,7 +15,7 @@ mkdirSync(join(HOME, ".config", "symbiot"), { recursive: true });
 let pass = 0, fail = 0;
 const ok = (n, c, got) => { if (c) { pass++; console.log("  ✓ " + n); } else { fail++; console.log("  ✗ " + n + (got !== undefined ? "  got: " + JSON.stringify(got) : "")); } };
 
-const { MIND_FILE, loadMind, remember, recall, mindState, forget, converse, parseReply, actBrief, actIn, taskIn, selfLane, spokenLine, unbackedClaim, goOf, rulesFor } = await import("../mind.mjs");
+const { MIND_FILE, loadMind, remember, recall, mindState, forget, converse, parseReply, actBrief, actIn, taskIn, selfLane, spokenLine, unbackedClaim, runningClaim, goOf, rulesFor } = await import("../mind.mjs");
 const { aboutLine } = await import("../scan.mjs");
 const { writeFileSync } = await import("node:fs");
 const said = (j) => async () => JSON.stringify(j);
@@ -32,6 +32,11 @@ try {
   ok("an order to stop still reaches control", steered === 1, q2.reply);
   ok("plain reply untouched", !/Correction/.test(plain.reply), plain.reply);
   ok("a started hand-off backs the claim", !unbackedClaim("I'm handing it over", { kind: "agent", job: "j1" }));
+  const lanesR = { symbiot: "/w/symbiot", steve: "/w/steve" }, busy = (p) => p === "/w/symbiot";
+  ok("an agent already running on it, and one is: no false correction (2ac43b27700e)", runningClaim("The symbiot lane's agent is already running on this, so I won't start another.", lanesR, busy) && !runningClaim("steve's agent is already on it", lanesR, busy) && !runningClaim("Sending this to the symbiot lane now.", lanesR, busy));
+  const already = await converse({ where: "Home", question: "fix it", map: lanesR, running: busy, ask: said({ reply: "The symbiot agent is running on that job already, so nothing new was started.", do: null, remember: [] }) });
+  const notRunning = await converse({ where: "Home", question: "fix it", map: lanesR, running: () => null, ask: said({ reply: "The symbiot agent is running on that job already, so nothing new was started.", do: null, remember: [] }) });
+  ok("…in the chat: kept when it's true, corrected when no agent runs there", !/Correction/.test(already.reply) && /Correction: nothing was handed/.test(notRunning.reply), [already.reply, notRunning.reply]);
   ok("a not-started hand-off doesn't", unbackedClaim("I've handed it to the agent", { kind: "agent", notStarted: "x" }));
   ok("rules tell it to check it can read a mailbox before promising to", /being able to send to an address is not being able to read it/.test(rulesFor([], "", false, false, [])));
   const lr = rulesFor(["GuitarHero", "robin"], "", false, false, [], false, { GuitarHero: "A rhythm game" });

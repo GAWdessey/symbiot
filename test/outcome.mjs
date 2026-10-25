@@ -33,6 +33,11 @@ try {
   ok("…on a reply from outside: waiting on a third party", end("- [~] (waits on Dana's reply to the redirect email) QA\n").waitingOn === "third party");
   ok("…on a time: waiting on the time", end("- [~] (stays waiting until 10:38 tomorrow) the window\n").waitingOn === "time");
   ok("…on the user's own step: waiting on them", end("- [~] (waits on the user unparking the lanes) restart\n").waitingOn === "user");
+  ok("…a note after a ';' counts as its note too", end("- [~] Apply the fix; waits on: Dana's reply to the redirect email\n").waitingOn === "third party");
+  // only a real, named blocker makes a run wait (25 Oct 2026): the ship-queued-work-3 rebase sat [~] with nothing in its way
+  const fake = end("- [~] Rebase ship-queued-work-3 onto origin/main\n"), root = end("- [~] Apply the OOM fix (waits on: someone with root on the VM, outside this lane)\n");
+  ok("a [~] that names no blocker, bare or vague: paused, so it carries on, never waiting", fake.state === "paused" && !fake.waitingOn && root.state === "paused" && !root.waitingOn, [fake, root]);
+  ok("…and the lane counts it as open work to start again", A.idleWaits("- [~] Rebase it\n- [~] QA (waits on Dana's reply)\n- [~] Post it (waits on: 2026-10-27 15:00)\n").length === 1 && A.namedBlocker("the Play review of 1.0.4") === "third party" && A.namedBlocker("someone with root") === "");
   const p = end("- [~] (waits on Dana's reply) QA\n- [ ] the footer\n");
   ok("a waiting item with other work left: paused (it carries on with that), what it waits on kept", p.state === "paused" && /Dana/.test(p.what), p);
   ok("open items, nothing waiting: paused", end("- [x] a\n- [ ] b\n").state === "paused");

@@ -12,9 +12,12 @@
 // An item that fails is reopened with what's missing, and its run starts again on it; after ROUNDS it
 // waits on the user ([~]), saying what couldn't be confirmed. Kept in the folder's .symbiot/done-check.json.
 import { join } from "node:path";
+import { homedir } from "node:os";
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 
 const FILE = "done-check.json", ROUNDS = 2;
+// deploy.mjs's record of the deploys it started and checks live itself (read here: done.mjs imports nothing of Symbiot's)
+const deploysFile = () => join(homedir(), ".config", "symbiot", "deploying.json");
 const readJson = (f, d) => { try { return JSON.parse(readFileSync(f, "utf8")); } catch { return d; } };
 const checksOf = (path) => readJson(join(path, ".symbiot", FILE), {}) || {};
 function saveChecks(path, c) { try { mkdirSync(join(path, ".symbiot"), { recursive: true }); writeFileSync(join(path, ".symbiot", FILE), JSON.stringify(c, null, 1)); } catch {} }
@@ -53,7 +56,9 @@ function evidenceOf(log) {
 // What kind of item it is, from its words and where it runs.
 const SEND = /\b(send|sends|sent|email|e-mail|reply|replies|post|posts|publish|message|whatsapp|dm|invite|forward)\b/i;
 const NOT_OUT = /\b(draft|drafts|drafted|prepare|write up|unsent|don't send|do not send|not send)\b/i;
-const DEPLOY = /\b(deploy|deploys|deployed|redeploy|go live|goes live|put (?:it |them )?live|release to|roll out|ship (?:it )?to (?:prod|production|the server))\b/i;
+// a deploy to do, not one an item mentions: steve's size alarm said "deployed" and was reopened for a live
+// check a VM log can't give, and run again (25 Oct 2026)
+const DEPLOY = /\b(deploy|redeploy|go live|put (?:it |them )?live|release to|roll out|ship (?:it )?to (?:prod|production|the server))\b/i;
 const LOOK = /^\s*(?:find out|look into|investigate|check|audit|research|report|explain|why|work out|figure out|list|read|review|summari[sz]e|write (?:a|the) (?:report|summary|note|plan))\b/i;
 // In a repo's lane a send is an item that starts by sending: "two older replies still start a learning goal"
 // (Steve) and "sends back 1 line" (gamerepo) are code that mentions replies, and judged as sends they were
@@ -77,10 +82,12 @@ const VERIFY_CMD = /\bscreens\s+verify\b/;
 // longer applies with a one-line note, and reopening it ran the same item again (gamerepo's Meadow Zone)
 const ALREADY = /\b(already (?:done|in|there|built|fixed|merged|applied|ticked|in place|in the code)|no longer appl(?:y|ies)|nothing (?:needed|left) to (?:change|do)|no (?:code )?change(?:s)? (?:was |were )?needed|needed no (?:code )?change)/i;
 const SENT_TOOL = /send|reply|post|publish|forward|create_comment|comment/i;
-const DEPLOY_CMD = /\b(ssh|scp|rsync|kubectl|docker (?:compose|push)|fly deploy|vercel|netlify deploy|wrangler (?:deploy|publish)|gh workflow run|symbiot deploy)\b/;
+// a runbook's own script counts (`bash tools/deploy_net.sh`): a game's PR deploy was run twice for want of it (25 Oct 2026)
+const DEPLOY_CMD = /\b(ssh|scp|rsync|kubectl|docker (?:compose|push)|fly deploy|vercel|netlify deploy|wrangler (?:deploy|publish)|gh workflow run|symbiot deploy|firebase deploy|npm run deploy|make deploy)\b|\bgcloud\b[^|;&]*\bdeploy\b|[\w./-]*deploy[\w-]*\.sh\b/;
 const LIVE_CMD = /\b(curl|wget|http|symbiot\s+screens\s+(?:verify|show|read)|symbiot deploy (?:check|show))\b|https?:\/\//;
 function failedTests(c) { const m = String(c.out).match(/(\d+)\s+failed/); return c.error || (m && +m[1] > 0) || /\b(FAIL|Tests failed|failing)\b/.test(c.out) && !/\b0 failed\b/.test(c.out); }
-function judge(item, ev, { ops = false, hasTests = false, changed = 0 } = {}) {
+// symbiotChecks: Symbiot checks the live address itself (deploy.mjs startDeploy, whose brief tells the run not to)
+function judge(item, ev, { ops = false, hasTests = false, changed = 0, symbiotChecks = false } = {}) {
   const kind = kindOf(item, { ops });
   if (kind === "look" || kind === "draft" || kind === "other") return { ok: true, kind };
   if (kind === "send") {
@@ -91,7 +98,7 @@ function judge(item, ev, { ops = false, hasTests = false, changed = 0 } = {}) {
   if (kind === "deploy") {
     const last = Math.max(-1, ...ev.commands.filter((c) => DEPLOY_CMD.test(c.cmd)).map((c) => c.i));
     const live = ev.commands.find((c) => c.i > last && LIVE_CMD.test(c.cmd) && !c.error);
-    return last >= 0 && live ? { ok: true, kind } : { ok: false, kind, missing: last < 0 ? "nothing in the run deployed it. Deploy it, then check the live address answers as it should, then tick it." : "nothing checked the live address after the deploy. Check it answers as it should (curl it, or `symbiot screens verify <address> --expect \"<words>\"`), then tick it." };
+    return last >= 0 && (live || symbiotChecks) ? { ok: true, kind } : { ok: false, kind, missing: last < 0 ? "nothing in the run deployed it. Deploy it, then check the live address answers as it should, then tick it." : "nothing checked the live address after the deploy. Check it answers as it should (curl it, or `symbiot screens verify <address> --expect \"<words>\"`), then tick it." };
   }
   // code
   if (!changed && !ev.edits.length && (ALREADY.test(item) || ALREADY.test(ev.said || ""))) return { ok: true, kind, already: true };
@@ -119,9 +126,9 @@ function settleDone(path, { log = "", before = [], ops = false, hasTests = false
   let text = md != null ? md : (() => { try { return readFileSync(f, "utf8"); } catch { return ""; } })();
   const fresh = ticked(text).filter((t) => !before.includes(t)), out = { checked: [], reopened: [], waiting: [] };
   if (!fresh.length) return { ...out, md: text };
-  const ev = evidenceOf(log), all = checksOf(path);
+  const ev = evidenceOf(log), all = checksOf(path), symbiotChecks = (readJson(deploysFile(), []) || []).some((d) => d && d.dir && d.dir === path);
   for (const item of fresh) {
-    const v = judge(item, ev, { ops, hasTests, changed });
+    const v = judge(item, ev, { ops, hasTests, changed, symbiotChecks });
     const prior = priorKey(all, item), r = all[prior] || { rounds: 0 };
     if (prior && prior !== item) delete all[prior]; // the same item, re-ticked with a note of its own: its rounds go on
     if (v.ok) { all[item] = { ...r, ok: true, kind: v.kind, at: now }; out.checked.push(item); continue; }

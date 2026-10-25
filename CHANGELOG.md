@@ -7,6 +7,12 @@ What each Symbiot release brought, newest first. When Approve bumps the version,
 - **Handovers under way shows only live work.** Home's list now holds only handovers whose agent is running, waiting to start, or waiting on your answer.
 - **Approvals pass their tests again.** A merge had dropped three helpers from the design module, so every approval failed its tests and its lane sat waiting. They are back.
 - **Agent runs open their own pull request.** A finished run commits its work, syncs with main, runs the tests and opens the PR with auto-merge on green checks, instead of leaving changes for you to approve.
+- **Queued work starts by itself.** A task whose agent marked it waiting without naming anything real in its way is open work again, and its lane starts on it. A task whose last run ended unfinished starts again on its own a few times an hour instead of waiting for Go.
+- **The hourly cap counts each piece of work on its own.** Three automatic starts on one thing no longer hold back new, unrelated work in the same project for the rest of the hour.
+- **Fixes to Symbiot noted from chat start right away**, like any other task, instead of waiting for Go.
+- **One job, one run.** A run that ended is no longer started again at once in a side copy or a one-off agent folder, a deploy script from the runbook counts as the deploy, and Try again leaves a run that's already at work alone.
+- **A design review holds only its own pull request**, not every merge into the project.
+- **No false correction in Home's chat** when a reply says an agent already running is on the job, and one is.
 
 ## 0.90.11 — 2026-10-25
 

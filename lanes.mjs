@@ -455,7 +455,7 @@ function report(e, o, { run = runHandoff, running = runningHandoff, waiting = wa
   if (rec && rec.state === "waiting" && rec.waitingOn !== "lane") return true;
   const waitsHere = !!rec && rec.state === "waiting" && rec.waitingOn === "lane";
   if (waitsHere) settle(p, `${e.to.lane} reported back`);
-  if (!running(p) && (waitsHere || /^\s*(?:[-*+]|\d+[.)])\s*\[ \]/m.test(readSym(p, "TASKS.md"))) && auto(p, { now })) run(p, { force: waitsHere || (!!o.settled && !waiting(p)) });
+  if (!running(p) && (waitsHere || /^\s*(?:[-*+]|\d+[.)])\s*\[ \]/m.test(readSym(p, "TASKS.md"))) && auto(p, { now, key: `handover:${e.id || firstLine(e.text)}` })) run(p, { force: waitsHere || (!!o.settled && !waiting(p)) });
   return true;
 }
 

@@ -247,7 +247,7 @@ function carry(mv, { deps, map, st, mode }) {
   if (mv.does === "notice") return;
   if (mode === "watch") { mv.would = true; return; }
   const lanePath = mv.lane && map[mv.lane];
-  if (lanePath && deps.autoStart && !deps.autoStart(lanePath)) { mv.error = "the lane's hourly cap"; return; }
+  if (lanePath && deps.autoStart && !deps.autoStart(lanePath, { key: `move:${mv.kind}:${mv.what}` })) { mv.error = "the lane's hourly cap"; return; }
   const own = "\n\nSymbiot started this on its own (no one asked).";
   const req = mv.does === "ask"
     ? `Prepare this fully, then ask the user for their OK in .symbiot/QUESTIONS.md before doing the outward part (a ### heading saying plainly what would go out and to whom, then the options "🤖 Agent: go ahead: ${clip(mv.what, 120)}" and "Skip"). Don't do the outward part until the answer says go: ${mv.what}\n\nWhy now: ${mv.why}${own}`

@@ -76,22 +76,27 @@ function saveReview(path, r) { try { mkdirSync(join(path, ".symbiot"), { recursi
 // the two. So UI work the critic is still judging, or sent back to be fixed, holds a merge in its
 // repo (guard.mjs, `gh pr merge`) until the critic passes it, or, after MAX_ROUNDS, until it's the
 // user's call (the item waits [~] on them with what still fails). Kept for the guard, by repo, in
-// ui-open.json: { folder: { slug, items, at } }; an entry older than OPEN_MS no longer holds anything.
+// ui-open.json: { folder: { slug, branch, items, at } }; an entry older than OPEN_MS no longer holds anything.
+// Only that work's own branch is held: on 25 Oct 2026 a review of Home's project cards held every PR
+// into the repo, the fix for its red main among them, so all its lanes' approvals sat waiting.
 const OPEN = (home = homedir()) => join(home, ".config", "symbiot", "ui-open.json"), OPEN_MS = 2 * 86400000;
 function slugOf(url) { const m = String(url || "").trim().match(/github\.com[:/]+([^/\s]+)\/([^/\s]+?)(?:\.git)?\/?$/i); return m ? `${m[1]}/${m[2]}`.toLowerCase() : ""; }
 function folderSlug(folder) { try { return slugOf(spawnSync("git", ["-C", folder, "remote", "get-url", "origin"], { encoding: "utf8", timeout: 5000 }).stdout); } catch { return ""; } }
-function noteOpen(path, review, { now = Date.now(), home = homedir(), slug } = {}) {
+function folderBranch(folder) { try { return String(spawnSync("git", ["-C", folder, "branch", "--show-current"], { encoding: "utf8", timeout: 5000 }).stdout || "").trim(); } catch { return ""; } }
+function noteOpen(path, review, { now = Date.now(), home = homedir(), slug, branch } = {}) {
   const items = Object.entries(review || {}).filter(([, v]) => v && v.rounds > 0 && !v.passed && !v.failed).map(([k]) => k);
   const f = OPEN(home), all = readJson(f, {}) || {};
-  if (items.length) all[path] = { slug: slug ?? folderSlug(path), items, at: now }; else if (all[path]) delete all[path]; else return;
+  if (items.length) all[path] = { slug: slug ?? folderSlug(path), branch: branch ?? folderBranch(path), items, at: now }; else if (all[path]) delete all[path]; else return;
   try { mkdirSync(join(f, ".."), { recursive: true }); writeFileSync(f, JSON.stringify(all, null, 1), { mode: 0o600 }); } catch {}
 }
-// What holds a merge into this repo (slug "owner/name"): [{ folder, item }], [] when nothing does.
-function holdsMerge(slug, { now = Date.now(), home = homedir() } = {}) {
+// What holds a merge into this repo (slug "owner/name") of the PR from `branch`: [{ folder, item }], [] when
+// nothing does. No branch (the PR's couldn't be found): any open review in the repo holds it, as before.
+function holdsMerge(slug, { now = Date.now(), home = homedir(), branch = "" } = {}) {
   slug = String(slug || "").toLowerCase(); if (!slug) return [];
   const all = readJson(OPEN(home), {}) || {};
   const name = (x) => String(x || "").split("/").pop(); // by its name too: a repo that moved owner keeps an old remote (GitHub redirects it)
-  return Object.entries(all).filter(([, v]) => v && v.slug && (v.slug === slug || name(v.slug) === name(slug)) && now - (v.at || 0) < OPEN_MS).flatMap(([folder, v]) => (v.items || []).map((item) => ({ folder, item })));
+  const mine = (folder, v) => !branch || (v.branch ?? folderBranch(folder)) === branch;
+  return Object.entries(all).filter(([folder, v]) => v && v.slug && (v.slug === slug || name(v.slug) === name(slug)) && now - (v.at || 0) < OPEN_MS && mine(folder, v)).flatMap(([folder, v]) => (v.items || []).map((item) => ({ folder, item })));
 }
 // A step's own brief that came back in as a task line: on 24 Oct 2026 an agent handed the webapp lane
 // "Act as Symbiot's design critic for the webapp lane. Judge the finished job… The job: give each
@@ -244,7 +249,7 @@ function startDesign(path, md, { now = Date.now() } = {}) {
 // netWatch, the rule symbiot capture waits by), then its fonts and the images in the window are
 // decoded, all inside SHOOT_MS, and one more frame drawn. Not on Chrome's simulated (virtual time)
 // clock: that one didn't wait for the first request to another site, so a CDN's photos came out
-// late or missing in pictures of a page that was fine (the Daaymn demo, 24 Oct 2026). One browser
+// late or missing in pictures of a page that was fine (a dating app's web demo, 24 Oct 2026). One browser
 // of its own (scratchPage), the page opened again at each size, so what reads the width as it
 // loads sees the size it's shot at. A page that never goes quiet is still shot, with what was
 // still loading in `late`; images that failed are in `broken` (the page's, not the picture's).

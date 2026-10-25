@@ -152,26 +152,18 @@ try {
   going.clear();
   writeFileSync(join(CFG, "config.json"), JSON.stringify({}));
 
-  console.log("URGENT — a Symbiot flaw raised in chat waits for Go unless they ask for it");
+  console.log("URGENT — a Symbiot flaw raised in chat starts right away, asked for or not (25 Oct 2026)");
   const got = [], addR = (text, l, o) => { got.push([text, l, o]); return { id: "t" + got.length, text, repo: l }; }, never = () => { throw new Error("started"); };
-  const c4 = actIn("Say which lane each idea is for on its card", "symbiot", { map, add: addR, push: never, run: never, first: never, said: "why are these under bookly?", self: "symbiot" });
-  ok("a question about it: noted, not started, nothing parked", c4.ok && c4.later && !c4.job && !c4.urgent, c4);
-  ok("…with what they said, waiting for Go", got[0][1] === "symbiot" && got[0][2].later === true && got[0][2].said === "why are these under bookly?", got[0]);
-  for (const t of ["can i please have the paddle report?", "fix it", "fix that now", "go ahead", "symbiot keeps crashing", "can you make the cards say the lane"]) {
+  for (const t of ["fix it", "go ahead", "symbiot keeps crashing", "why are these under bookly?", "the card today said the wrong lane", "that's wrong"]) {
     got.length = 0;
     const c = actIn("The task", "symbiot", { map, add: addR, push, run: () => ({ id: "j" }), first: rec, said: t, self: "symbiot" });
-    ok(`asked for: "${t}" starts it`, c.job === "j" && !c.later && got[0][2].later === false, [c, got[0]]);
-  }
-  for (const t of ["and now we are doing nothing? why?", "why are these under bookly?", "the card today said the wrong lane", "that's wrong"]) {
-    const c = actIn("The task", "symbiot", { map, add: addR, push: never, run: never, first: never, said: t, self: "symbiot" });
-    ok(`not asked for: "${t}" waits`, c.later, c);
+    ok(`"${t}" starts it, with what they said, and sends one an older chat left waiting`, c.job === "j" && !c.later && got[0][2].later === false && got[0][2].said === t, [c, got[0]]);
   }
   const c5 = actIn("Fix the robin login", "robin", { map, add: addR, push, run: () => ({ id: "j5" }), first: never, said: "that's wrong", self: "symbiot" });
-  ok("another lane's work isn't held back", c5.job === "j5" && !c5.later, c5);
+  ok("another lane's work starts too", c5.job === "j5" && !c5.later, c5);
   const fromChat = [];
-  const r5 = (await converse({ where: "Home", question: "why are these under bookly?", map: { symbiot }, ask: async () => JSON.stringify({ reply: "I got that wrong. I've started a fix in the symbiot lane.", do: { agent: "label cards", repo: "symbiot" } }), act: { agent: async (req, known, repo, said) => { fromChat.push(said); return { lane: "symbiot", ok: true, later: true, task: "t1" }; } } }));
+  await converse({ where: "Home", question: "why are these under bookly?", map: { symbiot }, ask: async () => JSON.stringify({ reply: "I've started a fix in the symbiot lane.", do: { agent: "label cards", repo: "symbiot" } }), act: { agent: async (req, known, repo, said) => { fromChat.push(said); return { lane: "symbiot", ok: true, job: "j1", task: "t1" }; } } });
   ok("the chat hands the user's own words to the hand-over", fromChat[0] === "why are these under bookly?", fromChat);
-  ok("its reply says it's noted for Go, never that a fix started", /Noted as a Symbiot bug/.test(r5.reply) && !/started a fix/.test(r5.reply) && /waits/.test(r5.spoken || ""), r5);
   const { userWords } = await import("../agents.mjs");
   const uw = userWords(["- [ ] Label each card with its lane. Why: the user asked twice.", "- [ ] Fix the login"], [{ id: "a", text: "Label each card with its lane. Why: the user asked twice.", said: "why are these under bookly?" }]);
   ok("a model is picked by what the user said for a chat-written task, and a line of theirs as it is", uw === "why are these under bookly?\n- [ ] Fix the login", uw);

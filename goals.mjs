@@ -294,7 +294,7 @@ async function goalsTick(deps = {}, { now = Date.now() } = {}) {
     if (sig !== g.sig) { g.sig = sig; g.moved = now; if (g.card && g.card.kind === "stalled") g.card = null; }
     g.state = r.state === "ended" ? "running" : r.state; g.waitingOn = r.waitingOn; g.what = r.what;
     if (r.state === "waiting") g.since = g.since && g.sinceOn === r.waitingOn ? g.since : (r.since || now), g.sinceOn = r.waitingOn; else { g.since = 0; g.sinceOn = ""; }
-    const start = (path, why) => { if (!path || ctx.running(path)) return false; if (deps.autoStart && !deps.autoStart(path)) return false; const e = deps.start ? deps.start(path) : null; if (e && e.id) { did.push({ goal: g.key, started: path, why }); return true; } return false; };
+    const start = (path, why) => { if (!path || ctx.running(path)) return false; if (deps.autoStart && !deps.autoStart(path, { key: g.key })) return false; const e = deps.start ? deps.start(path) : null; if (e && e.id) { did.push({ goal: g.key, started: path, why }); return true; } return false; };
     if (r.state === "ended") {
       const v = await judgeDone(g, r.kids, deps);
       if (!v && !deps.write) { const ok = r.kids.every((c) => c.ok !== false); close(g, ok ? "done" : "not", { kids: r.kids, left: ok ? "" : "some of its work didn't finish" }, ctx, deps, now); did.push({ goal: g.key, closed: ok ? "done" : "not" }); } // no AI to judge: closed as its parts ended, and the breakdown says it isn't verified
@@ -389,8 +389,12 @@ function goalAnswer(path, answers = [], deps = {}, { now = Date.now() } = {}) {
     for (const c of rollUp(g, ctx).kids.filter((x) => x.state === "waiting" && x.waitingOn === "user" && x.path)) { try { deps.settle && deps.settle(c.path, why); } catch {} try { deps.start && deps.start(c.path); } catch {} }
     g.card = null; g.moved = now; said = "Thanks: its work carries on.";
   } else if (is("Try again") || is("Look into it now")) {
-    g.leftTries = 0; g.card = null; g.moved = now;
+    // their retry is the one more try: it no longer also gave the tick a "What's left" run of its own, and
+    // one already at work on the goal is left to it (steve's size alarm took 5 runs, 25 Oct 2026)
+    g.leftTries = LEFT_TRIES; g.card = null; g.moved = now;
     if (g.state === "done") { g.state = "running"; g.closed = null; }
+    const busy = (() => { try { return rollUp(g, ctx).kids.some((c) => c.state === "active" && c.path && ctx.running(c.path)); } catch { return false; } })();
+    if (busy) { putGoal(g, { now }); return { ok: true, saved: 1, said: "An agent is on it already: it carries on from there." }; }
     const e = deps.ops ? deps.ops(`Look into this and finish it: ${g.asked}\n\nDone when: ${g.doneWhen || g.asked}\n\nRead the earlier runs' reports first (its breakdown is in Reports) and don't redo what they finished. If something only the user can do is all that's left, ask it in QUESTIONS.md.`, { title: `Finish: ${clip(g.text, 60)}` }) : null;
     if (e && e.job) g.children.push("run:" + e.job); if (e && e.dir) g.paths.push(e.dir);
     said = e && (e.job || e.dir) ? "An agent is on it now." : `It didn't start: ${(e && e.error) || "no agent"}`;
