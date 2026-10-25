@@ -1,6 +1,6 @@
 {
   "name": "symbiot",
-  "version": "0.90.11",
+  "version": "0.90.12",
   "description": "Your week, written from your real work. Reads your local git and writes it up with the AI of your choice — Claude, OpenAI, Gemini, or a local model.",
   "type": "module",
   "bin": {
@@ -50,6 +50,7 @@
     "lanes.mjs",
     "adapt.mjs",
     "home.mjs",
+    "cardwords.mjs",
     "work.mjs",
     "phone.mjs",
     "desktop.mjs",

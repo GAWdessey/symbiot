@@ -8,7 +8,8 @@ export default `</style></head><body>
 <div id="lqorbits"></div>
 <div id="lqline" aria-live="polite"></div>
 <div id="phhome" role="region" aria-label="Home"><nav id="phnav" aria-label="The rest of Symbiot"></nav><div id="phpc"></div></div>
-<div id="lqrelay" aria-label="Your projects: what their agents did, ask and suggest"></div>
+<button type="button" id="lqprojects" aria-controls="lqrelay" aria-expanded="false">Projects</button>
+<div id="lqrelay" role="region" aria-label="Your projects: what their agents did, ask and suggest"></div>
 <div id="lqgroups"></div>
 <div id="lqneedt"><span>Needs you</span><small>only you can do these</small></div>
 <div id="lqnext" role="region" aria-label="What can be done next"></div>
@@ -112,7 +113,7 @@ export default `</style></head><body>
 <section id="panel-drift" class="hidden">
 <div class="row"><span class="muted">What's out of sync, stuck or at risk across your repos — local git facts.</span>
 <label class="muted swl" style="margin-left:auto"><input type="checkbox" class="sw" id="driftfetch"> Fetch latest</label>
-<label class="muted swl"><input type="checkbox" class="sw" id="driftci"> Check CI <small>(needs gh, experimental)</small></label>
+<label class="muted swl"><input type="checkbox" class="sw" id="driftci"> Check CI on GitHub</label>
 <button class="ghost" id="driftrun">Rescan</button></div>
 <div id="driftout"></div>
 </section>

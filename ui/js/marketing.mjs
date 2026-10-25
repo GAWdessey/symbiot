@@ -361,7 +361,7 @@ var MKDAY=function(s){var d=new Date(s+'T00:00:00');return isNaN(d)?s:d.toLocale
 // The overview at the top (mkoverview.mjs): a card a product, then the newest weekly report pinned.
 function mkDate(ms){var d=new Date(ms);return d.toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'}).replace(',','')+', '+d.toLocaleTimeString('en-ZA',{hour:'2-digit',minute:'2-digit',hour12:false});}
 function renderMkOver(){var el=$('mkover');if(!el)return;var o=MKT&&MKT.overview;if(!o){el.innerHTML='';return;}
-var nn=function(n){return n==null?"<span class='mkno'>no numbers yet</span>":'<strong>'+n.toLocaleString('en-ZA')+'</strong>';};
+var nn=function(n){return n==null?"<span class='mkno'>No numbers yet</span>":'<strong>'+n.toLocaleString('en-ZA')+'</strong>';};
 var h="<div class='pshead' style='margin-top:16px'><span>Marketing overview</span><small>By product: what is scheduled, what waits on you, and the week&#39;s numbers.</small></div>";
 if(!o.products.length)h+="<div class='note'>Nothing scheduled or waiting yet. When Marketing&#39;s agent schedules a post or drafts one for you, it shows here under its product.</div>";
 else h+="<div class='mkov'>"+o.products.map(function(p){var t=p.total;

@@ -30,6 +30,10 @@ try {
   ok("…found from its part", G.goalOf("task:t1").key === g.key);
   await G.doneWhenFor(g, { write: ai("The client has the reply and QA passes on both networks") });
   ok("…with one line of what done means (or the words themselves with no AI)", G.goalById(g.key).doneWhen === "The client has the reply and QA passes on both networks");
+  const gs = G.openGoal("Take a look at this screenshot.\n(The user attached 1 screenshot: you can see it.)", { lane: "bookly", path: lane, now: t0 });
+  await G.doneWhenFor(gs, { write: ai("No image came through with your message, so I can't see the screenshot. Please re-attach it and I'll describe what it shows.") });
+  ok("…never a model's error reply: a done-when nobody could meet (25 Oct 2026)", !/No image came through/.test(G.goalById(gs.key).doneWhen) && /Take a look at this screenshot/.test(G.goalById(gs.key).doneWhen), G.goalById(gs.key).doneWhen);
+  ok("…nor a refusal or a question back, while a plain line still stands", ["Sorry, I can't open that file.", "Could you share the link?", "I'm unable to view images."].every((x) => !G.doneLine(x)) && G.doneLine("The description of the screenshot is written up in Reports") === "The description of the screenshot is written up in Reports");
 
   console.log("GOALS — the work that follows joins it, and its state comes from that work");
   run("r1", lane, { at: t0 + 1000, state: "waiting", waitingOn: "lane", what: "ops: send the reply" });

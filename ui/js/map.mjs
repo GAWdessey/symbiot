@@ -11,7 +11,7 @@ export default `// ---- the Map, in the liquid ---------------------------------
 // droplet: the ones most like it (mapknn.mjs) light up and say why. Click: its details.
 var LM={G:null,on:false,all:[],items:[],edges:[],lanes:[],shut:{runs:true},view:{k:1,x:0,y:0},hot:null,pan:null,built:false,lw:0,ch:0,cw:172,x0:0};
 var LMLANES=[['need','Needs you'],['mine','Your repos'],['other','Other repos'],['folders','Folders without git'],['runs','Agent run folders']];
-function lmTilde(p){p=String(p||'');var parts=p.split('/');return (parts[1]==='home'||parts[1]==='Users')&&parts.length>2?'~'+(parts.length>3?'/'+parts.slice(3).join('/'):''):p;}
+function lmTilde(p,home){p=String(p||'');if(home&&home!=='/'&&(p===home||p.indexOf(home+'/')===0))return '~'+p.slice(home.length);var parts=p.split('/');return (parts[1]==='home'||parts[1]==='Users')&&parts.length>2?'~'+(parts.length>3?'/'+parts.slice(3).join('/'):''):p;}
 function lmName(id){var n=GRAPH&&nodeById(id);return n?n.label:String(id).split('/').pop();}
 function lmNearHtml(id){var k=GRAPH&&GRAPH.knn,ns=k&&k.neighbours&&k.neighbours[id];if(!ns||!ns.length)return '';
 return "<div class='k'>Most like it</div><ul class='lmnear'>"+ns.map(function(n){return "<li><button type='button' data-id='"+escQ(n.id)+"'><b>"+esc(lmName(n.id))+"</b><span>"+esc(n.why.join('; ')||'a little alike')+"</span></button></li>";}).join('')+"</ul>";}

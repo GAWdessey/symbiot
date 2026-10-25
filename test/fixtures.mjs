@@ -157,7 +157,7 @@ try {
   const dp8 = block("deployed-repo");
   ok("deployed repo: production NOT on main, 3 ahead, sha cited", dp8 && dp8.mark === "●" && dp8.body.includes(`⚠ production runs code NOT on main (3 commits ahead of it)  [${deployedSha}]`), dp8 || out8);
   const dy8 = block("dirty-repo");
-  ok("dirty repo: informational ○, uncommitted counted, no warning", dy8 && dy8.mark === "○" && /· 1 uncommitted \(0 mod \/ 0 del \/ 1 new\)/.test(dy8.body) && !dy8.body.includes("⚠"), dy8 || out8);
+  ok("dirty repo: informational ○, unsaved work counted in words, no warning", dy8 && dy8.mark === "○" && /· 1 new file not saved to git/.test(dy8.body) && !dy8.body.includes("⚠"), dy8 || out8);
   ok("clean repo listed on the clean: line only", /^clean: clean-repo$/m.test(out8) && !block("clean-repo"), out8);
   ok("footer: local facts, CI hint, no deploys.json nag (it's configured)", /local git facts only \(add --ci for CI status\)$/m.test(out8.trim()) && !/set ~\/\.config\/symbiot\/deploys\.json/.test(out8), out8.trim().split("\n").pop());
 
@@ -934,7 +934,7 @@ try {
   ok("approve changes without a task commits them, tasks untouched", o.ac && o.ac.ok && o.ac.approved === 0 && /without a task/.test(acMsg) && o.acTasks.find((x) => x.id === "t2" && !x.done && !x.review), o.ac);
   ok("nothing left -> approve changes without a task says so", o.acAgain && /No uncommitted changes/.test(o.acAgain.error || ""), o.acAgain);
   const offer = (o.untasked && o.untasked[0] && o.untasked[0].open) || [];
-  ok("untasked changes offer the repo's open tasks, ticked where the last run's summary says it finished them", offer.length === 2 && offer.find((x) => x.id === "t3").finished === true && offer.find((x) => x.id === "t2").finished === false, offer);
+  ok("untasked changes carry the open tasks the last run's summary says it finished, and only those: the user isn't asked to judge the rest", offer.length === 1 && offer[0].id === "t3" && offer[0].finished === true, offer);
   const tickMsg = o.acTick && o.acTick.commit ? execSync("git log -1 --format=%B " + o.acTick.commit, { cwd: proj, encoding: "utf8", env: gitEnv }) : "";
   const t3 = (o.acTickTasks || []).find((x) => x.id === "t3"), t2 = (o.acTickTasks || []).find((x) => x.id === "t2");
   ok("approving with ticked tasks approves them with the changes (an already-archived id is ignored), and the commit names them", o.acTick && o.acTick.approved === 1 && t3.done && t3.archived && t3.commit === o.acTick.commit && !t2.done && /^Add a Skip button/.test(tickMsg) && !/without a task/.test(tickMsg), [o.acTick, tickMsg]);

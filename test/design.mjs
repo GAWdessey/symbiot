@@ -28,6 +28,7 @@ try {
   const not = ["Draft the post for the Marketing page", "use symbiot screens to read the report", "deploy the api to prod", "Rebase the branch onto main", "Send Pat the proof", "Add a test for the export", "Move the domain into a new account", "Write the report to the Reports page"];
   ok("asked for in words: a demo, a page, a dashboard, screens, layout, styling, a component, mobile app screens, demo screenshots", ui.every((t) => D.isUiWork(t)), ui.filter((t) => !D.isUiWork(t)));
   ok("…not a post, a Symbiot command, a deploy, a rebase, a message or a test", not.every((t) => !D.isUiWork(t)), not.filter((t) => D.isUiWork(t)));
+  ok("a picture to look at isn't a screen to build (25 Oct 2026), while new screenshots to take still are", !D.isUiWork("Take a look at this screenshot.\n(The user attached 1 screenshot: you can see it.)") && !D.isUiWork("describe the attached image") && D.isUiWork("Take new demo screenshots") && D.isUiWork("look at this screenshot and fix the login page layout"));
   ok("or by the files it touches: a page, a stylesheet, a component", D.isUiWork("tidy it", ["public/index.html"]) && D.isUiWork("x", [{ file: "src/components/Card.tsx" }]) && !D.isUiWork("x", ["src/server.js"]));
 
   console.log("DESIGN — the standard goes in the brief, with the evidence it must leave");
@@ -52,6 +53,18 @@ try {
   ok("a ticked UI item starts the critic, only for the UI item, round 1", u1 && u1.critic.join() === ITEM && started.length === 1 && D.reviewOf(lane)[ITEM].rounds === 1, [u1, D.reviewOf(lane)]);
   const brief2 = readFileSync(join(lane, ".symbiot", "UI-CRITIC.md"), "utf8");
   ok("…its instructions name the item, the standard, the screenshots and the verdict file; it changes no code", brief2.includes(`- ${ITEM}`) && /never n\/a/.test(brief2) && /shoot <url>/.test(brief2) && /ui-verdict\.json/.test(brief2) && /change no code and tick nothing/.test(brief2));
+  {
+    const wrap = "What's left on this, and do it: Take a look at this screenshot. (The user attached 1 screenshot: you can see it.) Done when: No image came through with your…";
+    const w = D.toReview(`- [x] ${wrap}\n`, []), wb = D.criticBrief(w);
+    ok("a written answer about a screenshot gets a plain check against its source, not the design critic (25 Oct 2026)", w.length === 1 && w[0].kind === "written" && /Check the finished written work/.test(wb) && !/shoot|The job first|Design critic/.test(wb) && /Read tool/.test(wb), wb.slice(0, 300));
+    ok("…listing the job, not the goal's follow-up brief round it or its done-when", wb.includes("- Take a look at this screenshot.") && !/What's left on this|Done when/.test(wb));
+    const md = D.toReview("- [x] Redesign the landing page\n", ["docs/LANDING-NOTES.md"]);
+    ok("a UI-sounding job that only wrote documents built no screens: checked as writing", md.length === 1 && md[0].kind === "written");
+    const both = D.criticBrief([{ item: "Redesign the landing page", rounds: 0, kind: "ui" }, { item: "Describe the attached screenshot", rounds: 0, kind: "written" }]);
+    ok("…and alongside UI work, written items are told apart from the screens", /Design critic/.test(both) && /Also: written work/.test(both) && /Describe the attached screenshot/.test(both.split("Also: written work")[1]));
+    ok("a job with screens still gets the design critic", D.toReview("- [x] Redesign the landing page\n", ["site/index.html"])[0].kind === "ui" && D.toReview("- [x] Redesign the landing page\n")[0].kind === "ui");
+    ok("an item with no screens and no source to check gets no review", D.toReview("- [x] Rebase the branch onto main\n").length === 0);
+  }
   ok("the critic's prompt only points at that file, with no quote, $ or backtick (it goes through two shells)", !/["'$`]/.test(D.CRITIC_PROMPT) && /UI-CRITIC\.md/.test(D.CRITIC_PROMPT));
   ok("under the hourly cap: none when it's used up", A.uiReview(lane, { id: "r1b" }, { ...go, cap: () => false }) === null);
   const verdict = (pass, fixes = []) => writeFileSync(join(lane, ".symbiot", "ui-verdict.json"), JSON.stringify({ items: [{ item: ITEM, pass, fixes, shots: [".symbiot/shots/review/home-1440x900.png"] }] }));

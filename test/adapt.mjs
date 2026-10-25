@@ -481,7 +481,7 @@ try {
     ok("a project's summary is its agent's last word, first paragraph, plain (no markdown)", d.summary === "I read the lead code." && d.state === "asks you", d);
     ok("its open question comes with up to 3 answers and the folder to send the answer to", d.qs && d.qs[0].q === "Who gets each yes?" && d.qs[0].options.length === 3 && d.qs[0].path === "/d", d.qs);
     ok("the extra tasks it suggests, not the ones already added", d.ideas && d.ideas.length === 1 && d.ideas[0].full === "Fix the exhausted-campaign dead end" && d.ideas[0].repo === "bookly" && d.ideas[0].path === "/d", d.ideas);
-    ok("a running agent's summary is the to-do it's on now (from elapsed, as the agent list gives it)", sy.summary === "Editing ui.mjs" && sy.state === "at work", sy);
+    ok("a running agent's card has a now line, the to-do it's on with how long it's taken (from elapsed), and the At work pill", /^Editing ui\.mjs · 1m$/.test(sy.now || "") && !sy.summary && sy.pill === "At work", sy);
     ok("a project with nothing new in a day, and nothing asked or suggested, isn't relayed", !r.projects.some((p) => p.repo === "ancient"), r.projects.map((p) => p.repo));
   }
   console.log("WORK SCENE — plain words for what's at work, waiting and ready; Go starts it");
@@ -492,7 +492,7 @@ try {
     pending: () => [{ repo: "ChatApp", path: "/g", tasks: [{}, {}], files: [{}] }, { repo: "busy", path: "/b", running: true, tasks: [{}] }],
     tasks: () => [{ id: "1", text: "Add a Skip button to each idea in the Agents tab, so you can turn down an idea you don't want", repo: "symbiot" }, { id: "2", text: "Merge near-duplicates", repo: "whatsapp_module" }, { id: "3", text: "done one", repo: "x", done: true }, { id: "4", text: "no repo", repo: "" }],
   } });
-  ok("at work: what each agent is doing, in its own plain words (no markdown), with progress", ws.running.length === 2 && ws.running[0].doing === "Fixing the WhatsApp reader" && ws.running[0].progress.done === 1 && ws.running[1].doing === "Ran npm test" && ws.running[1].waiting, ws.running);
+  ok("at work: what each agent is doing, in its own plain words (no markdown, a command as what it is for), with progress", ws.running.length === 2 && ws.running[0].doing === "Fixing the WhatsApp reader" && ws.running[0].progress.done === 1 && ws.running[1].doing === "Running the tests" && ws.running[1].waiting, ws.running);
   ok("ready for your OK: only what's waiting on an Approve, not what's still being worked on", ws.ready.length === 1 && ws.ready[0].repo === "ChatApp" && ws.ready[0].count === 2, ws.ready);
   ok("waiting: open tasks with a repo, short, and marked when their repo's agent is busy", ws.waiting.length === 2 && ws.waiting[0].text.length <= 160 && ws.waiting[0].text.startsWith("Add a Skip button") && ws.waiting[0].busy && !ws.waiting[1].busy && ws.canGo === 1, ws.waiting);
   const started = [];

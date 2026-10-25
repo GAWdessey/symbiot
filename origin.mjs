@@ -110,13 +110,51 @@ function clock(t, now = Date.now()) {
   return new Date(now).toDateString() === d.toDateString() ? hm : `${d.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })} ${hm}`;
 }
 const runOf = (r) => `run ${r.id}${r.name ? ` (“${r.name.replace(/[“”"]/g, "")}”)` : ""}`;
-// One line on the card: where they came from, and what to do. open: the repo has open tasks to tick.
-function originLine(o, { open = false, now = Date.now() } = {}) {
+const short = (s, n = 90) => { s = String(s || "").replace(/\s+/g, " ").trim(); return s.length > n ? s.slice(0, n - 1).replace(/\s+\S*$/, "") + "…" : s; };
+// The tasks changes no task is ticked for go with, found here rather than asked of the user: on
+// 25 Oct 2026 run e2bd82ba in kaggle-squares-in-squares (07:42–07:46) ticked "Check the committed
+// extension constructions…", which went up for review at 07:46 and was approved, and the card for
+// what it left asked Garth which of four open tasks it finished, none of them, without naming it.
+// A task ticked (reviewAt) or approved while the run that left them was going, or soon after, is
+// theirs: the same run's tick, or a parallel one's. tasks: the repo's tasks; o: changesBy's.
+const GOES_AFTER = 30 * 60000;
+function goesWith(o, tasks = []) {
+  const r = o && o.run; if (!r) return [];
+  const from = (r.first || r.startedAt || o.at || 0) - SLACK, to = (r.last || r.endedAt || o.at || 0) + GOES_AFTER;
+  if (!from || to <= from) return [];
+  const inRun = (t) => Number(t) >= from && Number(t) <= to;
+  return tasks.filter((x) => x && x.text && (x.review || x.done) && (inRun(x.reviewAt) || inRun(x.approvedAt))).sort((a, b) => (a.reviewAt || a.approvedAt || 0) - (b.reviewAt || b.approvedAt || 0))
+    .map((x) => ({ id: x.id, text: x.text, ...(x.approvedAt ? { approved: true } : {}) })).slice(0, 6);
+}
+// What changed, in one line, and a word when it's big: 1014 files and half a million lines
+// rewritten is regenerated data more often than work, and the user should see which before an OK.
+const DATA = /\.(csv|tsv|jsonl?|ndjson|parquet|npy|npz|pkl|pickle|h5|hdf5|arrow|feather|sqlite|db|bin|dat|log|lock|svg|png|jpe?g|gif|webp|txt|xml|ya?ml)$/i;
+const BIG_FILES = 200, BIG_LINES = 20000;
+function diffLine(wc = {}) {
+  const files = (wc.files || []).map((f) => (typeof f === "string" ? f : f && f.file)).filter(Boolean); if (!files.length) return "";
+  const lines = String(wc.stat || "").match(/\d+/g), n = lines ? lines.slice(0, 2).reduce((a, b) => a + +b, 0) : 0;
+  const top = (f) => (f.includes("/") ? f.slice(0, f.indexOf("/") + 1) : f), by = new Map();
+  for (const f of files) by.set(top(f), (by.get(top(f)) || 0) + 1);
+  const [dir, many] = [...by.entries()].sort((a, b) => b[1] - a[1])[0];
+  const head = `${files.length} file${files.length > 1 ? "s" : ""} changed${wc.stat ? ` (${wc.stat})` : ""}`;
+  if (files.length < BIG_FILES && n < BIG_LINES) return `${head}: ${short(files.slice(0, 5).join(", ") + (files.length > 5 ? ` and ${files.length - 5} more` : ""), 160)}.`;
+  const bulk = dir.endsWith("/") && many / files.length >= 0.5 ? files.filter((f) => top(f) === dir) : [], data = bulk.filter((f) => DATA.test(f)).length;
+  const rest = files.filter((f) => !bulk.includes(f)), named = rest.slice(0, 4).join(", ") + (rest.length > 4 ? ` and ${rest.length - 4} more` : "");
+  const what = bulk.length ? `${bulk.length} of them in ${dir}${data / bulk.length >= 0.8 ? ", data files, which looks regenerated rather than written" : ""}` : "spread across the repo";
+  return `Big: ${head}, ${what}${rest.length && bulk.length ? `; the rest: ${short(named, 140)}` : ""}. Check the diff before you approve.`;
+}
+// One line on the card: where they came from, and what to do. goes: goesWith's (the tasks they go
+// with, found here); said: open tasks the run's summary says it finished. Never asks the user to
+// judge which task a change finished: that's matched here, or they're a change of their own.
+function originLine(o, { goes = [], said = [], now = Date.now() } = {}) {
   if (!o) return "";
   if (o.atWork) { const a = o.atWork; return `An agent is still at work here: ${runOf(a)}${a.outside ? ", from a folder of its own" : ""}, since ${clock(a.startedAt || now, now)}. Its changes may be half done, so there's nothing to approve until it finishes.`; }
-  const what = open ? "check the diff, tick the task below it finished and approve, or leave it for the next run here to finish" : "check the diff and approve it if it's finished, or leave it for the next run here to finish";
-  if (o.run) { const r = o.run, s = clock(r.first || r.startedAt || o.at, now), e = clock(r.last || r.endedAt || o.at, now); return `Left by ${runOf(r)}${r.outside ? ", which edited here from a folder of its own" : ""}, ${e !== s ? `${s}–${e}` : `at ${s}`}, with no task ticked: ${what}.`; }
+  const names = (l) => l.map((x) => `“${short(x.text)}”`).join(" and ");
+  const ticked = goes.length ? `They go with ${names(goes)}, ticked ${goes.every((x) => x.approved) ? "and approved " : ""}while it ran: approve them with it, or drop them.`
+    : said.length ? `Its summary says it finished ${names(said)}, so they go out with ${said.length > 1 ? "those" : "it"}: approve them, or drop them.`
+    : "No task they finish: approve them as a change of their own, or drop them.";
+  if (o.run) { const r = o.run, s = clock(r.first || r.startedAt || o.at, now), e = clock(r.last || r.endedAt || o.at, now); return `Left by ${runOf(r)}${r.outside ? ", which edited here from a folder of its own" : ""}, ${e !== s ? `${s}–${e}` : `at ${s}`}. ${ticked}`; }
   return `Changed${o.at ? ` at ${clock(o.at, now)}` : ""} while no Symbiot run was working here, so by hand or by a session Symbiot didn't start: check the diff, and approve only if you know whose they are.`;
 }
 
-export { changesBy, originLine, writesIn, pathForms };
+export { changesBy, originLine, goesWith, diffLine, writesIn, pathForms };

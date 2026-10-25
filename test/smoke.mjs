@@ -191,6 +191,7 @@ const calls = [
   ["/api/pending/sendback", "POST"],
   ["/api/pending/send", "POST"],    // no repo -> "repo not found", nothing pushed
   ["/api/pending/leave", "POST"],   // no repo -> "repo not found", nothing forgotten
+  ["/api/pending/drop", "POST"],    // no repo -> "repo not found", nothing stashed
   ["/api/automerge", "POST"],       // per-repo auto-merge opt-in toggle
   ["/api/agent/grant", "POST"],     // grant the agent a tool/folder it asked for
   ["/api/agents/answer", "POST"],   // no path -> "no agent has run there", nothing written

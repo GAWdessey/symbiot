@@ -122,9 +122,14 @@ h+="<details class='wkraw'><summary>details: steps, files, cost</summary><div cl
 return h;}
 // The Questions page (next to Reports): every agent's open questions and suggestions, the same cards as on
 // the Workdesk, answered the same way. Not redrawn under someone typing an answer.
-function loadAsks(){api('/api/agents').then(function(list){var el=$('askslist');if(!el||!list)return;if(answering()||selIn(el))return;saveDrafts(el);AGENTLIST=list;
-var xs=list.filter(function(a){return a.ask&&((a.ask.questions||[]).length||(a.ask.suggestions||[]).length||(a.ask.away||[]).length);});
-el.innerHTML=xs.length?xs.map(function(a){return "<div class='tgroup agg'>"+esc(a.name)+"</div>"+askHtml(a);}).join(''):"<div class='muted' style='margin-top:12px'>Nothing to answer right now. When an agent has a question or an idea for you, it shows here.</div>";
+// Home's own cards come too (a run's OK or step, read from the job record): the page said "Nothing to answer right
+// now" while Home, Workdesk and Map showed 2 or 3 waiting (critic, 25 Oct 2026).
+function loadAsks(){Promise.all([api('/api/agents'),api('/api/home').catch(function(){return null;})]).then(function(r){var list=r[0],home=r[1]||{},el=$('askslist');if(!el||!list)return;if(answering()||selIn(el))return;saveDrafts(el);AGENTLIST=list;
+var xs=list.filter(function(a){return a.ask&&((a.ask.questions||[]).length||(a.ask.suggestions||[]).length||(a.ask.away||[]).length);}),asked={};
+xs.forEach(function(a){if((a.ask.questions||[]).length)asked[a.path]=1;});
+var cards=(home.you||[]).filter(function(y){return y.kind==='ask'&&!(y.path&&asked[y.path]);});
+el.innerHTML=xs.length||cards.length?cards.map(function(y,i){return "<div class='tgroup agg'>"+esc(y.name||lqProjName(y.repo)||'Symbiot')+"</div><div class='lqblob askcard' data-c='"+i+"'>"+blobBody(y,false)+"</div>";}).join('')+xs.map(function(a){return "<div class='tgroup agg'>"+esc(rlLane(a.name))+"</div>"+askHtml(a);}).join(''):"<div class='muted' style='margin-top:12px'>Nothing to answer right now. When an agent has a question or an idea for you, it shows here.</div>";
+el.querySelectorAll('.askcard').forEach(function(box){wireBlob(box,cards[+box.getAttribute('data-c')],{done:loadAsks});});
 wireAsks(el);restoreDrafts(el);});}
 function loadAgents(){loadLanes();loadParked(agentsDraw);phoneApprovedNote();}
 // What was approved from your phone today (phone.mjs), above the agents: it wasn't you at this desk.
@@ -189,9 +194,10 @@ stopAgentsPoll();if(anyRunning&&current==='tasks')agentsTimer=setTimeout(loadAge
 function loadDrift(){var out=document.getElementById('driftout');out.innerHTML="<div class='muted' style='margin-top:12px'>Reading your repos&hellip;</div>";
 var ci=document.getElementById('driftci').checked?'1':'0';var ft=document.getElementById('driftfetch').checked?'1':'0';
 api('/api/drift?ci='+ci+'&fetch='+ft).then(function(d){driftLoaded=true;var repos=d.repos||[];var risky=repos.filter(function(r){return r.flags.some(function(f){return f.level==='warn';});});
-var h="<div class='k' style='margin:10px 0'><b>"+repos.length+"</b> repos &middot; <b>"+risky.length+"</b> with risks"+(d.partial?" &middot; <span class='err'>partial &mdash; the scan hit its time limit</span>":"")+"</div>";
+var unsaved=repos.filter(function(r){return r.flags.some(function(f){return f.unsaved;});}).length;
+var h="<div class='k' style='margin:10px 0'><b>"+repos.length+"</b> repos &middot; <b>"+risky.length+"</b> at risk"+(unsaved?" &middot; <b>"+unsaved+"</b> with work not saved to git":"")+(d.partial?" &middot; <span class='err'>partial &mdash; the scan hit its time limit</span>":"")+"</div>";
 repos.forEach(function(r){if(!r.flags.length)return;var warn=r.flags.some(function(f){return f.level==='warn';});
-h+="<div class='drift"+(warn?' risk':'')+"'><div class='dh'><span class='dbead' aria-hidden='true'></span><span class='dn'>"+esc(r.name)+"</span><span class='dd'>"+esc(r.def)+(r.fetchAgeDays!=null&&r.fetchAgeDays>3?" &middot; fetch "+r.fetchAgeDays+"d old":"")+"</span></div><ul>";
+h+="<div class='drift"+(warn?' risk':'')+"'><div class='dh'><span class='dbead' aria-hidden='true'></span><span class='dn'>"+esc(rlLane(r.name))+"</span><span class='dd'>"+esc(r.def)+(r.fetchAgeDays!=null&&r.fetchAgeDays>3?" &middot; fetch "+r.fetchAgeDays+"d old":"")+"</span></div><ul>";
 r.flags.forEach(function(f){h+="<li class='"+esc(f.level)+"'>"+esc(f.text)+(f.evidence?" <span class='ev'>["+esc(f.evidence)+"]</span>":"")+"</li>";});
 h+="</ul></div>";});
 var clean=repos.filter(function(r){return !r.flags.length;}).map(function(r){return r.name;});

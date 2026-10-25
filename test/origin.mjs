@@ -61,12 +61,45 @@ try {
   unlinkSync(lock); T.forgetReview();
   const left = T.pendingReview().find((r) => r.repo === "orig");
   ok("the run ended: the card is no longer at work, and its changes are leftover (no task ticked, none said finished)", left && left.running === false && left.untasked && left.leftover === true && !left.atWork, left);
-  ok("…its one line says which run left them and when, and what to do", left && /^Left by run act-test1 \(“Save the Lemon Squeezy key”\), which edited here from a folder of its own, (at )?\d\d:\d\d/.test(left.origin) && /with no task ticked: check the diff, tick the task below it finished and approve, or leave it for the next run here to finish\.$/.test(left.origin), left && left.origin);
+  ok("…its one line says which run left them and when, and offers approve or drop, never a task to judge", left && /^Left by run act-test1 \(“Save the Lemon Squeezy key”\), which edited here from a folder of its own, (at )?\d\d:\d\d(–\d\d:\d\d)?\. No task they finish: approve them as a change of their own, or drop them\.$/.test(left.origin) && !/tick/i.test(left.origin) && !(left.open || []).length, left && [left.origin, left.open]);
+  ok("…and a line on what changed", left && left.summary === "1 file changed (+1 −1): a.txt.", left && left.summary);
   const own = O.changesBy(repo, ["a.txt"], { runs: () => [], runFiles: () => [{ id: "042c556d", startedAt: T0 - 5000, endedAt: T0 + 5000, ticked: 0, files: ["a.txt"] }] });
   ok("changes this checkout's own run made are put down to that run", own.run && own.run.id === "042c556d" && own.run.outside === false && /^Left by run 042c556d, /.test(O.originLine(own)), own);
   writeFileSync(join(repo, "b.txt"), "by hand\n");
   const hand = O.changesBy(repo, ["b.txt"], { runs: () => [], runFiles: () => [] });
   ok("changes no Symbiot run was making say so, rather than offering them bare", !hand.run && !hand.atWork && /^Changed at \d\d:\d\d while no Symbiot run was working here, so by hand or by a session Symbiot didn't start: check the diff, and approve only if you know whose they are\.$/.test(O.originLine(hand)), O.originLine(hand));
+
+  console.log("(2b) A TASK TICKED WHILE THE RUN WENT IS THE ONE THEY GO WITH, FOUND BY SYMBIOT");
+  // 25 Oct 2026, kaggle-squares-in-squares: run e2bd82ba (07:42–07:46) ticked "Check the committed extension
+  // constructions…" (in review 07:46, approved 07:48); the card for what it left listed four open tasks to tick, none of them it
+  { const r = { id: "e2bd82ba", startedAt: 1000000, endedAt: 1240000 }, o = { run: r, at: 1240000 };
+    const ts = [{ id: "k1", text: "Check the committed extension constructions for n=325 to 1000", done: true, archived: true, reviewAt: 1226000, approvedAt: 1366000 },
+      { id: "k2", text: "Re-submit after each gain of 0.05 or more", done: false }, { id: "k3", text: "Milestones: lock the best set", done: true, archived: true, approvedAt: 1240000 + 3 * 3600000 },
+      { id: "k4", text: "An older task, approved the day before", done: true, archived: true, reviewAt: 1000000 - 86400000, approvedAt: 1000000 - 80000000 }];
+    const g = O.goesWith(o, ts);
+    ok("goesWith: the task ticked in that run (or a parallel one) while it went, not the open ones, not ones approved hours later or the day before", g.length === 1 && g[0].id === "k1" && g[0].approved === true, g);
+    ok("…and nothing for changes no run left", !O.goesWith({ at: 1240000 }, ts).length);
+    const line = O.originLine(o, { goes: g, now: 1240000 });
+    ok("the card's line names that task and offers approve or drop, nothing to tick", /\. They go with “Check the committed extension constructions for n=325 to 1000”, ticked and approved while it ran: approve them with it, or drop them\.$/.test(line) && !/tick the task/.test(line), line);
+    ok("a run's summary saying it finished an open task: they go out with it", /Its summary says it finished “Re-submit after each gain of 0\.05 or more”, so they go out with it: approve them, or drop them\.$/.test(O.originLine(o, { said: [ts[1]], now: 1240000 })));
+    const big = { files: [...Array.from({ length: 1000 }, (_, i) => ({ file: `packings/n-${String(i + 1).padStart(4, "0")}.csv` })), { file: "verify.py" }, { file: "tests/test_verify.py" }, { file: "README.md" }], stat: "+501695 −501378" };
+    const bl = O.diffLine(big);
+    ok("diffLine flags a huge diff, says where the bulk of it is and that it looks regenerated, and names the rest", /^Big: 1003 files changed \(\+501695 −501378\), 1000 of them in packings\/, data files, which looks regenerated rather than written; the rest: verify\.py, tests\/test_verify\.py, README\.md\. Check the diff before you approve\.$/.test(bl), bl);
+    ok("…and a small one is just its files", O.diffLine({ files: [{ file: "a.py" }, { file: "b.py" }], stat: "+3 −1" }) === "2 files changed (+3 −1): a.py, b.py.");
+    ok("…a lot of lines in a few files is big too, with no regenerated-data guess for code", /^Big: 2 files changed \(\+30000 −2\), spread across the repo\./.test(O.diffLine({ files: [{ file: "a.py" }, { file: "b.py" }], stat: "+30000 −2" })), O.diffLine({ files: [{ file: "a.py" }, { file: "b.py" }], stat: "+30000 −2" }));
+  }
+  { T.forgetReview(); const tsNow = JSON.parse((await import("node:fs")).readFileSync(join(CFG, "tasks.json"), "utf8"));
+    const lr = O.changesBy(repo, ["a.txt"]).run;
+    writeFileSync(join(CFG, "tasks.json"), JSON.stringify([...tsNow, { id: "o3", text: "Check the committed extension constructions", repo: "orig", done: true, archived: true, reviewAt: (lr.last || lr.startedAt) + 1000, approvedAt: (lr.last || lr.startedAt) + 2000 }]));
+    const c = T.pendingReview().find((r) => r.repo === "orig");
+    ok("on the card: the task it goes with, its line says so, and it isn't leftover", c && (c.goes || []).length === 1 && c.goes[0].id === "o3" && /They go with “Check the committed extension constructions”/.test(c.origin) && !c.leftover, c && [c.goes, c.origin, c.leftover]);
+    writeFileSync(join(CFG, "tasks.json"), JSON.stringify(tsNow)); T.forgetReview(); }
+  { writeFileSync(join(repo, "c.txt"), "a new file the run made\n");
+    const d = await T.dropChanges("orig"), st = execSync("git status --porcelain -- . ':(exclude).symbiot'", { cwd: repo, encoding: "utf8" }), list = execSync("git stash list", { cwd: repo, encoding: "utf8" });
+    ok("Drop puts the changes aside in git's stash, new files too, named so they can be brought back", d.ok && d.dropped >= 2 && !/a\.txt|c\.txt/.test(st) && /Dropped in Symbiot \d{4}-\d\d-\d\d \d\d:\d\d: \d+ files/.test(list), [d, st, list]);
+    execSync("git stash pop -q", { cwd: repo, env: gitEnv });
+    ok("…and they come back whole", /edited by the ops run/.test(execSync("cat a.txt c.txt", { cwd: repo, encoding: "utf8" })));
+    T.forgetReview(); }
 
   console.log("(3) LEFTOVER CHANGES AREN'T WAITING ON THE USER ON HOME");
   const h = homeState({ fresh: true, deps: homeDeps([left]) }), w = workScene({ deps: sceneDeps([left]) });

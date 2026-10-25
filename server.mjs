@@ -25,7 +25,7 @@ import { computeDrift } from "./drift.mjs";
 import { afterShip, markLive, deployTick } from "./deploy.mjs";
 import { quotaState } from "./quota.mjs";
 import { laneCap, mergeEnded, DEFAULT_CAP } from "./parallel.mjs";
-import { noteLaneIds, addTask, setTaskModel, refileTask, laneNames, toggleTask, removeTask, cancelTask, restoreTask, syncTasks, taskType, pushTasks, pendingReview, workingDiff, learnNpm, withReleases, releaseInput, approveRepo, approveChanges, sendBack, setAutoMerge, mergeWhenGreen, shipJob, shipJobOf, sendAgain, forgetUnsent, shippingPaths } from "./tasks.mjs";
+import { noteLaneIds, addTask, setTaskModel, refileTask, laneNames, toggleTask, removeTask, cancelTask, restoreTask, syncTasks, taskType, pushTasks, pendingReview, workingDiff, learnNpm, withReleases, releaseInput, approveRepo, approveChanges, dropChanges, sendBack, setAutoMerge, mergeWhenGreen, shipJob, shipJobOf, sendAgain, forgetUnsent, shippingPaths } from "./tasks.mjs";
 import { repoReview, repoSuggest, folderSuggest, taskChat, clearTaskChat, mailState, setMail, sentMail, produce, releaseNotes } from "./writeups.mjs";
 import { denyList } from "./outward.mjs";
 import { listSecrets, getSecret, saveSecret, markUsed, deleteSecret, scrubStored, repairFalseSaves } from "./vault.mjs";
@@ -548,6 +548,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       if (u.pathname === "/api/pending/job") return json(res, shipJobOf(u.searchParams.get("repo") || ""));
       // approved work that didn't get as far as a PR: sent again (untested: without the tests here), or left
       if (u.pathname === "/api/pending/send" && req.method === "POST") { const b = await readBody(req); return json(res, await sendAgain(String(b.repo || ""), b.untested ? { verify: false } : {})); }
+      if (u.pathname === "/api/pending/drop" && req.method === "POST") { const b = await readBody(req), repo = String(b.repo || ""); return json(res, await dropChanges(repo)); }
       if (u.pathname === "/api/pending/leave" && req.method === "POST") { const b = await readBody(req); return json(res, forgetUnsent(String(b.repo || ""))); }
       if (u.pathname === "/api/pending/sendback" && req.method === "POST") { const b = await readBody(req); return json(res, sendBack(String(b.id || ""))); }
       if (u.pathname === "/api/automerge" && req.method === "POST") { const b = await readBody(req); return json(res, setAutoMerge(String(b.repo || ""), !!b.on)); }

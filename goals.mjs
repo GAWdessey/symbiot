@@ -118,13 +118,21 @@ function tidyGoals({ jobs = loadJobs(), now = Date.now() } = {}) {
   return n;
 }
 
+// A model's reply that isn't a done-when at all: it couldn't see something, refused, or asked back.
+// On 25 Oct 2026 "Take a look at this screenshot" got the done-when "No image came through with your
+// message, so I can't see the screenshot. Please re-attach it…" (the model was sent the words, not the
+// picture), so no run could ever meet it, and each follow-up carried it on.
+const NOT_DONE_WHEN = /^(?:sorry|i'm sorry|unfortunately)\b|\b(?:i(?: can(?:'|no)t| cannot|'m unable to| am unable to| don't have| do not have)|no (?:image|screenshot|picture|file|attachment)s? (?:came|was|were|is|are)|(?:please|could you|can you) (?:re-?)?(?:attach|share|send|upload|provide|paste)|re-?attach)\b|\?\s*$/i;
+const doneLine = (s) => { s = clip(s, 200); return s && !NOT_DONE_WHEN.test(s) ? s : ""; };
+const doneOf = (g) => doneLine(g.doneWhen) || g.asked; // one set before this rule is read past, not used
+
 // One line of what "done" means for it, from the user's words; the words themselves without an AI.
 async function doneWhenFor(g, { write } = {}) {
   let line = "";
   if (write) {
     try {
       const r = await write("You turn a request into one plain line saying what will be true when it's done, checkable from what the agents report (a reply sent and received, a fix live, a count known). No preamble, no quotes.", `The request:\n${g.asked}`, { fast: true, kind: "triage" });
-      line = clip(r && r.text, 200);
+      line = doneLine(r && r.text);
     } catch {}
   }
   const cur = goalById(g.key); if (!cur) return null;
@@ -240,7 +248,7 @@ function rollUp(g, ctx) {
 async function judgeDone(g, kids, { write } = {}) {
   if (!write) return null;
   const lines = kids.map((c) => `- ${c.key}: ${c.state}${c.ok === false ? " (did not finish)" : ""}${c.summary ? `: ${clip(c.summary, 500)}` : ""}${c.what ? ` (${clip(c.what, 160)})` : ""}`).join("\n");
-  let r; try { r = await write(`You check whether what the user asked for is done, from the agents' own records. Be strict: met only if the records show the done-when is true (sent, live, known, confirmed), not that work was attempted or handed on. Answer JSON only: {"met":true|false,"done":["what was done, with any PR, commit or link named in the records"],"verified":"how the records show it, or what's unverified","left":"what's missing, empty if met"}.`, `What the user asked for:\n${g.asked}\n\nDone when: ${g.doneWhen || g.asked}\n\nThe records:\n${lines}`, { fast: true, kind: "triage" }); } catch { return null; }
+  let r; try { r = await write(`You check whether what the user asked for is done, from the agents' own records. Be strict: met only if the records show the done-when is true (sent, live, known, confirmed), not that work was attempted or handed on. Answer JSON only: {"met":true|false,"done":["what was done, with any PR, commit or link named in the records"],"verified":"how the records show it, or what's unverified","left":"what's missing, empty if met"}.`, `What the user asked for:\n${g.asked}\n\nDone when: ${doneOf(g)}\n\nThe records:\n${lines}`, { fast: true, kind: "triage" }); } catch { return null; }
   const m = String((r && r.text) || "").match(/\{[\s\S]*\}/); if (!m) return null;
   try { const o = JSON.parse(m[0]); return { met: o.met === true, done: Array.isArray(o.done) ? o.done.map((x) => clip(x, 300)).slice(0, 12) : [], verified: clip(o.verified, 400), left: clip(o.left, 400) }; } catch { return null; }
 }
@@ -252,7 +260,7 @@ function writeBreakdown(g, v, kind, ctx, now = Date.now()) {
   const head = kind === "done" ? `Done: ${g.text}` : kind === "dropped" ? `Dropped: ${g.text}` : `Not finished: ${g.text}`;
   const { usd, ms } = costOf(g, ctx), mins = Math.round((now - g.at) / 60000);
   const kids = (v && v.kids) || rollUp(g, ctx).kids;
-  const md = [`# ${head}`, "", `**Asked** ${new Date(g.at).toLocaleString("en-ZA", { hour12: false })}: ${g.asked}`, "", `**Done when:** ${g.doneWhen || "(not set)"}`, "",
+  const md = [`# ${head}`, "", `**Asked** ${new Date(g.at).toLocaleString("en-ZA", { hour12: false })}: ${g.asked}`, "", `**Done when:** ${doneLine(g.doneWhen) || "(not set)"}`, "",
     "## What was done", ...(v && v.done && v.done.length ? v.done.map((x) => `- ${x}`) : kids.filter((c) => c.summary).map((c) => `- ${clip(c.summary, 300)}`)), "",
     "## How it's known", v && v.verified ? v.verified : "Not verified: no AI was there to check the records against the done-when.", "",
     "## What's left", (v && v.left) || (kind === "done" ? "Nothing." : kind === "dropped" ? "Dropped by the user." : "Not recorded."), "",
@@ -301,7 +309,7 @@ async function goalsTick(deps = {}, { now = Date.now() } = {}) {
       else if (v && v.met) { close(g, "done", { ...v, kids: r.kids }, ctx, deps, now); did.push({ goal: g.key, closed: "done" }); }
       else if ((g.leftTries || 0) < LEFT_TRIES && deps.ops) {
         g.leftTries = (g.leftTries || 0) + 1;
-        const e = deps.ops(`What's left on this, and do it: ${g.asked}\n\nDone when: ${g.doneWhen || g.asked}\n\nWhat was found missing: ${(v && v.left) || "nothing judged it done"}. Check the earlier runs' reports first and don't redo what they finished. If something only the user can do is all that's left, ask it in QUESTIONS.md.`, { title: `What's left on: ${clip(g.text, 60)}` });
+        const e = deps.ops(`What's left on this, and do it: ${g.asked}\n\nDone when: ${doneOf(g)}\n\nWhat was found missing: ${(v && v.left) || "nothing judged it done"}. Check the earlier runs' reports first and don't redo what they finished. If something only the user can do is all that's left, ask it in QUESTIONS.md.`, { title: `What's left on: ${clip(g.text, 60)}` });
         if (e && (e.job || e.dir)) { if (e.job) g.children.push("run:" + e.job); if (e.dir) g.paths.push(e.dir); did.push({ goal: g.key, whatsLeft: e.job || e.dir }); }
       } else { close(g, "not", v ? { ...v, kids: r.kids } : { left: "every part of it ended, and nothing shows it's done", kids: r.kids }, ctx, deps, now); did.push({ goal: g.key, closed: "not" }); }
     } else if (r.state === "waiting") {
@@ -391,7 +399,7 @@ function goalAnswer(path, answers = [], deps = {}, { now = Date.now() } = {}) {
   } else if (is("Try again") || is("Look into it now")) {
     g.leftTries = 0; g.card = null; g.moved = now;
     if (g.state === "done") { g.state = "running"; g.closed = null; }
-    const e = deps.ops ? deps.ops(`Look into this and finish it: ${g.asked}\n\nDone when: ${g.doneWhen || g.asked}\n\nRead the earlier runs' reports first (its breakdown is in Reports) and don't redo what they finished. If something only the user can do is all that's left, ask it in QUESTIONS.md.`, { title: `Finish: ${clip(g.text, 60)}` }) : null;
+    const e = deps.ops ? deps.ops(`Look into this and finish it: ${g.asked}\n\nDone when: ${doneOf(g)}\n\nRead the earlier runs' reports first (its breakdown is in Reports) and don't redo what they finished. If something only the user can do is all that's left, ask it in QUESTIONS.md.`, { title: `Finish: ${clip(g.text, 60)}` }) : null;
     if (e && e.job) g.children.push("run:" + e.job); if (e && e.dir) g.paths.push(e.dir);
     said = e && (e.job || e.dir) ? "An agent is on it now." : `It didn't start: ${(e && e.error) || "no agent"}`;
   } else { g.card = null; g.moved = now; g.note = clip(a, 200); }
@@ -399,4 +407,4 @@ function goalAnswer(path, answers = [], deps = {}, { now = Date.now() } = {}) {
   return { ok: true, saved: 1, said };
 }
 
-export { goalKind, goalFor, goalToJoin, tidyGoals, plainlyNotWork, openGoal, linkChild, goalById, goalOf, doneWhenFor, childState, adopt, rollUp, judgeDone, writeBreakdown, goalsTick, goalCards, goalAnswer, folderOf, STALL_AFTER, NUDGE_AFTER, SURFACE_AFTER, WAIT_OLD };
+export { doneLine, goalKind, goalFor, goalToJoin, tidyGoals, plainlyNotWork, openGoal, linkChild, goalById, goalOf, doneWhenFor, childState, adopt, rollUp, judgeDone, writeBreakdown, goalsTick, goalCards, goalAnswer, folderOf, STALL_AFTER, NUDGE_AFTER, SURFACE_AFTER, WAIT_OLD };

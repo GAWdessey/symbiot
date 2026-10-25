@@ -159,6 +159,7 @@ document.addEventListener('pointerdown',function(ev){var t=ev&&ev.target;if(!LQ.
 var co=$('lqcore');if(co&&co.addEventListener)co.addEventListener('click',function(){var i=$('lqask');if(i&&i.focus)i.focus();});
 var sk=$('lqsink');if(sk&&sk.addEventListener)sk.addEventListener('click',lqSink);
 var bk=$('lqback');if(bk&&bk.addEventListener)bk.addEventListener('click',lqHome);
+var pj=$('lqprojects');if(pj&&pj.addEventListener)pj.addEventListener('click',lqProjToggle);
 glLow(GLLOW);var lw=$('lqlow');if(lw&&lw.addEventListener)lw.addEventListener('click',function(){glLow(!GLLOW);});
 var lk=$('lqlook');if(lk&&lk.querySelectorAll){var cur=lqLookGet();lk.querySelectorAll('button').forEach(function(b){b.setAttribute('aria-checked',b.getAttribute('data-look')===cur?'true':'false');b.addEventListener('click',function(){lqLook(b.getAttribute('data-look'));});});}
 var gb=$('lqgo');if(gb&&gb.addEventListener)gb.addEventListener('click',lqGoWork);

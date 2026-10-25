@@ -635,6 +635,7 @@ async function buildMapScan() {
     commits: repos.reduce((s, r) => s + r.mine, 0),
     files: repos.reduce((s, r) => s + (r.files || 0), 0),
     base: scanBase(),
+    home: homedir(), // so the page shows ~/code, not the folder's whole path
     roots: scanRoots(), // every folder scanned (base is the first, unless you picked others)
     partial: SCAN.partial, // the scan hit its deadline — this is what it found so far
     android: process.env.SYMBIOT_ANDROID_APP === "1",

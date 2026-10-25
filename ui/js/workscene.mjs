@@ -7,7 +7,7 @@ export default `// ---- the work scene -----------------------------------------
 // turn. One Go starts what's waiting. A tap opens the details; nothing else to read.
 function lqWork(){lqRemember();LQ.scene='work';LQ.mode='aware';var sc=$('lqscene');if(sc)sc.textContent=LQ.workBy==='project'?'Projects':'Workdesk';var b=document.body;if(b&&b.classList){b.classList.add('lq-work');b.classList.toggle('lq-byproj',LQ.workBy==='project');b.classList.remove('lq-pooled');}lqLoadWork();
 if(LQ.workTimer)clearInterval(LQ.workTimer);LQ.workTimer=setInterval(function(){if(LQ.scene==='work'&&LQ.mode!=='pool')lqLoadWork();},5000);}
-function lqHome(){lqRemember();LQ.scene='home';LQ.relaySig='';var rl=$('lqrelay');if(rl)rl.innerHTML='';var li=$('lqline');if(li)li.innerHTML='';var b=document.body;if(b&&b.classList){b.classList.remove('lq-work');b.classList.remove('lq-byproj');b.classList.remove('lq-pooled');}if(LQ.workTimer){clearInterval(LQ.workTimer);LQ.workTimer=null;}LQ.mode='aware';lqLoad(true);}
+function lqHome(){lqRemember();LQ.scene='home';LQ.relaySig='';var rl=$('lqrelay');if(rl)rl.innerHTML='';var li=$('lqline');if(li)li.innerHTML='';var b=document.body;if(b&&b.classList){b.classList.remove('lq-work');b.classList.remove('lq-projopen');b.classList.remove('lq-byproj');b.classList.remove('lq-pooled');}if(LQ.workTimer){clearInterval(LQ.workTimer);LQ.workTimer=null;}LQ.mode='aware';lqLoad(true);}
 
 // ---- the relay: Agents, on the Tasks screen ----------------------------------------
 // One line for where everything stands, then a blob per project with something to say:
@@ -27,33 +27,61 @@ function qInit(){var p=$('qpill');if(!p)return;p.addEventListener('click',functi
 function lqLineText(w){var nr=(w.running||[]).length,nq=0,ni=0,nk=(w.ready||[]).length,nw=w.waitingCount||0;(w.projects||[]).forEach(function(p){nq+=p.asks||0;ni+=(p.ideas||[]).length;});
 var bits=[];if(nq)bits.push('<b>'+nq+' question'+(nq>1?'s':'')+' for you</b>');if(nk)bits.push('<b>'+nk+' ready for your OK</b>');if(nr)bits.push(nr+' at work');if(w.parkedCount)bits.push(w.parkedCount+' parked on others');if(nw)bits.push(nw+' waiting');if(ni)bits.push(ni+' suggested task'+(ni>1?'s':''));
 var qp=qPaused();if(qp)bits.unshift('<b>'+esc(qp)+'</b>');return bits.length?bits.join(' &middot; '):'All quiet: nothing at work, nothing asking you.';}
-function lqRelayList(w){return lqSortLanes((w.projects||[]).filter(function(p){return p.summary||(p.qs&&p.qs.length)||p.ready||p.shipping||(p.ideas&&p.ideas.length)||(p.handing&&p.handing.length);}).slice());}
-function lqRelayOn(){var S=lqSize();return LQ.scene==='work'&&S.w>=900&&lqRelayList(LQ.workData||{}).length>0;}
+function lqRelayList(w){return lqSortLanes((w.projects||[]).filter(function(p){return p.summary||p.now||(p.qs&&p.qs.length)||p.ready||p.shipping||(p.ideas&&p.ideas.length)||(p.handing&&p.handing.length);}).slice());}
+// The column shows at 900 px and wider; on a phone the same cards open from "Projects · N" (lqRelayPhone).
+// With nothing to show it's still there: loading (3 bars) or "No projects with work on them yet".
+function lqRelayOn(){var S=lqSize();return LQ.scene==='work'&&S.w>=900;}
 // A lane's first question as its card: drawn and wired from the one object, so a button it
 // draws (Sign in to <site>) is never wired without what it opens (2026-10-14: it did nothing).
 function rlAsk(p,nm,q){return {kind:'ask',name:nm,repo:p.repo,q:q.q,raw:q.raw,task:q.task,labels:q.labels,options:q.options,path:q.path,fix:q.fix,id:q.id,sub:q.sub,draft:q.draft,signInTo:q.signInTo,more:Math.max(0,(p.asks||p.qs.length)-1)};}
-function lqRelay(){var el=$('lqrelay'),ln=$('lqline'),w=LQ.workData||{};if(ln)ln.innerHTML=LQ.scene==='work'?lqLineText(w):'';if(!el)return;
-var ps=lqRelayList(w),sig=JSON.stringify(ps.map(function(p){return [p.repo,p.summary,p.state,p.ready,p.shipping,(p.qs||[]).map(function(q){return q.q;}),(p.ideas||[]).map(function(i){return i.full;}),p.sent,p.parked,(p.handing||[]).map(function(x){return x.why+handProg(x);})];}));
-if(el.contains&&document.activeElement&&el.contains(document.activeElement)&&el.innerHTML)return;if(sig===LQ.relaySig&&el.innerHTML)return;LQ.relaySig=sig;
-if(!ps.length){el.innerHTML='';return;}
-el.innerHTML=ps.map(function(p,i){var nm=p.name||p.repo,q=(p.qs||[])[0],st=p.parked?'parked':(p.qs&&p.qs.length)?'asks you':p.shipping?'approving: '+p.shipping:p.ready?'ready for your OK':p.state||'';
-var h="<section class='rly"+((p.qs&&p.qs.length)||p.ready?' lit':'')+"' data-i='"+i+"'><div class='rlh'><b>"+esc(nm)+"</b>"+(st?"<span class='rls'>"+esc(st)+"</span>":"")+"</div>";
-if(p.summary)h+="<p class='rlsum' title='"+escQ(p.summary)+"'>"+esc(p.summary)+"</p>";
+// The pill is one of 7 (cardwords.mjs pillOf); amber for the two that need you.
+var RLAMBER={'Asks you':1,'Ready for your OK':1};
+function rlLane(l){var n=String(l||'');if(n==='ops')return 'Ops';n=lqProjName(n)||n;if(/^[a-z0-9]+(?:[-_][a-z0-9]+)*$/.test(n))n=n.replace(/[-_]+/g,' ');return n.charAt(0).toUpperCase()+n.slice(1);} // a lane as people say it: never a folder slug
+function rlHand(x){var to=rlLane(x.lane)+(x.then?', then '+rlLane(x.then):'');return "<p class='rlhand' title='"+escQ(x.text)+"'><b>To "+esc(to)+":</b> "+esc(x.words||x.why)+(x.ask?" &middot; <button type='button' class='rlans' data-lane='"+escQ(x.ask)+"'>Answer &rsaquo;</button>":"")+"</p>";}
+function rlTime(t){var d=new Date(t),p=function(n){return (n<10?'0':'')+n;};return p(d.getHours())+':'+p(d.getMinutes());}
+var RLOPEN={}; // the cards whose summary is open (More), by lane
+function lqRelay(){var el=$('lqrelay'),ln=$('lqline'),w=LQ.workData,off=document.body&&document.body.classList&&document.body.classList.contains('lq-offline');
+if(ln)ln.innerHTML=LQ.scene==='work'?(w?lqLineText(w):'')+(off&&LQ.workAt?" &middot; <span class='rlwhen'>Last updated "+rlTime(LQ.workAt)+"</span>":''):'';if(!el)return;
+var ps=lqRelayList(w||{}),sig=(w?'1':'0')+JSON.stringify(ps.map(function(p){return [p.repo,p.summary,p.now,p.pill,p.ready,p.shipping,(p.qs||[]).map(function(q){return q.q;}),(p.ideas||[]).map(function(i){return i.full;}),p.sent,p.parked,(p.handing||[]).map(function(x){return x.words+x.ask+x.then;})];}));
+lqRelayPhone(ps.length);
+if(el.contains&&document.activeElement&&el.contains(document.activeElement)&&el.innerHTML)return;if(sig===LQ.relaySig&&el.innerHTML){rlMeasure();return;}LQ.relaySig=sig;
+if(!w){el.innerHTML="<span class='rlsr'>Loading your projects…</span>"+[0,1,2].map(function(){return "<section class='rly rlskel' aria-hidden='true'><i></i><i></i><i></i></section>";}).join('');return;}
+if(!ps.length){el.innerHTML="<section class='rly rlempty'><b>No projects with work on them yet</b><p class='rlsum'>Tell Symbiot what to do in the box below.</p></section>";return;}
+el.innerHTML=ps.map(function(p,i){var nm=p.name||p.repo,q=(p.qs||[])[0],st=p.pill||'Idle',amber=!!RLAMBER[st];
+var h="<section class='rly"+(amber?' lit':'')+"' data-i='"+i+"'><div class='rlh'><b>"+esc(nm)+"</b><span class='rls"+(st==='At work'?' rlgo':'')+"'>"+esc(st)+"</span></div>";
+if(p.now)h+="<p class='rlnow'>"+esc(p.now)+"</p>";
+if(p.summary&&!(q&&String(q.q||'').trim()===String(p.summary).trim()))h+="<p class='rlsum"+(RLOPEN[p.repo]?' open':'')+"'>"+esc(p.summary)+"</p><button type='button' class='rlmore' hidden aria-expanded='"+(RLOPEN[p.repo]?'true':'false')+"'>"+(RLOPEN[p.repo]?'Less':'More')+"</button>";
 if(q)h+="<div class='lqblob rlask'>"+blobBody(rlAsk(p,nm,q),false)+"</div>";
 if(p.ready)h+="<button type='button' class='act rlok'>Review and approve</button>";
-if(p.handing&&p.handing.length)h+="<div class='rlk'>Handed over</div>"+p.handing.map(function(x){var pg=handProg(x);return "<p class='rlsum rlhand' title='"+escQ(x.text)+"'><b>"+esc(x.lane)+"</b>: "+esc(x.why)+(pg?" \u00b7 "+esc(pg):"")+"</p>";}).join('');
-if(p.ideas&&p.ideas.length)h+="<div class='rlk'>"+(p.ideas.every(function(d){return d.from;})?"Extra tasks other agents suggest":"Extra tasks it suggests")+"</div>"+p.ideas.map(function(d,j){return "<div class='rli' data-j='"+j+"'><span title='"+escQ(d.full)+"'>"+esc(d.text)+(d.from?" <small class='rlfrom'>from "+esc(d.from)+"</small>":"")+"</span><span class='rlia'><button type='button' class='rladd'>+ task</button><button type='button' class='rlskip'>Skip</button></span></div>";}).join('');
-if(p.sent&&p.sent.length)h+="<p class='rlsum rlsent' title='they show on that project&#39;s card'>"+p.sent.map(function(x){return x.n+" idea"+(x.n>1?"s":"")+" sent to "+esc(x.repo);}).join(", ")+"</p>";
+if(p.handing&&p.handing.length)h+="<div class='rlk'>Handed over</div>"+p.handing.map(rlHand).join('');
+if(p.ideas&&p.ideas.length)h+="<div class='rlk'>"+(p.ideas.every(function(d){return d.from;})?"Extra tasks other agents suggest":"Extra tasks it suggests")+"</div>"+p.ideas.map(function(d,j){return "<div class='rli' data-j='"+j+"'><span title='"+escQ(d.full)+"'>"+esc(d.text)+(d.from?" <small class='rlfrom'>from "+esc(rlLane(d.from))+"</small>":"")+"</span><span class='rlia'><button type='button' class='rladd'>+ task</button><button type='button' class='rlskip'>Skip</button></span></div>";}).join('');
+if(p.sent&&p.sent.length)h+="<p class='rlsent' title='they show on that project&#39;s card'>"+p.sent.map(function(x){return "Sent "+x.n+" idea"+(x.n>1?"s":"")+" to "+esc(rlLane(x.repo));}).join(", ")+"</p>";
 return h+"<div class='rlf'><button type='button' class='rlopen'>Its tasks &rsaquo;</button><button type='button' class='rlag'>Its agents &rsaquo;</button></div></section>";}).join('');
 el.querySelectorAll('.rly').forEach(function(box){var p=ps[+box.getAttribute('data-i')],q=(p.qs||[])[0],nm=p.name||p.repo;
+// More: only when the summary runs past its 3 lines; it opens the rest in place, Less closes it
+var sm=box.querySelector('.rlsum'),mo=box.querySelector('.rlmore');if(sm&&mo){
+mo.addEventListener('click',function(){var o=!RLOPEN[p.repo];RLOPEN[p.repo]=o;sm.classList.toggle('open',o);mo.textContent=o?'Less':'More';mo.setAttribute('aria-expanded',o?'true':'false');});}
 var ab=box.querySelector('.rlask');if(ab&&q)wireBlob(ab,rlAsk(p,nm,q),{done:function(){LQ.relaySig='';lqLoadWork();}});
 var ok=box.querySelector('.rlok');if(ok)ok.addEventListener('click',function(){lqOpen({kind:'proj',repo:p.repo,lit:true});});
+box.querySelectorAll('.rlans').forEach(function(b){b.addEventListener('click',function(){lqOpen({kind:'proj',repo:b.getAttribute('data-lane'),lit:true});});});
 box.querySelector('.rlopen').addEventListener('click',function(){lqOpen({kind:'proj',repo:p.repo});});
 box.querySelector('.rlag').addEventListener('click',function(){lqPool('agents');});
-box.querySelectorAll('.rli').forEach(function(row){var d=p.ideas[+row.getAttribute('data-j')],a=row.querySelector('.rladd'),k=row.querySelector('.rlskip');
-a.addEventListener('click',function(){a.disabled=k.disabled=true;api('/api/tasks/add',{text:d.full,repo:d.repo}).then(function(r){if(!r||r.error){a.disabled=k.disabled=false;lqSaid(nm+': '+((r&&r.error)||'couldn’t add it'),true);return;}row.querySelector('.rlia').innerHTML="<span class='rldone'>in Tasks</span>";lqSaid('Added to '+nm+'’s tasks.');});});
-k.addEventListener('click',function(){a.disabled=k.disabled=true;api('/api/agents/skip',{path:d.path,text:d.full}).then(function(r){if(!r||r.error){a.disabled=k.disabled=false;lqSaid(nm+': '+((r&&r.error)||'couldn’t skip it'),true);return;}if(row.classList)row.classList.add('gone');setTimeout(function(){row.remove();},300);});});});});}
-function lqLoadWork(){api('/api/work').then(function(w){LQ.workData=w||{};lqRedraw();}).catch(function(){});}
+box.querySelectorAll('.rli').forEach(function(row){rlIdea(row,p.ideas[+row.getAttribute('data-j')],nm);});});setTimeout(rlMeasure,0);}
+// A suggested task's row: + task adds it; Skip fades it with an Undo for 5 s, and only then is it skipped.
+// Undo and a failed skip put the row back here, wired again (the list doesn't redraw while focus is in it,
+// and markup put back alone has no listeners: critic, 25 Oct 2026).
+function rlIdea(row,d,nm){var acts=row.querySelector('.rlia'),a=row.querySelector('.rladd'),k=row.querySelector('.rlskip');if(!acts||!a||!k)return;var was=acts.innerHTML;
+var back=function(){var had=row.contains(document.activeElement);row.classList.remove('skipped');acts.innerHTML=was;rlIdea(row,d,nm);var s=row.querySelector('.rlskip');if(had&&s&&s.focus)s.focus();};
+a.addEventListener('click',function(){a.disabled=k.disabled=true;api('/api/tasks/add',{text:d.full,repo:d.repo}).then(function(r){if(!r||r.error){a.disabled=k.disabled=false;lqSaid(nm+': '+((r&&r.error)||'couldn’t add it'),true);return;}acts.innerHTML="<span class='rldone'>Added to "+esc(nm)+"’s tasks.</span>";lqSaid('Added to '+nm+'’s tasks.');});});
+k.addEventListener('click',function(){var t;row.classList.add('skipped');acts.innerHTML="<span class='rldone'>Skipped</span><button type='button' class='rlundo'>Undo</button>";
+var u=acts.querySelector('.rlundo');if(u.focus)u.focus();u.addEventListener('click',function(){clearTimeout(t);back();});
+t=setTimeout(function(){api('/api/agents/skip',{path:d.path,text:d.full}).then(function(r){if(!r||r.error){back();lqSaid(nm+': '+((r&&r.error)||'couldn’t skip it'),true);LQ.relaySig='';return;}if(row.classList)row.classList.add('gone');setTimeout(function(){row.remove();LQ.relaySig='';},300);}).catch(function(){back();lqSaid(nm+': couldn’t skip it, the connection was lost',true);LQ.relaySig='';});},5000);});}
+// More shows only on a summary past its 3 lines, measured while it's on screen (the phone's list is hidden until it opens)
+function rlMeasure(){var el=$('lqrelay');if(!el)return;el.querySelectorAll('.rly').forEach(function(box){var sm=box.querySelector('.rlsum'),mo=box.querySelector('.rlmore');if(!sm||!mo||!sm.clientHeight)return;mo.hidden=!(sm.classList.contains('open')||sm.scrollHeight>sm.clientHeight+2);});}
+// On a phone (under 900 px) the column has no room: "Projects · N" opens the same cards full width.
+function lqRelayPhone(n){var b=$('lqprojects');if(!b)return;b.textContent='Projects · '+n;var on=document.body.classList.contains('lq-projopen');b.setAttribute('aria-expanded',on?'true':'false');}
+function lqProjToggle(){var b=document.body;b.classList.toggle('lq-projopen');lqRelayPhone(lqRelayList(LQ.workData||{}).length);if(b.classList.contains('lq-projopen')){var el=$('lqrelay');if(el)el.scrollTop=0;setTimeout(rlMeasure,0);}}
+function lqLoadWork(){api('/api/work').then(function(w){LQ.workData=w||{};LQ.workAt=Date.now();lqRedraw();}).catch(function(){});}
 // New data, drawn: unless you're selecting text on the surface, then once you let go
 // Updates: what Symbiot tells you (a goal done, a report written), kept off Needs you (needs.mjs), in
 // the header: a count, and the list on a tap. Each can be read or put away.
