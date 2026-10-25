@@ -266,7 +266,18 @@ function reportIdeas(text, max = IDEAS_MAX) {
 }
 // Which of a report's ideas were handed to an agent or dismissed, kept by the report's mtime
 // (a rewritten report offers its ideas again). A report leaves "Read, open actions" once none is open.
-function handledIdeas(r, file = SEEN_FILE) { const h = loadSeen(file).handed[r.id]; return h && h.mtime === r.mtime && h.done && typeof h.done === "object" ? h.done : {}; }
+// An idea handed, done or dismissed in ANY report stays so in the others: an agent saved its plan again under a new name
+// nine times (KAGGLE-SQUARES-PLAN-xxxxxx.md, 25 Oct 2026), each copy a new report with the same ideas, so "Hand to agent" was
+// pressed again and again and the idea was always back. Long enough that it is the same idea, not a common few words.
+const SAME_IDEA = 30, HANDLED = /^(?:handed|done|dismissed)$/;
+function handledIdeas(r, file = SEEN_FILE) {
+  const all = loadSeen(file).handed, h = all[r.id], out = h && h.mtime === r.mtime && h.done && typeof h.done === "object" ? { ...h.done } : {};
+  for (const [id, x] of Object.entries(all)) {
+    if (id === r.id || !x || typeof x.done !== "object" || !x.done) continue;
+    for (const [t, st] of Object.entries(x.done)) if (t.length >= SAME_IDEA && HANDLED.test(st) && !out[t]) out[t] = st;
+  }
+  return out;
+}
 const openIdeas = (r, text, file = SEEN_FILE, ctx) => {
   const done = handledIdeas(r, file), open = reportIdeas(text, 40).filter((t) => !done[t]).slice(0, IDEAS_MAX); // handled ones don't use up the slots
   if (!open.length) return open;

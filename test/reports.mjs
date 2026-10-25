@@ -198,6 +198,16 @@ console.log("REPORTS — a handed-off or dismissed next step leaves 'Read, to ac
   ok("…and reading it lists only the open one, with the handed one recorded", rd.ideas.join() === "update the links" && rd.handled["move the repo"] === "handed", rd);
   reportIdeasDismiss(id, ["update the links"], { list: () => l, mark: (r, i, st) => R.markIdeas(r, i, st, sf) });
   ok("dismissing the last one drops it to Read", needs().needs === "" && needs().ideas === 0);
+  // the same plan saved again under a new name (an agent did it nine times, 25 Oct 2026) is a new report with the same ideas
+  const long = "Extension constructions for the long tail: grow the container by j and fill the L-shaped border with a grid";
+  const dc = join(CFG, "drafts", "act-copy001"), dd = join(CFG, "drafts", "act-copy002"), sc = join(CFG, "seen-copy.json");
+  put(dc, "PLAN-aaa111.md", `# Plan\n\n## Next steps\n\n- ${long}\n- short one\n`);
+  put(dd, "PLAN-bbb222.md", `# Plan\n\n## Next steps\n\n- ${long}\n- short one\n`);
+  const lc = R.listReports({ map: { symbiot: repo }, folders: [dc, dd], running: () => false }), a = lc.find((x) => /aaa111/.test(x.file)), b = lc.find((x) => /bbb222/.test(x.file));
+  reportIdeasAdd(a.id, [long, "short one"], { list: () => lc, add: () => ({ id: "t" }), mark: (r, i, st) => R.markIdeas(r, i, st, sc) });
+  const nb = R.withNeeds(lc, { seenFile: sc }).find((x) => x.id === b.id);
+  ok("a long idea handed in one copy stays handed in the next copy of the report", !R.readReport(b.id, { list: lc, mark: false, seenFile: sc }).ideas.includes(long), nb);
+  ok("…while a short one (a few common words) is not taken for the same idea", R.readReport(b.id, { list: lc, mark: false, seenFile: sc }).ideas.includes("short one"));
   ok("nothing was handed over when the Workdesk add failed", (reportIdeasAdd(id, ["x"], { list: () => l, add: () => ({ error: "no" }), mark: () => { throw new Error("marked"); } })).error === "Couldn't add them.");
   put(d, "MOVE-PLAN.md", "# Move plan\n\n## Next steps\n\n- move the repo\n- update the links\n- a new one\n");
   ok("a rewritten report offers its steps again", needs().needs === "ideas" && needs().ideas === 3);

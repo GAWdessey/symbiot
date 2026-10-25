@@ -2,6 +2,10 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one), for anyone who installs the app: what changed in it, never whose work it was (no projects, people, accounts, services, run ids or task wording of the person who made it). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.90.10 — 2026-10-25
+
+- **A next step you handed to an agent stays handed.** An agent saved its plan again under a new name nine times, and each copy was a new report whose steps showed up as open again, so "Hand to agent" came back every time you pressed it. A step handed over, done or dropped in one report now counts as handled in every other report that lists the same step.
+
 ## 0.90.9 — 2026-10-25
 
 - **Approved work goes to the right branch on GitHub.** A project's approved changes sat on Home as "Send <project>'s approved work: no PR opened" and the button never worked: with no default branch recorded in the clone, Symbiot picked an old `main` that shares no history with the project (its real default is `master`), so every pull request failed with "no history in common with main". It now picks the one branch that shares history with the work.
