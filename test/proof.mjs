@@ -14,7 +14,7 @@ let pass = 0, fail = 0;
 const ok = (n, c, got) => { if (c) { pass++; console.log("  ✓ " + n); } else { fail++; console.log("  ✗ " + n + (got !== undefined ? "  got: " + JSON.stringify(got).slice(0, 500) : "")); } };
 const P = await import("../proof.mjs"), N = await import("../needs.mjs");
 
-const HOST = "ubuntu@92.4.133.97", T0 = Date.UTC(2026, 9, 24, 12, 0, 0);
+const HOST = "ubuntu@203.0.113.7", T0 = Date.UTC(2026, 9, 24, 12, 0, 0);
 const restart = { kind: "ask", id: "needs:a1", name: "Steve", asked: T0, run: [{ what: "Restart Steve", cmd: `ssh -t ${HOST} 'sudo systemctl restart steve.service'` }] };
 const start = { kind: "ask", id: "needs:a2", name: "Steve", run: [{ what: "Start Steve", cmd: `ssh -t ${HOST} 'sudo systemctl start steve.service'` }] };
 try {
