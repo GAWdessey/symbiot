@@ -1,6 +1,6 @@
 # Symbiot to Symbiot sync
 
-Garth works on the same projects (Dailify first) from two computers: this one (pop-os,
+Garth works on the same projects (Acme first) from two computers: this one (pop-os,
 `/home/odessey`) and a work laptop. GitHub carries the code. This carries Symbiot's own
 state, so both installs know the same things and work the same lists.
 

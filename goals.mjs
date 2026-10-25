@@ -172,7 +172,7 @@ function childState(key, ctx) {
 // every run in its folders after it began, each handover from them (and from those, down the
 // chain), and each email wait they started. A folder's later runs stop being its once its task is done.
 // A lane's folder is shared: every goal there took every run in it, and every folder those runs or
-// their handovers reached, so the two marketing goals took all of daaymn's runs and showed its
+// their handovers reached, so the two marketing goals took all of webapp's runs and showed its
 // 'faceVerificationEnabled' release as their blocker, and stayed open with both their tasks long
 // approved (24 Oct 2026). So a folder another child reached is the goal's only when it's a run's own
 // (an ops folder, a copy beside a lane); in a shared one, a run that says which item it's on joins

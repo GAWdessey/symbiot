@@ -14,7 +14,7 @@ const GREP = data("grep.txt"), READ_SYS = data("read_system.txt"), CHAT_RULE = d
 
 const LANES = "ops (anything outside a repo: this computer, installing tools, accounts, cloud, GitHub, DNS, email), " +
   "marketing (posts, demo videos, launches, landing-page copy, campaigns), " +
-  "or a repo by folder name: steve, argena, symbiot, GuitarHero, callforge-ai, fatform, formfit, harvestconnect, PediPigeon, gawdessey.github.io";
+  "or a repo by folder name: steve, gamerepo, symbiot, GuitarHero, callforge-ai, formapp, fitapp, farmco, kidsapp, gawdessey.github.io";
 
 const jparse = (a) => { const m = /\{[\s\S]*\}/.exec(a); if (!m) return null; try { return JSON.parse(m[0]); } catch { return null; } };
 const lines = (a) => a.split("\n").filter((l) => l.trim());
@@ -70,26 +70,26 @@ const CASES = [
   kwCase("summarise", 1, SUM_SYS, "From: billing@hetzner.com\nSubject: Invoice R0012345678 overdue\n\nDear customer, your invoice R0012345678 for EUR 14.28 dated 2026-09-28 is now overdue. " +
     "Please pay by 2026-10-15 to avoid suspension of server CX22 (ubuntu-4gb-fsn1). You can pay in the Hetzner Console under Billing. Regards, Hetzner Online GmbH",
     ["14.28", "10-15|15 oct|october 15|oct 15|15th", "suspen|pay"], ["$14", "10-25"]),
-  kwCase("summarise", 2, SUM_SYS, "GitHub notification\n[gawdessey/formfit] CI failed: build-android (#412)\nThe workflow 'build-android' failed on branch main at commit 3fa9c1e " +
+  kwCase("summarise", 2, SUM_SYS, "GitHub notification\n[acme-org/fitapp] CI failed: build-android (#412)\nThe workflow 'build-android' failed on branch main at commit 3fa9c1e " +
     "('bump flutter to 3.38'). Step 'Gradle assemble' exited with code 1: Execution failed for task ':app:compileReleaseKotlin'.",
-    ["formfit", "fail", "kotlin|gradle|compile"], ["passed", "succeeded"]),
-  kwCase("summarise", 3, SUM_SYS, "From: Thandi Mokoena <thandi@harvestconnect.co.za>\nSubject: Re: pilot farms\n\nHi Garth, good news, three of the five pilot farms signed. " +
+    ["fitapp", "fail", "kotlin|gradle|compile"], ["passed", "succeeded"]),
+  kwCase("summarise", 3, SUM_SYS, "From: Thandi Mokoena <thandi@farmco.co.za>\nSubject: Re: pilot farms\n\nHi Garth, good news, three of the five pilot farms signed. " +
     "Ruiters and Kloof still want a call. Could you send me the onboarding deck before Thursday so I can forward it? Also the co-op asked if we can drop the price to R450/month, I said I'd check with you. Thanks, Thandi",
     ["three|3", "deck", "thursday", "450"], ["four farms", "R500"]),
   laneCase(1, "the ollama service won't start after the update, can you look at it", "ops"),
-  laneCase(2, "draft a launch post for formfit on linkedin with a short demo clip", "marketing"),
+  laneCase(2, "draft a launch post for fitapp on linkedin with a short demo clip", "marketing"),
   laneCase(3, "fix the failing test in symbiot's screens command, it times out on the second tab", "symbiot"),
   laneCase(4, "the note highway stutters at 120bpm when the song has a key change", "GuitarHero"),
-  laneCase(5, "point gawdessey.com's DNS at the new github pages IP and check the cert", "ops"),
-  laneCase(6, "add a dark mode toggle to the fatform settings screen", "fatform"),
+  laneCase(5, "point example.com's DNS at the new github pages IP and check the cert", "ops"),
+  laneCase(6, "add a dark mode toggle to the formapp settings screen", "formapp"),
   laneCase(7, "steve's verifier bench shows 0% for every model, find out why the calls never ran", "steve"),
-  laneCase(8, "the farmers can't see their produce listings after logging in on android", "harvestconnect"),
-  signinCase(1, "github.com", "Dashboard  Top repositories  Find a repository…  gawdessey/formfit  gawdessey/symbiot  Signed in as gawdessey  Your profile  Your repositories  Sign out", true),
+  laneCase(8, "the farmers can't see their produce listings after logging in on android", "farmco"),
+  signinCase(1, "github.com", "Dashboard  Top repositories  Find a repository…  acme-org/fitapp  gawdessey/symbiot  Signed in as gawdessey  Your profile  Your repositories  Sign out", true),
   signinCase(2, "www.linkedin.com", "Welcome to your professional community  Email or phone  Password  Show  Forgot password?  Sign in  or  Continue with Google  New to LinkedIn? Join now", false),
   signinCase(3, "x.com", "Home  Explore  Notifications  Messages  Grok  Bookmarks  Profile  More  Post  For you  Following  What is happening?!", true),
   signinCase(4, "www.domains.co.za/client/dashboard", "Client Area  Please enter your details to log in.  Email Address  Password  Remember Me  Login  Forgotten Password?  Not registered? Create an account", false),
   signinCase(5, "accounts.google.com", "Choose an account  to continue to Gmail  Jane Doe jane.doe@example.com  Signed out  Use another account", false),
-  signinCase(6, "www.facebook.com/harvestconnect", "HarvestConnect  1.2K likes  Posts  About  Photos  See more of HarvestConnect on Facebook  Log in  or  Create new account", false),
+  signinCase(6, "www.facebook.com/farmco", "HarvestConnect  1.2K likes  Posts  About  Photos  See more of HarvestConnect on Facebook  Log in  or  Create new account", false),
   kwCase("commit", 1, COMMIT_SYS, '--- a/estimate.mjs\n+++ b/estimate.mjs\n@@ -17 +17 @@\n-const FILE = join(CONFIG_DIR, "durations.json"), KEEP = 400, MIN_SAMPLES = 3;\n+const FILE = join(CONFIG_DIR, "durations.json"), KEEP = 800, MIN_SAMPLES = 5;', ["keep|sample|duration"], [], 72),
   kwCase("commit", 2, COMMIT_SYS, '--- a/guard.mjs\n+++ b/guard.mjs\n@@ -21 +21 @@\n-const SECRET = [".ssh", ".gnupg", ".aws",\n+const SECRET = [".ssh", ".gnupg", ".aws", ".config/rclone",', ["rclone"], [], 72),
   kwCase("commit", 3, "Write a one-line status update (max 100 characters) saying what this agent run did. Output only the line.",
@@ -107,8 +107,8 @@ const CASES = [
     "Thandi Mokoena: Re: pilot farms, can you send the onboarding deck before Thursday?", "LinkedIn: You appeared in 12 searches this week"], ["hetzner", "thandi", "medium|linkedin"]),
   triCase(2, "WhatsApp", ["Mom [from them, 2 unread]: are you coming on sunday? need to know for lunch", "Dev group [from you]: pushed the fix, can someone test",
     "Sipho [from them, read]: thanks bro", "Kloof Farm [from them, 1 unread]: can we do the call friday 10am?"], ["mom", "kloof"], ["sipho needs", "dev group needs"], true),
-  triCase(3, "GitHub notifications", ["gawdessey/formfit: CI failed build-android #412 on main", "dependabot: Bump vite from 5.4.1 to 5.4.8 in gawdessey/symbiot",
-    "octocat starred gawdessey/GuitarHero"], ["formfit", "dependabot|vite"]),
+  triCase(3, "GitHub notifications", ["acme-org/fitapp: CI failed build-android #412 on main", "dependabot: Bump vite from 5.4.1 to 5.4.8 in gawdessey/symbiot",
+    "octocat starred acme-org/GuitarHero"], ["fitapp", "dependabot|vite"]),
 ];
 
 // One call the way the local tier makes it (ai.mjs callOllama, tuned).

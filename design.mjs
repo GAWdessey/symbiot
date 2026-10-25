@@ -93,8 +93,8 @@ function holdsMerge(slug, { now = Date.now(), home = homedir() } = {}) {
   const name = (x) => String(x || "").split("/").pop(); // by its name too: a repo that moved owner keeps an old remote (GitHub redirects it)
   return Object.entries(all).filter(([, v]) => v && v.slug && (v.slug === slug || name(v.slug) === name(slug)) && now - (v.at || 0) < OPEN_MS).flatMap(([folder, v]) => (v.items || []).map((item) => ({ folder, item })));
 }
-// A step's own brief that came back in as a task line: on 24 Oct 2026 an agent handed the daaymn lane
-// "Act as Symbiot's design critic for the daaymn lane. Judge the finished job… The job: give each
+// A step's own brief that came back in as a task line: on 24 Oct 2026 an agent handed the webapp lane
+// "Act as Symbiot's design critic for the webapp lane. Judge the finished job… The job: give each
 // screen of the Flutter web demo its own address…", and a designer was started on the critic's
 // brief, for a job that already had its spec and its review, with a spec named after the brief.
 // A step works from the task it's for: a brief's "The job: …", or nothing when it names none.

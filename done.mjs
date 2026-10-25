@@ -55,7 +55,7 @@ const NOT_OUT = /\b(draft|drafts|drafted|prepare|write up|unsent|don't send|do n
 const DEPLOY = /\b(deploy|deploys|deployed|redeploy|go live|goes live|put (?:it |them )?live|release to|roll out|ship (?:it )?to (?:prod|production|the server))\b/i;
 const LOOK = /^\s*(?:find out|look into|investigate|check|audit|research|report|explain|why|work out|figure out|list|read|review|summari[sz]e|write (?:a|the) (?:report|summary|note|plan))\b/i;
 // In a repo's lane a send is an item that starts by sending: "two older replies still start a learning goal"
-// (Steve) and "sends back 1 line" (argena) are code that mentions replies, and judged as sends they were
+// (Steve) and "sends back 1 line" (gamerepo) are code that mentions replies, and judged as sends they were
 // reopened for a `screens verify` no code change can give, then run again in copy after copy (24 Oct 2026).
 const SEND_LEAD = /^\s*(?:(?:agent|now|then|please)\s*:\s*)?(?:send|email|e-mail|reply|post|publish|message|whatsapp|dm|invite|forward)\b/i;
 function kindOf(item, { ops = false } = {}) {
@@ -70,10 +70,10 @@ function kindOf(item, { ops = false } = {}) {
 // The evidence an item of that kind needs, read from the run: { ok } or { ok: false, missing }.
 const TEST_CMD = /\b(npm (?:run )?test|pnpm (?:-r )?test|yarn test|node --test|node test\/|pytest|go test|cargo test|gradle\w* test|\.\/gradlew \w*test|mvn test|make test|vitest|jest|bun test)\b/i;
 // `symbiot screens verify`, or the same through node: `node $S screens verify` was the check that landed, and
-// missed, the Kaggle, Suno and Fly.io sends were reopened and their runs sent them again (24 Oct 2026)
+// missed, the Kaggle, Sonora and Fly.io sends were reopened and their runs sent them again (24 Oct 2026)
 const VERIFY_CMD = /\bscreens\s+verify\b/;
 // A code item ticked with no change, saying why: the brief tells a run to tick what's already done or no
-// longer applies with a one-line note, and reopening it ran the same item again (argena's Crystal Meadow)
+// longer applies with a one-line note, and reopening it ran the same item again (gamerepo's Meadow Zone)
 const ALREADY = /\b(already (?:done|in|there|built|fixed|merged|applied|ticked|in place|in the code)|no longer appl(?:y|ies)|nothing (?:needed|left) to (?:change|do)|no (?:code )?change(?:s)? (?:was |were )?needed|needed no (?:code )?change)/i;
 const SENT_TOOL = /send|reply|post|publish|forward|create_comment|comment/i;
 const DEPLOY_CMD = /\b(ssh|scp|rsync|kubectl|docker (?:compose|push)|fly deploy|vercel|netlify deploy|wrangler (?:deploy|publish)|gh workflow run|symbiot deploy)\b/;
@@ -103,7 +103,7 @@ function judge(item, ev, { ops = false, hasTests = false, changed = 0 } = {}) {
 
 // The check already on record for this item: under its own words, or under its words before the run that
 // re-ticked it added a note ("— verified: …"). Keyed by the words alone, each re-tick was a first round,
-// so ROUNDS was never reached and Suno's send ran four times (24 Oct 2026).
+// so ROUNDS was never reached and Sonora's send ran four times (24 Oct 2026).
 const base = (k) => String(k || "").toLowerCase().replace(/\s+/g, " ").trim();
 function priorKey(all, item) {
   if (all[item]) return item;

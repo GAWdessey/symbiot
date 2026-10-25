@@ -27,20 +27,20 @@ const home = (n) => { const h = join(T, n); mkdirSync(join(h, ".config", "symbio
 const cfg = (h, f) => join(h, ".config", "symbiot", f);
 const put = (h, f, v) => writeFileSync(cfg(h, f), JSON.stringify(v));
 
-// One repo, Dailify: in work/dailify on this computer, in code/dailify-app on the laptop.
+// One repo, Acme: in work/acme on this computer, in code/acme-app on the laptop.
 const A = home("pop-os"), B = home("laptop"), REMOTE = join(T, "sync.git");
-const repoA = join(A, "work", "dailify"); mkdirSync(repoA, { recursive: true });
-sh("git", ["init", "-q", "-b", "main"], repoA); writeFileSync(join(repoA, "README.md"), "dailify\n");
+const repoA = join(A, "work", "acme"); mkdirSync(repoA, { recursive: true });
+sh("git", ["init", "-q", "-b", "main"], repoA); writeFileSync(join(repoA, "README.md"), "acme\n");
 sh("git", ["-c", "user.name=t", "-c", "user.email=t@t", "add", "."], repoA); sh("git", ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "first"], repoA);
-const repoB = join(B, "code", "dailify-app"); mkdirSync(join(B, "code"), { recursive: true }); sh("git", ["clone", "-q", repoA, repoB], T);
+const repoB = join(B, "code", "acme-app"); mkdirSync(join(B, "code"), { recursive: true }); sh("git", ["clone", "-q", repoA, repoB], T);
 const gid = "g" + sh("git", ["rev-list", "--max-parents=0", "HEAD"], repoA).slice(0, 12);
-put(A, "lane-ids.json", { ids: { [gid]: { name: "dailify", path: repoA, at: 1 } }, renamed: [] });
-put(B, "lane-ids.json", { ids: { [gid]: { name: "dailify-app", path: repoB, at: 1 } }, renamed: [] });
+put(A, "lane-ids.json", { ids: { [gid]: { name: "acme", path: repoA, at: 1 } }, renamed: [] });
+put(B, "lane-ids.json", { ids: { [gid]: { name: "acme-app", path: repoB, at: 1 } }, renamed: [] });
 sh("git", ["init", "-q", "--bare", "-b", "main", REMOTE], T);
 
-const TASK = "Add the streak counter to the Dailify home screen";
-put(A, "tasks.json", [{ id: "t1", text: TASK, repo: "dailify", laneId: gid, done: false, ts: 1 }]);
-put(A, "mind.json", { nodes: [{ id: "n1", name: "Dailify", kind: "project", facts: [{ text: "Dailify ships to the Play Store under GAWdessey.", ts: 1, where: "Home" }], ts: 1 }], log: [{ ts: 1, role: "user", text: "a chat line that stays here" }] });
+const TASK = "Add the streak counter to the Acme home screen";
+put(A, "tasks.json", [{ id: "t1", text: TASK, repo: "acme", laneId: gid, done: false, ts: 1 }]);
+put(A, "mind.json", { nodes: [{ id: "n1", name: "Acme", kind: "project", facts: [{ text: "Acme ships to the Play Store under GAWdessey.", ts: 1, where: "Home" }], ts: 1 }], log: [{ ts: 1, role: "user", text: "a chat line that stays here" }] });
 mkdirSync(join(repoA, ".symbiot"), { recursive: true });
 writeFileSync(join(repoA, ".symbiot", "ANSWERS.md"), "# Answers from the user\n\n### Which colour for the streak? {#colour}\nOrange.\n");
 
@@ -57,22 +57,22 @@ try {
   console.log("2) THIS COMPUTER → THE LAPTOP");
   const tb = JSON.parse(readFileSync(cfg(B, "tasks.json"), "utf8"));
   ok("the lane's task is on the laptop", tb.length === 1 && tb[0].text === TASK, tb);
-  ok("…filed under the laptop's own folder for the same repo (dailify-app), by the repo's id", tb[0].repo === "dailify-app" && tb[0].laneId === gid, tb[0]);
+  ok("…filed under the laptop's own folder for the same repo (acme-app), by the repo's id", tb[0].repo === "acme-app" && tb[0].laneId === gid, tb[0]);
   const mb = JSON.parse(readFileSync(cfg(B, "mind.json"), "utf8"));
-  ok("the memory fact is on the laptop", mb.nodes.some((n) => n.name === "Dailify" && n.facts.some((f) => /Play Store/.test(f.text))), mb.nodes);
+  ok("the memory fact is on the laptop", mb.nodes.some((n) => n.name === "Acme" && n.facts.some((f) => /Play Store/.test(f.text))), mb.nodes);
   ok("…and the chat log stayed behind", !(mb.log || []).length, mb.log);
   ok("the lane's answers are in the laptop's folder for it", /Orange\./.test(readFileSync(join(repoB, ".symbiot", "ANSWERS.md"), "utf8")));
 
   console.log("3) THE LAPTOP → THIS COMPUTER");
-  as(B, `const t = C.loadTasks(); t[0].done = true; t.push({ id: "t2", text: "Fix the streak reset at midnight", repo: "dailify-app", laneId: ${JSON.stringify(gid)}, done: false, ts: 2 }); C.saveTasks(t); M.remember([{ name: "Dailify", kind: "project", fact: "Dailify's streak resets at the user's local midnight." }], "Home"); return true;`);
+  as(B, `const t = C.loadTasks(); t[0].done = true; t.push({ id: "t2", text: "Fix the streak reset at midnight", repo: "acme-app", laneId: ${JSON.stringify(gid)}, done: false, ts: 2 }); C.saveTasks(t); M.remember([{ name: "Acme", kind: "project", fact: "Acme's streak resets at the user's local midnight." }], "Home"); return true;`);
   const rb = as(B, `return S.now();`);
   ok("the laptop syncs", rb.ok && rb.tasks === 2 && rb.memory === 2, rb);
   const ra = as(A, `return S.now();`);
   ok("this computer syncs", ra.ok && ra.from.length === 1, ra);
   const ta = JSON.parse(readFileSync(cfg(A, "tasks.json"), "utf8"));
   ok("the tick made on the laptop is here", ta.find((t) => t.id === "t1")?.done === true, ta);
-  ok("…and the laptop's new task, under this computer's folder name (dailify)", ta.find((t) => t.id === "t2")?.repo === "dailify", ta);
-  const ma = JSON.parse(readFileSync(cfg(A, "mind.json"), "utf8")), node = ma.nodes.find((n) => n.name === "Dailify");
+  ok("…and the laptop's new task, under this computer's folder name (acme)", ta.find((t) => t.id === "t2")?.repo === "acme", ta);
+  const ma = JSON.parse(readFileSync(cfg(A, "mind.json"), "utf8")), node = ma.nodes.find((n) => n.name === "Acme");
   ok("the fact learned on the laptop is here, beside the one learned here, in one node", node && node.facts.length === 2 && node.id === "n1", node);
   ok("…and this computer's chat log is untouched", ma.log.length === 1);
 
@@ -99,13 +99,13 @@ try {
   const files = sh("git", ["--git-dir", REMOTE, "ls-tree", "-r", "--name-only", "main"], T).split("\n");
   ok("keys.json and one sealed file per machine", files.includes("keys.json") && files.filter((f) => /^machines\/[0-9a-f]+\.enc$/.test(f)).length === 2, files);
   const blob = files.map((f) => sh("git", ["--git-dir", REMOTE, "show", "main:" + f], T)).join("\n") + sh("git", ["--git-dir", REMOTE, "log", "--format=%s%n%b", "main"], T);
-  ok("not a task, a fact, an answer or the PIN is readable in it", !/streak|Dailify|Play Store|Orange|harbour/i.test(blob));
+  ok("not a task, a fact, an answer or the PIN is readable in it", !/streak|Acme|Play Store|Orange|harbour/i.test(blob));
   ok("the sync key isn't in it either, only wrapped", !blob.includes(as(A, `const v = await import(${JSON.stringify(join(ROOT, "vault.mjs"))}); return v.peekSecret(S.KEY_NAME).values[0].v;`)));
   ok("the sync key is kept in each computer's vault, and isn't synced as a secret", !as(B, `const v = await import(${JSON.stringify(join(ROOT, "vault.mjs"))}); return (await S.stamped()).vault[S.KEY_NAME] || null;`));
 
   console.log("7) SECRETS");
-  as(A, `const v = await import(${JSON.stringify(join(ROOT, "vault.mjs"))}); v.saveSecret("dailify play console token", ["tok-123"]); return S.now();`);
-  ok("a secret saved here reaches the laptop's vault", as(B, `await S.now(); const v = await import(${JSON.stringify(join(ROOT, "vault.mjs"))}); return v.peekSecret("dailify play console token").values?.[0]?.v;`) === "tok-123");
+  as(A, `const v = await import(${JSON.stringify(join(ROOT, "vault.mjs"))}); v.saveSecret("acme play console token", ["tok-123"]); return S.now();`);
+  ok("a secret saved here reaches the laptop's vault", as(B, `await S.now(); const v = await import(${JSON.stringify(join(ROOT, "vault.mjs"))}); return v.peekSecret("acme play console token").values?.[0]?.v;`) === "tok-123");
 
   console.log("8) THE MERGE ITSELF");
   const U = await import("../sync.mjs");

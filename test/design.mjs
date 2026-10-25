@@ -129,11 +129,11 @@ try {
   ok("the critic judges against the spec as well as the standard", cb.includes("The spec it was built to") && cb.includes(st[0].spec) && /missing or wrong fails it/.test(cb));
   D.startDesign(dl, md.replace("booking page for the salon", "staff rota screen")); ok("a designer that didn't start leaves nothing pending", D.dropDesign(dl) === 1 && Object.values(D.designOf(dl)).every((v) => !v.pending));
 
-  console.log("DESIGN FIRST — a step's brief handed in as a task is never designed or judged as a job of its own (24 Oct 2026, daaymn)");
+  console.log("DESIGN FIRST — a step's brief handed in as a task is never designed or judged as a job of its own (24 Oct 2026, webapp)");
   const job = "New job: give each screen of the Flutter web demo its own address, so Marketing can capture the Play-listing screenshots";
-  const critic = "Act as Symbiot's design critic for the daaymn lane. Judge the finished job, don't polish it: change no code and tick nothing. The job: give each screen of the Flutter web demo its own address, so Marketing can capture them";
+  const critic = "Act as Symbiot's design critic for the webapp lane. Judge the finished job, don't polish it: change no code and tick nothing. The job: give each screen of the Flutter web demo its own address, so Marketing can capture them";
   ok("a critic's or designer's brief is told from a task, and its job read from it", D.isBrief(critic) && D.isBrief("You are Symbiot's product designer: read .symbiot/UI-DESIGNER.md") && !D.isBrief(job) && /^give each screen/.test(D.taskOf(critic)) && D.sameJob(critic, job));
-  const dj = join(HOME, "work", "daaymn"); mkdirSync(join(dj, ".symbiot", "design"), { recursive: true });
+  const dj = join(HOME, "work", "webapp"); mkdirSync(join(dj, ".symbiot", "design"), { recursive: true });
   const jobSpec = ".symbiot/design/give-each-screen-of-the-flutter-web-demo-its-own-address-so-m.md";
   writeFileSync(join(dj, ".symbiot", "ui-design.json"), JSON.stringify({ [job]: { spec: jobSpec, at: 1 } }));
   D.saveReview(dj, { [job]: { rounds: 1, at: 1, fixes: ["the photo fades in"] } });
