@@ -4,7 +4,7 @@ What each Symbiot release brought, newest first. When Approve bumps the version,
 
 ## 0.90.9 — 2026-10-25
 
-- **Approved work goes to the right branch on GitHub.** Daaymn's approved changes sat on Home as "Send daaymn's approved work: no PR opened" and the button never worked: with no default branch recorded in the clone, Symbiot picked an old `main` that shares no history with the project (its real default is `master`), so every pull request failed with "no history in common with main". It now picks the one branch that shares history with the work.
+- **Approved work goes to the right branch on GitHub.** A project's approved changes sat on Home as "Send <project>'s approved work: no PR opened" and the button never worked: with no default branch recorded in the clone, Symbiot picked an old `main` that shares no history with the project (its real default is `master`), so every pull request failed with "no history in common with main". It now picks the one branch that shares history with the work.
 
 ## 0.90.8 — 2026-10-25
 

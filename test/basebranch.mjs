@@ -1,5 +1,5 @@
 // The branch a PR goes into when the clone has no origin/HEAD: one that shares history with the work, never a
-// stale `main` with none (daaymn, 25 Oct 2026: "no history in common with main" on every PR).
+// stale `main` with none (a real project, 25 Oct 2026: "no history in common with main" on every PR).
 //
 //   node test/basebranch.mjs
 //
