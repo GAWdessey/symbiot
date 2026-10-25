@@ -1,0 +1,30 @@
+guard.mjs:21:const SECRET = [".ssh", ".gnupg", ".aws", ".azure", ".kube", ".docker/config.json", ".config/gcloud", ".config/gh/hosts.yml", ".netrc", ".npmrc", ".pypirc", ".git-credentials"];
+guard.mjs:22:const under = (p, d) => p === d || p.startsWith(d.endsWith("/") ? d : d + "/");
+guard.mjs:23:const expand = (p, home, cwd) => resolve(cwd, String(p).replace(/^~(?=\/|$)/, home).replace(/^\$HOME(?=\/|$)/, home).replace(/^\$\{HOME\}(?=\/|$)/, home));
+guard.mjs:24:const BROWSER = /\b(google-chrome(-stable)?|chromium(-browser)?|chrome|firefox|msedge|playwright|puppeteer|wkhtmltoimage|cutycapt)\b/i;
+guard.mjs:25:const SCP_VALUE = /^-[346ABCOpqRrTv]*[iFoPSJcl]$/; // an scp option (alone or after flags, -rpi) whose value is the next word
+guard.mjs:26:function secretPath(p, home) { return SECRET.some((s) => under(p, join(home, s))); }
+guard.mjs:27:function symbiotConfig(p, home) { return p === join(home, ".config", "symbiot", "config.json"); }
+guard.mjs:30:function currentBranch(cwd) { try { return execFileSync("git", ["-C", cwd, "rev-parse", "--abbrev-ref", "HEAD"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim(); } catch { return ""; } }
+guard.mjs:32:function judgeBash(cmd, { cwd, home, branch }) {
+guard.mjs:77:function judge(tool, input = {}, { cwd = process.cwd(), home = homedir(), branch, writes = null } = {}) {
+guard.mjs:91:const main = process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+guard.mjs:101:export { judge, judgeBash, relative };
+estimate.mjs:17:const FILE = join(CONFIG_DIR, "durations.json"), KEEP = 400, MIN_SAMPLES = 3;
+estimate.mjs:18:const kindOf = (cmd) => (/The user has answered|has answered:/i.test(String(cmd || "")) ? "answer" : "brief");
+estimate.mjs:23:const LOGS = new Map();
+estimate.mjs:24:function runsInLog(file) {
+estimate.mjs:41:function take(c, l) {
+estimate.mjs:50:function laneRuns(path) { return [...runsInLog(join(path, ".symbiot", "agent.log.old")), ...runsInLog(join(path, ".symbiot", "agent.log"))]; }
+estimate.mjs:52:function loadDurations(file = FILE) { try { const a = JSON.parse(readFileSync(file, "utf8")); return Array.isArray(a) ? a : []; } catch { return []; } }
+estimate.mjs:54:function noteDuration({ path, cmd, task = "", ms }, file = FILE) {
+estimate.mjs:60:const q = (xs, p) => { const s = [...xs].sort((a, b) => a - b), i = (s.length - 1) * p, lo = Math.floor(i); return s[lo] + (s[Math.ceil(i)] - s[lo]) * (i - lo); };
+estimate.mjs:62:const mins = (ms) => { const m = Math.max(1, Math.round(ms / 60000)); return m <= 10 ? m : m <= 60 ? Math.round(m / 5) * 5 : Math.round(m / 15) * 15; };
+estimate.mjs:63:const span = (lo, hi) => { const a = mins(lo), b = Math.max(mins(hi), a); const f = (m) => (m >= 60 ? (m % 60 ? `${Math.floor(m / 60)} h ${m % 60}` : `${m / 60} h`) : `${m}`); return a === b ? `about ${f(a)}${a >= 60 && !(a % 60) ? "" : " min"}` : `${f(a)}–${f(b)}${b >= 60 && !(b % 60) ? "" : " min"}`; };
+estimate.mjs:66:function sampleSets({ path, kind = "brief", type = "", typeOf = () => "", durations = loadDurations(), runs = null } = {}) {
+estimate.mjs:80:function estimate({ path, kind = "brief", type = "", typeOf, elapsed = 0, queued = 0, durations, runs } = {}) {
+estimate.mjs:103:function estimateWords(e) {
+estimate.mjs:109:export { estimate, estimateWords, sampleSets, noteDuration, loadDurations, runsInLog, laneRuns, kindOf, mins, span };
+lanes.mjs:31:const LEDGER = join(CONFIG_DIR, "lanes.json");
+lanes.mjs:32:const ACT_DIR = join(CONFIG_DIR, "drafts");
+lanes.mjs:33:const MAX_KEEP = 200, MAX_CHAIN = 4, TAIL = 4000;

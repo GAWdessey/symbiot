@@ -93,22 +93,33 @@ function holdsMerge(slug, { now = Date.now(), home = homedir() } = {}) {
   const name = (x) => String(x || "").split("/").pop(); // by its name too: a repo that moved owner keeps an old remote (GitHub redirects it)
   return Object.entries(all).filter(([, v]) => v && v.slug && (v.slug === slug || name(v.slug) === name(slug)) && now - (v.at || 0) < OPEN_MS).flatMap(([folder, v]) => (v.items || []).map((item) => ({ folder, item })));
 }
+// A step's own brief that came back in as a task line: on 24 Oct 2026 an agent handed the webapp lane
+// "Act as Symbiot's design critic for the webapp lane. Judge the finished job… The job: give each
+// screen of the Flutter web demo its own address…", and a designer was started on the critic's
+// brief, for a job that already had its spec and its review, with a spec named after the brief.
+// A step works from the task it's for: a brief's "The job: …", or nothing when it names none.
+const BRIEF = /^(?:new job:\s*)?(?:(?:act as|you are)\s+(?:symbiot'?s\s+|the\s+|a\s+)?(?:design critic|product designer|ui designer|designer|critic|ui specialist)\b|(?:design critic|design first)\s*:)/i;
+const isBrief = (t) => BRIEF.test(String(t || "").trim());
+const taskOf = (t) => { t = String(t || "").trim(); if (!isBrief(t)) return t; const m = t.match(/\bthe job(?: is)?:\s*(.+)$/i); return m ? m[1].trim() : ""; };
+// The same job in other words' clothing: "New job: X…" and a brief's "The job: X…", cut at 200.
+const jobNorm = (t) => taskOf(t).replace(/^new job:\s*/i, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+function sameJob(a, b) { const x = jobNorm(a), y = jobNorm(b), n = Math.min(x.length, y.length, 60); return n >= 20 && x.slice(0, n) === y.slice(0, n); }
 const itemKey = (t) => String(t || "").replace(/^\s*[-*+]\s*\[[ xX~]\]\s*/, "").replace(/\s+—\s+UI review \(round \d\).*$/, "").trim().slice(0, 200);
 // Ticked UI items the critic hasn't passed: [{ item }]. files: what the run touched (a task that
 // doesn't name its UI still is one when it changed a page or a stylesheet).
 function toReview(md, files = [], review = {}) {
   const ticked = String(md || "").split("\n").filter((l) => /^\s*[-*+]\s*\[[xX]\]/.test(l)).map(itemKey).filter(Boolean);
   const ui = ticked.filter((t) => isUiWork(t) || (files.length && isUiWork("", files) && ticked.length === 1));
-  return ui.filter((t) => !(review[t] && (review[t].passed || review[t].rounds >= MAX_ROUNDS))).map((item) => ({ item, rounds: (review[item] && review[item].rounds) || 0 }));
+  return ui.filter((t) => taskOf(t) && !(review[t] && (review[t].passed || review[t].rounds >= MAX_ROUNDS))).map((item) => ({ item, rounds: (review[item] && review[item].rounds) || 0 }));
 }
 // The critic's instructions, written to .symbiot/UI-CRITIC.md: the run's own prompt passes through
 // two shells (agents.mjs HANDOFF_PROMPT), so it only says to read this file.
 const CRITIC_PROMPT = "You are the design critic of Symbiot, a UI specialist: read .symbiot/UI-CRITIC.md and do exactly what it says. You review the finished UI work of another agent; you did not build it."; // no quotes, $ or backticks: like HANDOFF_PROMPT it may pass through two shells
 function criticBrief(items, { cli = CLI, specs = [] } = {}) {
-  const sp = specs.filter((x) => items.some((i) => i.item === x.item));
+  const sp = specs.filter((x) => items.some((i) => i.item === x.item || sameJob(i.item, x.item)));
   return ["# Design critic: review the finished UI work", "",
     "You are Symbiot's design critic. Another agent built this and ticked it; you judge it, you don't polish it: change no code and tick nothing.", "",
-    "## What to judge", ...items.map((x) => `- ${x.item}`), "",
+    "## What to judge", ...items.map((x) => `- ${taskOf(x.item)}`), "",
     "## How",
     "1. Run it if it isn't running (its README or package.json says how).",
     `2. Screenshot every screen and state at both sizes: \`node "${cli}" shoot <url> --out .symbiot/shots/review\` (\`--full\` for a long page).`,
@@ -127,7 +138,8 @@ function settleVerdict(path, { md = null, now = Date.now() } = {}) {
   let text = md != null ? md : (() => { try { return readFileSync(tasksF, "utf8"); } catch { return ""; } })();
   const out = { passed: [], reopened: [], failed: [] };
   for (const x of v.items) {
-    const item = itemKey(x.item); if (!item) continue;
+    let item = itemKey(x.item); if (!item) continue;
+    if (!review[item]) item = Object.keys(review).find((k) => isBrief(k) && sameJob(k, item)) || item; // it was listed by its task
     const r = review[item] || { rounds: 1 }, fixes = (Array.isArray(x.fixes) ? x.fixes : []).map((s) => String(s).trim()).filter(Boolean).slice(0, 12);
     const line = text.split("\n").findIndex((l) => /^\s*[-*+]\s*\[[xX]\]/.test(l) && itemKey(l) === item);
     if (x.pass) { review[item] = { ...r, passed: true, at: now, shots: x.shots || [] }; out.passed.push(item); continue; }
@@ -157,20 +169,32 @@ const THING = /\b(viewers?|pages?|screens?|dashboards?|demos?|portals?|apps?|sit
 const NOT_LOOK = /\b(faster|performance|speed|memory|tests?|bug|crash|refactor|deploy|migrat\w*|endpoint|api|backend|server|database|schema|cron|webhook)\b/i;
 const SMALL = /\b(fix|tweak|nudge|align|typo|colou?r|spacing|padding|margin|rename|bump|move|wording|label)\b/i;
 const WHOLE = /\b(redesign|rework|rebuild|overhaul|revamp|new (?:page|screen|app|view|flow|dashboard|site))\b/i;
-function designWorthy(text = "") { const t = String(text || ""); if (WHOLE.test(t)) return true; return THING.test(t) && BIG.test(t) && !SMALL.test(t) && !NOT_LOOK.test(t); }
+// A job with no screens: a command or the plumbing under one. "Make symbiot shoot wait for the page's
+// network to settle, then take its picture" (24 Oct 2026) got a designer asking for wireframes at 1440
+// and 390: "page" and "make" read as a new screen.
+const NO_SCREEN = /\b(cli|command[- ]line|terminal|network|time-?outs?|wait(?:s|ing)? (?:for|until)|retr(?:y|ies)|symbiot (?:shoot|screens|browser|capture|secret|login|logout|push|post|watch|models|setup-local|overrides|whoami|uninstall))\b|(?:^|\s)--[a-z]/i;
+// A job that says it's built already (the work sits uncommitted in a worktree, say): nothing to design.
+const BUILT = /\b(already (?:done|built|made|fixed|written|in place|shipped|merged|finished|implemented)|(?:done|built) already|uncommitted in)\b/i;
+function designWorthy(text = "") {
+  const t = String(text || ""); if (BUILT.test(t)) return false; if (WHOLE.test(t)) return true;
+  return THING.test(t) && BIG.test(t) && !SMALL.test(t) && !NOT_LOOK.test(t) && !NO_SCREEN.test(t);
+}
 const designOf = (path) => readJson(join(path, ".symbiot", DESIGN), {}) || {};
 function saveDesign(path, d) { try { mkdirSync(join(path, ".symbiot"), { recursive: true }); writeFileSync(join(path, ".symbiot", DESIGN), JSON.stringify(d, null, 1)); } catch {} }
-const specSlug = (item) => String(item).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60) || "ui";
+const specSlug = (item) => String(taskOf(item) || item).replace(/^new job:\s*/i, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60) || "ui";
 // Open UI items that need a spec and have none, nor a failed try: [{ item, spec }] (spec: its path in the folder).
-function toDesign(md, design = {}) {
+// A job with a spec already (under its own words or a brief's), or with a critic's verdict on it, is
+// past design. review: the folder's ui-review.json.
+function toDesign(md, design = {}, review = {}) {
   const open = String(md || "").split("\n").filter((l) => /^\s*[-*+]\s*\[ \]/.test(l)).map(itemKey).filter(Boolean);
-  return [...new Set(open)].filter((t) => designWorthy(t) && (!design[t] || design[t].pending)).map((item) => ({ item, spec: `.symbiot/design/${specSlug(item)}.md` }));
+  const done = (t) => Object.entries(design).some(([k, v]) => k !== t && v && !v.pending && !v.missing && sameJob(k, t)) || Object.entries(review).some(([k, v]) => v && (v.rounds > 0 || v.passed) && (k === t || sameJob(k, t)));
+  return [...new Set(open)].filter((t) => taskOf(t) && designWorthy(taskOf(t)) && (!design[t] || design[t].pending) && !done(t)).map((item) => ({ item, spec: `.symbiot/design/${specSlug(item)}.md` }));
 }
 // The designer's instructions, written to .symbiot/UI-DESIGNER.md.
 function designerBrief(items, { cli = CLI } = {}) {
   return ["# Design first: what this should be, before anyone builds it", "",
     "You are Symbiot's product designer. A builder will build this after you, to your spec, and a critic will judge it against your spec. You decide what it should be. Write no code and tick nothing: your work is the spec.", "",
-    "## What to design", ...items.map((x) => `- ${x.item}\n  → write the spec to \`${x.spec}\``), "",
+    "## What to design", ...items.map((x) => `- ${taskOf(x.item)}\n  → write the spec to \`${x.spec}\``), "",
     "## How",
     "1. Read the task, the code it touches and what exists now. If there's a screen already, run it and look at it: " + `\`node "${cli}" shoot <url> --out .symbiot/shots/design\`` + ", then open the screenshots. Read the product's own UI code for its looks, components and words, so what you design fits it.",
     "2. Work out who it's for and what they're trying to do, from the task and the repo. Don't ask unless it truly can't be told; then say what you assumed.",
@@ -206,7 +230,7 @@ function dropDesign(path) { const d = designOf(path); let n = 0; for (const [k, 
 const specsFor = (path) => Object.entries(designOf(path)).filter(([, v]) => v && v.spec && !v.pending && !v.missing && existsSync(join(path, v.spec))).map(([item, v]) => ({ item, spec: v.spec }));
 // Before a run: what needs designing first. Marks them pending and writes the designer's brief.
 function startDesign(path, md, { now = Date.now() } = {}) {
-  const items = toDesign(md, designOf(path)); if (!items.length) return [];
+  const items = toDesign(md, designOf(path), reviewOf(path)); if (!items.length) return [];
   const d = designOf(path); for (const x of items) d[x.item] = { pending: true, spec: x.spec, at: now };
   try { mkdirSync(join(path, ".symbiot", "design"), { recursive: true }); writeFileSync(join(path, ".symbiot", "UI-DESIGNER.md"), designerBrief(items)); } catch { return []; }
   saveDesign(path, d);
@@ -233,4 +257,4 @@ function shoot(url, { out, sizes = "1440x900,390x844", full = false, bin, now = 
   return failed.length && !shots.length ? { error: "Chrome didn't take the screenshots here.", failed } : { shots, ...(failed.length ? { failed } : {}) };
 }
 
-export { dropDesign, designWorthy, toDesign, designerBrief, settleDesign, specsFor, startDesign, designOf, DESIGNER_PROMPT, DESIGN, MIN_SPEC, slugOf, folderSlug, noteOpen, holdsMerge, OPEN_MS, isUiWork, designBrief, CHECKLIST, toReview, criticBrief, CRITIC_PROMPT, settleVerdict, reviewOf, saveReview, itemKey, shoot, REVIEW, VERDICT, MAX_ROUNDS };
+export { isBrief, taskOf, sameJob, dropDesign, designWorthy, toDesign, designerBrief, settleDesign, specsFor, startDesign, designOf, DESIGNER_PROMPT, DESIGN, MIN_SPEC, slugOf, folderSlug, noteOpen, holdsMerge, OPEN_MS, isUiWork, designBrief, CHECKLIST, toReview, criticBrief, CRITIC_PROMPT, settleVerdict, reviewOf, saveReview, itemKey, shoot, REVIEW, VERDICT, MAX_ROUNDS };

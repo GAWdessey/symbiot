@@ -107,6 +107,11 @@ try {
   const notWorthy = ["Fix the spacing on the vault button", "Tweak the colour of the header", "Add a delete button to each row", "Make the app faster on startup", "Add a webhook endpoint for SMS", "Rename the Save button to Keep"];
   ok("a new screen, page, dashboard or a rework is designed first", worthy.every((t) => D.designWorthy(t)), worthy.filter((t) => !D.designWorthy(t)));
   ok("…a small fix, one control, or work nobody looks at isn't", notWorthy.every((t) => !D.designWorthy(t)), notWorthy.filter((t) => D.designWorthy(t)));
+  const noScreen = ["Make symbiot shoot wait for the page's network to settle, then take its picture", "Make the page capture command-line tool retry on a timeout", "Add a --full option to the screenshot page command"];
+  ok("…nor a job with no screens: a command or what's under one (24 Oct 2026)", noScreen.every((t) => !D.designWorthy(t)), noScreen.filter((t) => D.designWorthy(t)));
+  const built = ["Build the booking page for the salon: already done, uncommitted in worktree ~/projects/salon-book", "Redesign the settings page (already built on branch x)"];
+  ok("…nor one that's built already", built.every((t) => !D.designWorthy(t)), built.filter((t) => D.designWorthy(t)));
+  ok("…and a ticked or waiting one gets no designer", D.toDesign("- [x] Build the booking page for the salon\n- [~] Redesign the settings page (waits on: Garth)\n").length === 0);
   const dl = join(HOME, "work", "atlas"); mkdirSync(join(dl, ".symbiot"), { recursive: true });
   const md = "## Tasks\n- [ ] Build the booking page for the salon\n- [ ] Fix the spacing on the footer\n- [x] Redesign the old report page\n";
   const st = D.startDesign(dl, md);
@@ -123,6 +128,25 @@ try {
   const cb = D.criticBrief([{ item: st[0].item, rounds: 0 }], { specs: D.specsFor(dl) });
   ok("the critic judges against the spec as well as the standard", cb.includes("The spec it was built to") && cb.includes(st[0].spec) && /missing or wrong fails it/.test(cb));
   D.startDesign(dl, md.replace("booking page for the salon", "staff rota screen")); ok("a designer that didn't start leaves nothing pending", D.dropDesign(dl) === 1 && Object.values(D.designOf(dl)).every((v) => !v.pending));
+
+  console.log("DESIGN FIRST — a step's brief handed in as a task is never designed or judged as a job of its own (24 Oct 2026, webapp)");
+  const job = "New job: give each screen of the Flutter web demo its own address, so Marketing can capture the Play-listing screenshots";
+  const critic = "Act as Symbiot's design critic for the webapp lane. Judge the finished job, don't polish it: change no code and tick nothing. The job: give each screen of the Flutter web demo its own address, so Marketing can capture them";
+  ok("a critic's or designer's brief is told from a task, and its job read from it", D.isBrief(critic) && D.isBrief("You are Symbiot's product designer: read .symbiot/UI-DESIGNER.md") && !D.isBrief(job) && /^give each screen/.test(D.taskOf(critic)) && D.sameJob(critic, job));
+  const dj = join(HOME, "work", "webapp"); mkdirSync(join(dj, ".symbiot", "design"), { recursive: true });
+  const jobSpec = ".symbiot/design/give-each-screen-of-the-flutter-web-demo-its-own-address-so-m.md";
+  writeFileSync(join(dj, ".symbiot", "ui-design.json"), JSON.stringify({ [job]: { spec: jobSpec, at: 1 } }));
+  D.saveReview(dj, { [job]: { rounds: 1, at: 1, fixes: ["the photo fades in"] } });
+  ok("a job that has its spec and a critic's verdict gets no designer, even under a brief's words", D.startDesign(dj, `## Tasks\n- [ ] ${critic}\n`).length === 0 && !existsSync(join(dj, ".symbiot", "UI-DESIGNER.md")), D.designOf(dj));
+  const fresh = D.toDesign(`## Tasks\n- [ ] Act as Symbiot's product designer. The job: build the booking page for the salon\n`, {});
+  ok("…one with neither is designed from the task, and its spec named after the task, not the brief's first line", fresh.length === 1 && fresh[0].spec === ".symbiot/design/build-the-booking-page-for-the-salon.md" && D.designerBrief(fresh).includes("- build the booking page for the salon\n") && !D.designerBrief(fresh).includes("Act as"), fresh);
+  ok("…a brief that names no job is no job at all", D.toDesign("- [ ] You are Symbiot's design critic: read .symbiot/UI-CRITIC.md and redesign the page\n", {}).length === 0 && D.toReview("- [x] Act as Symbiot's design critic: judge the new dashboard page\n").length === 0);
+  const items = D.toReview(`- [x] ${critic}\n`), cbj = D.criticBrief(items, { specs: [{ item: job, spec: jobSpec }] });
+  ok("the critic judges the task, against the job's spec, never the brief", /## What to judge\n- give each screen/.test(cbj) && !/What to judge\n- Act as/.test(cbj) && cbj.includes(jobSpec), cbj.slice(0, 400));
+  D.saveReview(dj, { [D.itemKey(critic)]: { rounds: 1, at: 1 } });
+  writeFileSync(join(dj, ".symbiot", "ui-verdict.json"), JSON.stringify({ items: [{ item: D.taskOf(critic), pass: true, shots: [] }] }));
+  const sv = D.settleVerdict(dj, { md: `- [x] ${critic}\n` });
+  ok("…and its verdict, given by the task, settles the item it came from", sv && sv.passed.length === 1 && D.reviewOf(dj)[D.itemKey(critic)].passed, sv);
 
   console.log("DESIGN FIRST — the run: the designer goes first, on the strongest model, then the builder, told of the spec");
   const { execSync } = await import("node:child_process");

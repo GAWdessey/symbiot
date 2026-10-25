@@ -354,7 +354,25 @@ try {
   const l2 = leftToYou("Nothing left to do here.\n\n- **Reply to Alex:** you picked sending it yourself. The draft is still in drafts, not sent. One catch: the link in it is wrapped in a google.com redirect. Fix that before you send.\n- **Remy:** left alone, you'll tell him.");
   ok("…the reply to Alex you said you'd send: named by its point, with the catch it found", l2 && l2.kind === "approve" && l2.label === "Reply to Alex" && /^Reply to Alex: you picked sending it yourself/.test(l2.what) && l2.check === "One catch: the link in it is wrapped in a google.com redirect. Fix that before you send.", l2);
   const l3 = leftToYou("The fixed URL still isn't live. Running tailscale needs sudo, and only you can do that.\n\nOpen a terminal, paste this, and type your password when it asks:\n\n```\nsudo tailscale up\n```\n\nThat gives the URL.");
-  ok("…a sudo step: yours, with the command to run", l3 && l3.kind === "step" && /only you can do that/.test(l3.what) && /type your password when it asks: ``` sudo tailscale up ```/.test(l3.check), l3);
+  ok("…a sudo step: yours, with what to do, but never the command itself (the user doesn't code)", l3 && l3.kind === "step" && /only you can do that/.test(l3.what) && /type your password when it asks\.$/.test(l3.check) && !/sudo tailscale|`/.test(l3.check), l3);
+  // 24 Oct 2026: "Not checked: … because the membrane blocks me from reading them. To compare them yourself: diff <(jq -S . ~/.config/…)" was the card's check
+  const blk = "Changes 7 and 8 are in.\n\n- **Not checked:** the settings and vault files before and after 05:44, because the membrane blocks me from reading them. To compare them yourself: diff <(jq -S . ~/.cfg/a.json.bak) <(jq -S . ~/.cfg/a.json)\n- **Email:** the draft to Dana isn't sent yet.";
+  const l4 = leftToYou(blk);
+  ok("a card never hands the user a command: a 'compare them yourself' with one isn't its check", l4 && /Dana/.test(l4.what) && !/diff|jq|~\/|yourself/.test(l4.check + l4.what), l4);
+  ok("…nor a path or a command in its own sentence", !/`|npm login/.test((leftToYou("- **Key:** only you can paste it: run `npm login` in a terminal.") || {}).what || "`"));
+  const { blockedChecks, blockedHandover } = await import("../handover.mjs");
+  const bc = blockedChecks(blk);
+  ok("a check its run couldn't make because the membrane stopped it reading is found, without the command", bc.length === 1 && /membrane blocks me from reading them\.$/.test(bc[0].what) && !/diff|jq/.test(bc[0].what), bc);
+  ok("…not one with no block in it, nor one it handed to ops already", !blockedChecks("- **Not checked:** iPhone (none connected).").length && !blockedChecks("- **Not checked:** the vault, as the sandbox stops me reading it; I handed it to ops.").length);
+  ok("…and its handover asks ops for names only in the vault, and no commands for the user", /compare entry names only/.test(blockedHandover("x", "y")) && /no commands or file paths/.test(blockedHandover("x", "y")));
+  {
+    const { handBlocked } = await import("../agents.mjs");
+    const lane = join(HOME, "blk-lane"); mkdirSync(join(lane, ".symbiot"), { recursive: true });
+    const n1 = handBlocked(lane, { final: blk }), md = readFileSync(join(lane, ".symbiot", "HANDOFF.md"), "utf8"), n2 = handBlocked(lane, { final: blk });
+    ok("a run that ends with such a check hands it to ops by itself, once", n1 === 1 && n2 === 0 && parseHandoffs(md).length === 1 && parseHandoffs(md)[0].lane === "ops" && /blk-lane lane's run/.test(md) && !/diff|jq/.test(md), [n1, n2, md]);
+    const act = join(CFG, "drafts", "act-blk"); mkdirSync(join(act, ".symbiot"), { recursive: true });
+    ok("…but not from an ops run: what ops can't read, nothing can", handBlocked(act, { final: blk }) === 0 && !existsSync(join(act, ".symbiot", "HANDOFF.md")));
+  }
   const none = ["I sent the email to Alex (2:19pm, it's in Sent).", "Done. Nothing was sent, since you said you'll drag it into your chat yourself.", "The Gemini and Notion connectors need authorizing in your claude.ai connector settings before an agent can use them.", "**Forwarding code removal:** done in whatsapp_module and waiting for your review.", "All 39 registers moved.", ""];
   ok("…not what's done, a connector to sign in to (Home has those), or an Approve waiting in Tasks", none.every((t) => leftToYou(t) === null), none.map(leftToYou));
   const feat = "I finished 4 of the 5 open items.\n\n- **Marketing lane:** It's lit amber with a count when something needs you: its agent's questions (also shown as blobs under Needs you), its work waiting for your OK, and the week's drafts. Clicking it opens the Marketing page with those lit at the top.";

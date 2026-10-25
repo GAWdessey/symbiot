@@ -74,11 +74,17 @@ try {
   console.log("A WORD TAKEN FOR A PASSWORD — never again, and put back");
   ok("\"Symbiot's\", \"don't\" or an Azure subscription id in a sentence about an account isn't a password", !findSecrets("i signed up to lemon squeezy, it's in Symbiot's vault").found.length && !findSecrets("Account information Subscription ID: 3f2504e0-4f89-41d3-9a0c-0305e82c3301 Subscription name: x").found.length && !findSecrets("my login: don't share it").found.length, [findSecrets("i signed up to lemon squeezy, it's in Symbiot's vault").found.map((f) => f.name)]);
   ok("…while a real one still is", findSecrets("login for acme.io is jane@example.com and Tq9#vbn2Lp, thanks").found.length === 1 && findSecrets("i signed up with jane@example.com Gale4Fjord$88").found.length === 1);
+  // 24 Oct 2026: "a password vault: 1Password or Bitwarden", an example in the design briefs, was vaulted as "stripe password"
+  const BRIEF = "The bar: the best product of its kind (a password vault: 1Password or Bitwarden; a dashboard: Linear or Stripe's; a booking flow: Calendly) and what it does that people now expect.";
+  ok("a product named as an example in a brief isn't a password", !findSecrets(BRIEF).found.length && !findSecrets("we use 1Password for the team's logins").found.length, findSecrets(BRIEF).found);
+  ok("…nor a password-shaped word in a sentence about password managers or a login page", !findSecrets("compare password managers like Keeper2go and Bitwarden").found.length && !findSecrets("the login page of Acme3.0beta looks dated").found.length);
+  ok("…while one clearly offered as a credential still is", findSecrets("my stripe password is Hunter22x").found.length === 1 && findSecrets("the password manager login is Tq9#vbn2Lp").found.length === 1);
   const { repairFalseSaves, saveSecret } = await import("../vault.mjs");
+  saveSecret("stripe password", ["1Password"]);
   saveSecret("password", ["Symbiot's"]); saveSecret("twitter password", ["3f2504e0-4f89-41d3-9a0c-0305e82c3301"]); saveSecret("mixed password", ["Symbiot's", "Real9#pass"]);
-  writeFileSync(join(CFG, "tasks.json"), JSON.stringify([{ id: "t9", text: "review [saved: password] startup, and [saved: password] website; id [saved: twitter password]; keep [saved: mixed password]" }]));
+  writeFileSync(join(CFG, "tasks.json"), JSON.stringify([{ id: "t9", text: "review [saved: password] startup, and [saved: password] website; id [saved: twitter password]; keep [saved: mixed password]; a vault: [saved: stripe password] or Bitwarden" }]));
   const rp = repairFalseSaves({ force: true }), t9 = JSON.parse(readFileSync(join(CFG, "tasks.json"), "utf8"))[0].text;
-  ok("a word wrongly vaulted goes back where it was blanked, and out of the vault", t9 === "review Symbiot's startup, and Symbiot's website; id 3f2504e0-4f89-41d3-9a0c-0305e82c3301; keep [saved: mixed password]" && !getSecret("password").ok && !getSecret("twitter password").ok && rp.restored.sort().join() === "password,twitter password", [rp, t9]);
+  ok("a word wrongly vaulted goes back where it was blanked, and out of the vault", t9 === "review Symbiot's startup, and Symbiot's website; id 3f2504e0-4f89-41d3-9a0c-0305e82c3301; keep [saved: mixed password]; a vault: 1Password or Bitwarden" && !getSecret("password").ok && !getSecret("twitter password").ok && !getSecret("stripe password").ok && rp.restored.sort().join() === "password,stripe password,twitter password", [rp, t9]);
   ok("…one that also holds a real value only loses the word", getSecret("mixed password").ok && getSecret("mixed password").value === "Real9#pass" && rp.dropped.join() === "mixed password", getSecret("mixed password"));
   ok("…and it runs once", repairFalseSaves().skipped === true);
   // the 0.66.x scrub left "[saved: password]" for "Symbiot's" with no journal: put back from the word after it

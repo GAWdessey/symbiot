@@ -211,7 +211,7 @@ function besideInputs(repo) {
 function loadTried(repo) { try { const o = JSON.parse(readFileSync(join(repo, ".symbiot", TRIED), "utf8")); return o && typeof o === "object" && !Array.isArray(o) ? o : {}; } catch { return {}; } }
 function saveTried(repo, all) { try { mkdirSync(join(repo, ".symbiot"), { recursive: true }); writeFileSync(join(repo, ".symbiot", TRIED), JSON.stringify(all)); } catch {} }
 function noteStarted(repo, taskId, m) { if (!taskId) return; const all = loadTried(repo), was = all[taskId] || {}; all[taskId] = { tries: was.tries || 0, started: m.startedAt, wt: m.wt, par: m.id }; saveTried(repo, all); }
-// how: "merged" | "conflict" (with patch: its file) | "handed" | "asked"; none: it
+// how: "merged" | "conflict" (with patch: its file) | "handed" | "asked" | "waited"; none: it
 // stopped unfinished (a try). forget: the start didn't take.
 function noteTried(repo, taskId, patch, { done = false, forget = false, how = done ? "merged" : "", patchFile = "", now = Date.now() } = {}) {
   if (!taskId) return;
@@ -228,11 +228,12 @@ function besideAgain(repo, taskId) {
   const t = repo && taskId ? loadTried(repo)[taskId] : null;
   if (!t) return null;
   const tries = t.tries || 0;
-  if (t.wt && !t.merged && !t.conflict && !t.handed && !t.asked && metaOf(t.wt)) return { tries, kind: "working", note: "a run beside it is on this now" };
+  if (t.wt && !t.merged && !t.conflict && !t.handed && !t.asked && !t.waited && metaOf(t.wt)) return { tries, kind: "working", note: "a run beside it is on this now" };
   if (t.merged) return { tries, kind: "merged", note: "a run beside it finished this and its changes are in" };
   if (t.conflict) return { tries, kind: "conflict", patch: t.patch || "", note: `a run beside it finished this, but its changes clash with the main folder's and wait in ${t.patch ? basename(t.patch) : "a patch"} for the lane's own run to merge` };
   if (t.handed) return { tries, kind: "handed", note: "a run beside it handed this to another lane and waits to hear back" };
   if (t.asked) return { tries, kind: "asked", note: "a run beside it asked you about this (its question is on the Workdesk)" };
+  if (t.waited) return { tries, kind: "waited", note: "a run beside it marked this as waiting on something, and the lane's own run carries on with it once that's in" };
   if (t.wt && !t.inputs) return null; // its start didn't take and nothing noted the end: free to try again
   if (t.inputs !== besideInputs(repo)) return null;
   return { tries, kind: "tried", note: `a run beside it stopped without finishing this${tries > 1 ? ` (${tries} tries)` : ""}, and nothing it ran with has changed since` };
@@ -302,7 +303,8 @@ function mergeBack(m, { addTask = null, code = 0, now = Date.now() } = {}) {
   const patch = git(wt, ["diff", "--cached", "--binary", m.base]).stdout || "";
   let tasksMd = ""; try { tasksMd = readFileSync(join(wt, ".symbiot", "TASKS.md"), "utf8"); } catch {}
   const ticked = tickedIn(tasksMd), done = code === 0 && ticked.length > 0, save = () => { const f = join(repo, ".symbiot", `parallel-${m.id}.patch`); try { mkdirSync(join(repo, ".symbiot"), { recursive: true }); writeFileSync(f, patch); } catch {} return f; };
-  const kept = out.kept = keepOutput(m), how = kept.handed ? "handed" : kept.asked ? "asked" : ""; // it handed over or asked: that's where it stands, not "unfinished"
+  const waits = waitedIn(tasksMd); if (!ticked.length && waits.length) waitInMain(repo, m.task, waits[0]); // it left the item waiting ([~]): the lane's brief says so too
+  const kept = out.kept = keepOutput(m), how = kept.handed ? "handed" : kept.asked ? "asked" : !ticked.length && waits.length ? "waited" : ""; // it handed over, asked or left it waiting on something: that's where it stands, not "unfinished"
   const finished = () => { tickInMain(repo, ticked); markReview(m.taskId, now); noteTried(repo, m.taskId, patch, { how: "merged", now }); prunePatches(repo, now); drop(repo, m); };
   const stopped = () => { noteTried(repo, m.taskId, patch, { how, now }); drop(repo, m); return { ...out, ...(how ? { [how]: true } : {}) }; };
   if (!patch.trim()) { if (!done) return stopped(); finished(); return { ...out, merged: true, ticked: true }; }
@@ -321,6 +323,16 @@ function mergeBack(m, { addTask = null, code = 0, now = Date.now() } = {}) {
   saveRunFiles(repo, [...loadRunFiles(repo), { id: "par-" + m.id, startedAt: m.startedAt, endedAt: now, ticked: ticked.length, files: files.sort() }]); // Approve ships these with the lane's other finished work
   finished();
   return { ...out, merged: true, files, ticked: true };
+}
+// A run beside that marked its item [~] (blocked, or Symbiot couldn't confirm it done) didn't stop
+// unfinished: it's waiting on something. Recorded as a try, the next answer anywhere in the lane
+// changed its inputs and a fresh copy ran the same item: Steve's chat fix ran in four (24 Oct 2026).
+const waitedIn = (md) => String(md || "").split("\n").filter((l) => /^\s*-\s*\[~\]/.test(l)).map((l) => l.trim());
+function waitInMain(repo, task, line, { running = runningHandoff } = {}) {
+  const f = join(repo, ".symbiot", running(repo) ? "TASKS.next.md" : "TASKS.md"); let md = ""; try { md = readFileSync(f, "utf8"); } catch { return false; }
+  const want = String(task).trim().toLowerCase(), lines = md.split("\n"), at = lines.findIndex((l) => /^\s*-\s*\[ \]/.test(l) && l.replace(/^\s*-\s*\[ \]\s*/, "").trim().toLowerCase() === want);
+  if (at < 0) return false;
+  lines[at] = line.replace(/^\s*/, ""); try { writeFileSync(f, lines.join("\n")); return true; } catch { return false; }
 }
 // The finished task shows ticked in the lane's brief, as if its own run had ticked it
 // (pushTasks then moves it to review). Appended when the brief has no line for it.
@@ -430,4 +442,4 @@ function mergeEnded({ merge = mergeBack, addTask = null, running = runningHandof
   return done;
 }
 
-export { besideAgain, noteTried, noteStarted, laneFacts, dropHeld, WT_DIR, DEFAULT_CAP, laneCap, claims, clash, isMergeTask, verdict, peel, inflight, inflightIds, parallelLane, openTasksOf, dirtyFiles, isGit, snapshot, startParallel, mergeBack, mergeEnded, briefFor, tickInMain, markReview, attachPatch, keepOutput, killUnder, prunePatches, pruneOrphans, sweep, exitOf, drop };
+export { waitedIn, waitInMain, besideAgain, noteTried, noteStarted, laneFacts, dropHeld, WT_DIR, DEFAULT_CAP, laneCap, claims, clash, isMergeTask, verdict, peel, inflight, inflightIds, parallelLane, openTasksOf, dirtyFiles, isGit, snapshot, startParallel, mergeBack, mergeEnded, briefFor, tickInMain, markReview, attachPatch, keepOutput, killUnder, prunePatches, pruneOrphans, sweep, exitOf, drop };

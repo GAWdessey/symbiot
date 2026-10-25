@@ -38,6 +38,17 @@ try {
   ok("…a send nothing shows went out, or only a draft made: not done", !j("Send the invoice to the client", call("Bash", { command: "symbiot screens press Send" }, "pressed")).ok && !j("Send the invoice to the client", call("mcp__claude_ai_Gmail__create_draft", {}, "ok")).ok);
   ok("a deploy with a check of the live address after it: done; without, or the check before it: not", j("Deploy the API to the server", call("Bash", { command: "ssh box 'cd app && git pull && pm2 restart api'" }, "ok"), call("Bash", { command: "curl -s https://api.example.com/health" }, "ok")).ok && !j("Deploy the API to the server", call("Bash", { command: "curl -s https://api.example.com/health" }, "ok"), call("Bash", { command: "ssh box restart" }, "ok")).ok);
 
+  console.log("TWICE OVER — what sent one item to run after run (24 Oct 2026)");
+  const steve = "Chat is read-only (your rule of 2026-10-18), but two older replies still start a learning goal during a chat turn";
+  ok("code in a repo's lane that only mentions replies or sending is code, not a send; one that starts by sending still is", D.kindOf(steve) === "code" && D.kindOf("Symbiot slow loop v0: the server reads the fight log and sends back 1 line") === "code" && D.kindOf("Reply to the broker") === "send" && D.kindOf("Agent: send the invoice") === "send" && D.kindOf("Send: reply to Kaggle on Gmail", { ops: true }) === "send");
+  ok("the check that it landed counts run through node too (`node $S screens verify`)", j("Send the approved reply to Sonora", call("Bash", { command: "S=/x/symbiot/index.mjs; timeout 100 node $S screens verify \"https://mail.google.com/mail/u/0/#sent\" --expect \"try Cover\"" }, "{\"ok\":true,\"found\":true}")).ok);
+  ok("a send reopened says not to send it again before looking", /Don't send it again before you look/.test(j("Send the invoice to the client").missing || ""));
+  ok("a code item ticked as already done or no longer applying, with no change, is done", D.judge("Next zone: Meadow Zone — already done in world.gd, no change needed", D.evidenceOf(""), { hasTests: true }).ok && D.judge("PR gamerepo#1 has conflicts — no longer applies: PR is mergeable", D.evidenceOf(""), { hasTests: true }).ok && !D.judge("Next zone: Meadow Zone", D.evidenceOf(""), { hasTests: true }).ok);
+  const sl = join(HOME, "work", "sends"); mkdirSync(join(sl, ".symbiot"), { recursive: true });
+  const s1 = D.settleDone(sl, { md: "## Tasks\n- [x] Send the approved reply to Sonora\n", ops: true, log: "" });
+  const s2 = D.settleDone(sl, { md: "## Tasks\n- [x] Send the approved reply to Sonora — verified: Gmail showed Message sent.\n", ops: true, log: "" });
+  ok("re-ticked with a note of its own, it's the same item: the second try waits on the user, not a third run", s1.reopened.length === 1 && s2.waiting.length === 1 && s2.reopened.length === 0 && Object.keys(D.checksOf(sl)).length === 1, [s2, D.checksOf(sl)]);
+
   console.log("AT THE RUN'S END — reopened with what's missing, then the user's after two tries");
   const lane = join(HOME, "work", "shop"); mkdirSync(join(lane, ".symbiot"), { recursive: true });
   const md = "## Tasks\n- [x] Old item ticked before\n- [x] Fix the login button\n- [ ] Something else\n";

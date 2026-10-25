@@ -21,7 +21,7 @@ import { apiOptions, blockedSignIn, apiRoute, realChrome, CHROME_READ, CHROME_AC
 import { actSites, goAhead, signInNotNeeded, switchOnAct } from "./chromegate.mjs";
 import { pushGo } from "./pushgate.mjs";
 import { goAhead as phoneGo } from "./phonegate.mjs";
-import { lanesJob, parseFacts, leftToYou, gitWork, agentsGitWork, agentsClicking, agentsCodeWork, agentsMail, agentsPosting, linkedAsks, linkedChore, PUSH_OK } from "./handover.mjs";
+import { lanesJob, parseFacts, leftToYou, blockedChecks, blockedHandover, OPS, gitWork, agentsGitWork, agentsClicking, agentsCodeWork, agentsMail, agentsPosting, linkedAsks, linkedChore, PUSH_OK } from "./handover.mjs";
 import { scanRoots, repoPathMap, laneMap } from "./scan.mjs";
 import { knowledgeFolders } from "./knowledge.mjs";
 import { pickModel, MODEL } from "./route.mjs";
@@ -606,6 +606,7 @@ function runHandoff(repoPath, { force = false, lost = false, model = "", onExit 
     if (!critic && !designer && noteSession(repoPath, code, !!resume && !fresh) === "lost") { setTimeout(() => { try { runHandoff(repoPath, { force: true, lost: true, onExit }); } catch {} }, 300); return; } // its conversation is gone: start afresh
     try { if (JSON.parse(readFileSync(lock, "utf8")).pid === e.pid) unlinkSync(lock); } catch {}
     try { const d = noteClaudeDown(repoPath); if (d) e.down = d; } catch {} // Claude itself was the reason: no start anywhere until it's back
+    if (!critic && !designer) try { handBlocked(repoPath); } catch {} // a check it couldn't make goes to ops, never to the user as a command
     // the tree as the run left it, asked of git once: the three checks below each ran a whole `git status -uall`
     let left; const after = () => (left === undefined ? (left = dirtyState(repoPath)) : left);
     noteBlocked(repoPath, scoped, e.startedAt, code, { dirtyBefore, ticksBefore, after });
@@ -697,6 +698,24 @@ function noteClaudeDown(path, now = Date.now(), { claude = isClaudeCmd(handoffCm
   if (d.kind === "auth" && !claude) d.until = now + AUTH_WAIT; // another agent's sign-in: nothing here can tell when it's back
   const had = loadPause(); if (!had || had.kind !== d.kind || (d.until || 0) > (had.until || 0)) try { writeJsonAtomic(PAUSE_FILE, { ...d, at: now }, { mode: 0o600 }); } catch {}
   return d.kind;
+}
+// A check its run couldn't make, because the sandbox or the membrane stopped it reading (handover.mjs
+// blockedChecks): handed to ops, which runs with Symbiot's own access, as a section of the run's
+// HANDOFF.md that Symbiot sends on (lanes.mjs). Once per check (HANDED_CHECKS, by its words), and
+// never from an ops run itself: what ops can't read, nothing can. How many it handed.
+const HANDED_CHECKS = "handed-checks.json", HANDED_CHECKS_FOR = 7 * 86400000;
+function handBlocked(path, { final, now = Date.now() } = {}) {
+  if (!path || resolve(path).startsWith(ACT_DIR)) return 0;
+  if (final === undefined) { try { final = parseRun(lastRunText(readSymbiot(path, "agent.log"))).final || ""; } catch { return 0; } }
+  const file = join(path, ".symbiot", HANDED_CHECKS), had = (readState(file) || {}), seen = {};
+  for (const [k, at] of Object.entries(had)) if (now - at < HANDED_CHECKS_FOR) seen[k] = at;
+  const fresh = blockedChecks(final).filter((c) => !seen[digest(c.what)]); if (!fresh.length) return 0;
+  const lane = basename(resolve(path)), md = readSymbiot(path, "HANDOFF.md");
+  const add = `${md && !/\n$/.test(md) ? "\n" : ""}${md ? "\n" : ""}### ${OPS}\n${blockedHandover(lane, fresh.map((c) => c.what).join(" "))}\n`;
+  try { mkdirSync(join(path, ".symbiot"), { recursive: true }); appendFileSync(join(path, ".symbiot", "HANDOFF.md"), add); } catch { return 0; }
+  for (const c of fresh) seen[digest(c.what)] = now;
+  try { writeJsonAtomic(file, seen); } catch {}
+  return fresh.length;
 }
 const START_GAP = 3000, START_GAP_MAX = 30000; let LAST_START = 0;
 // How long this start waits so starts come a few seconds apart; a batch of ten spreads over half a minute at most.
@@ -2160,6 +2179,7 @@ const tidyRules = (list) => [...new Set((Array.isArray(list) ? list : []).filter
 // A lane's settings.local.json put in those forms, with Symbiot's own deny rules current where
 // it had written them: the warnings stop, and the rules hold. True when the file changed.
 function tidySettings(path) {
+  if (!path) return false; // no folder is not the current folder
   const f = join(String(path || ""), ".claude", "settings.local.json"); let cur; try { cur = JSON.parse(readFileSync(f, "utf8")); } catch { return false; }
   const perm = cur && cur.permissions; if (!perm || typeof perm !== "object" || Array.isArray(perm)) return false;
   const next = { ...perm };
@@ -2709,4 +2729,4 @@ function agentsNow({ now = Date.now() } = {}) {
 }
 const forgetAgents = () => { agentsKept = null; };
 
-export { ensureRunnable, launcherOf, launchFault, opsWalls, walled, OPS_RO, OPS_OWN, OPS_HIDDEN, runOpen, namedRun, twinRunning, TWIN_WAIT, wholeLog, uiReview, onGoalAnswer, runOutcome, settleRecord, waitsOutside, triageSweep, runSection, autoStart, AUTO_MAX, oneNeedEach, NOTHING_FOR_YOU, chaseReport, CHASED, UNMET, heldAsk, onCardGone, withOwnTools, escalation, grantCard, cardRules, cardIsPermission, runPhase, onRunEnd, isClaudeCmd, GUARD, tidyRule, tidyRules, tidySettings, pruneRuns, claudePlugins, idlePlugins, runSettings, archiveAnswers, allAnswers, answersDigest, ANSWERS_ARCHIVE, ANSWERS_KEEP, runsTick, RUN_START, HANG_MIN, noteBlocked, userAnswers, CONTINUED_FILE, onAnswered, CHANGES, toKnownHost, continueLanes, autoPick, autoDecide, FACTS, factsOf, knownRun, withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, linkReach, fillHandoff, runHandoff, nothingToDo, whereOf, whereLine, whereAnswer, askTask, PARKED_NOTE, parkedPaths, isParked, parkLane, agentMissing, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, unchangedStep, waitingFor, startWaiting, noteUntracked, untrackedBefore, forgetUntracked, writeTasks, droppedTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, pickAgent, findOrcaCli, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, routeIdeas, agentQuestions, answerQuestions, agentsList, agentsNow, forgetAgents, AGENTS_KEEP, needsOf, settleNeeds, closeAsk, closedAsk, sameSubject, NEEDS_FOR, readLastWords, readNeeds, parseRead, READ_FILE, autoAllow, autoAllowSweep, allowlistInWork, installAllowlist, inWork, withScope, withTrust, sandboxFor, sandboxLifts, sandboxEnv, sandboxNeeds, sandboxState, sandboxWrites, SANDBOX_DIR, resumeFor, noteSession, tooLong, carryOn, RESUME_CTX, CARRY_PROMPT, trustFull, GUARD_SETTINGS, runCmdOf, claimLock, wideRoot, sandboxDenies, questionFolders, folderState, dirtyState, ANSWERS_SEEN, newAnswers, claudeDownIn, claudePause, noteClaudeDown, resetTime, PAUSE_FILE, startGap, isUrgent, urgentStop, urgentFirst, urgentUndo, urgentDone, urgentSweep, urgentState, licenceGate, stopRun, loadRunFiles, saveRunFiles, forgetRunFiles, withModel, routedModel, userWords, onShipping, waitingTask };
+export { handBlocked, ensureRunnable, launcherOf, launchFault, opsWalls, walled, OPS_RO, OPS_OWN, OPS_HIDDEN, runOpen, namedRun, twinRunning, TWIN_WAIT, wholeLog, uiReview, onGoalAnswer, runOutcome, settleRecord, waitsOutside, triageSweep, runSection, autoStart, AUTO_MAX, oneNeedEach, NOTHING_FOR_YOU, chaseReport, CHASED, UNMET, heldAsk, onCardGone, withOwnTools, escalation, grantCard, cardRules, cardIsPermission, runPhase, onRunEnd, isClaudeCmd, GUARD, tidyRule, tidyRules, tidySettings, pruneRuns, claudePlugins, idlePlugins, runSettings, archiveAnswers, allAnswers, answersDigest, ANSWERS_ARCHIVE, ANSWERS_KEEP, runsTick, RUN_START, HANG_MIN, noteBlocked, userAnswers, CONTINUED_FILE, onAnswered, CHANGES, toKnownHost, continueLanes, autoPick, autoDecide, FACTS, factsOf, knownRun, withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, linkReach, fillHandoff, runHandoff, nothingToDo, whereOf, whereLine, whereAnswer, askTask, PARKED_NOTE, parkedPaths, isParked, parkLane, agentMissing, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, unchangedStep, waitingFor, startWaiting, noteUntracked, untrackedBefore, forgetUntracked, writeTasks, droppedTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, pickAgent, findOrcaCli, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, routeIdeas, agentQuestions, answerQuestions, agentsList, agentsNow, forgetAgents, AGENTS_KEEP, needsOf, settleNeeds, closeAsk, closedAsk, sameSubject, NEEDS_FOR, readLastWords, readNeeds, parseRead, READ_FILE, autoAllow, autoAllowSweep, allowlistInWork, installAllowlist, inWork, withScope, withTrust, sandboxFor, sandboxLifts, sandboxEnv, sandboxNeeds, sandboxState, sandboxWrites, SANDBOX_DIR, resumeFor, noteSession, tooLong, carryOn, RESUME_CTX, CARRY_PROMPT, trustFull, GUARD_SETTINGS, runCmdOf, claimLock, wideRoot, sandboxDenies, questionFolders, folderState, dirtyState, ANSWERS_SEEN, newAnswers, claudeDownIn, claudePause, noteClaudeDown, resetTime, PAUSE_FILE, startGap, isUrgent, urgentStop, urgentFirst, urgentUndo, urgentDone, urgentSweep, urgentState, licenceGate, stopRun, loadRunFiles, saveRunFiles, forgetRunFiles, withModel, routedModel, userWords, onShipping, waitingTask };

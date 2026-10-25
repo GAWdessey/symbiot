@@ -95,6 +95,7 @@
     "claudesetup.mjs",
     "voice.mjs",
     "vault.mjs",
+    "sync.mjs",
     "vaultview.mjs",
     "licence.mjs",
     "lang.mjs",
