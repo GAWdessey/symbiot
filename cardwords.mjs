@@ -1,6 +1,6 @@
 // symbiot — the words on Home's project cards (the relay, workscene.mjs lqRelay), in plain English.
 // The cards showed what the agents wrote, as they wrote it: "Ran ssh -i ~/.ssh/stevevm …
-// ubuntu@92.4.133.97 'sudo -n s…", a raw "[~]", lowercase states for pills ("waiting on third
+// ubuntu@203.0.113.7 'sudo -n s…", a raw "[~]", lowercase states for pills ("waiting on third
 // party") and "ops: Sent: its agent asked you something first" (the user's screenshot, 24 Oct 2026;
 // the design spec of 25 Oct). What the agents write upstream is left as it is: this is the layer
 // the card puts on it. The full command still shows in the agent's log, under Its agents.

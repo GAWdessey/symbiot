@@ -11,7 +11,7 @@ const ok = (n, c, got) => { if (c) { pass++; console.log("  ✓ " + n); } else {
 const BANNED = /~\/\.ssh|\b\d{1,3}(?:\.\d{1,3}){3}\b|\||2>&1|\bsudo\b|\[[ x~]\]/i;
 
 // the "now" line: a verb phrase and how long it's taken, never the command
-const ssh = nowLine("Ran ssh -i ~/.ssh/stevevm -o BatchMode=yes ubuntu@92.4.133.97 'sudo -n systemctl status steve'", 4 * 60000, "Symbiot");
+const ssh = nowLine("Ran ssh -i ~/.ssh/stevevm -o BatchMode=yes ubuntu@203.0.113.7 'sudo -n systemctl status steve'", 4 * 60000, "Symbiot");
 ok("an ssh to Steve's server reads \"Checking the Steve server · 4m\" (the key's name, not the IP)", ssh === "Checking the Steve server · 4m", ssh);
 const tests = nowLine(`Ran grep -n '"test"' package.json; (npm test 2>&1 | tail -15)`, 4 * 60000, "Symbiot");
 ok("npm test reads \"Running Symbiot's tests · 4m\"", tests === "Running Symbiot's tests · 4m", tests);
@@ -29,7 +29,7 @@ ok("[x] reads \"ticked\" and [ ] \"open\"", plainMarks("2 [x], 1 [ ]") === "2 ti
   const a = plainMarks("Shipped the sign-up fix and ticked [x] both tasks."), b = plainMarks("marked `[x]` the task"), c = plainMarks("Marked them [x]."), d = plainMarks("Marked it as [x] and moved on");
   ok("a ticked/marked right before [x] folds into one \"ticked\"", a === "Shipped the sign-up fix and ticked both tasks." && b === "ticked the task" && c === "Ticked them." && d === "Ticked it and moved on", [a, b, c, d].join(" | "));
 }
-const cmd = plainSummary("Ran ssh -i ~/.ssh/steve_vm ubuntu@92.4.133.97 sudo ls /srv. All good. Tests pass (npm test 2>&1 | tail).", "Steve");
+const cmd = plainSummary("Ran ssh -i ~/.ssh/steve_vm ubuntu@203.0.113.7 sudo ls /srv. All good. Tests pass (npm test 2>&1 | tail).", "Steve");
 ok("a summary's command sentence becomes what it did, and its words stay (no host, key path, pipe or sudo)", cmd === "Checked the Steve server. All good. Tests pass." && !BANNED.test(cmd), cmd);
 
 // pills: only the 7
@@ -45,7 +45,7 @@ ok("every pill is one of the 7", [{}, { qs: [1] }, { ready: 1 }, { running: {} }
 // handover rows
 ok("a question first: \"it has a question for you\"", handWords({ lane: "ops", why: "Sent: its agent asked you something first" }) === "it has a question for you");
 ok("handed on again, with the second lane asking: \"Ops has a question for you\"", handWords({ lane: "steve", then: "ops", thenAsks: true, why: "Sent: its agent asked you something first" }) === "Ops has a question for you");
-const on = handWords({ lane: "steve", why: "Sent: its agent is on it now", progress: { done: 0, total: 4 }, doing: "Ran ssh -i ~/.ssh/steve_vm ubuntu@92.4.133.97 uptime" });
+const on = handWords({ lane: "steve", why: "Sent: its agent is on it now", progress: { done: 0, total: 4 }, doing: "Ran ssh -i ~/.ssh/steve_vm ubuntu@203.0.113.7 uptime" });
 ok("on it, with how far and what it's doing in words", on === "on it · 0 of 4 done · checking the Steve server", on);
 ok("never \"Sent: …\"", !/^Sent/i.test(handWords({ lane: "ops", why: "Sent: its run ended, and what it did comes back within 20 seconds" })));
 
