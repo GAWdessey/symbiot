@@ -128,6 +128,15 @@ try {
   G.goalAnswer(g7.key, [{ q: "x", a: "Drop it" }], deps({ ledger: led7 }));
   ok("Drop it: closed as dropped, with its breakdown, no card", G.goalById(g7.key).closed.kind === "dropped" && !G.goalCards().some((c) => c.path === g7.key) && existsSync(join(G.folderOf(G.goalById(g7.key)), ".symbiot", G.goalById(g7.key).closed.report)));
 
+  // one job, one run: "Try again" while a run is still on it starts no second one (steve's size alarm, 25 Oct 2026)
+  const pT = join(HOME, "work", "alarm"), gT = G.openGoal("Add the disk size alarm", { child: "run:rT", path: pT, now: t0 }), tried = [];
+  J.track("run:rT", { kind: "agent", path: pT, lane: "steve", text: "a run", state: "running" }, { now: t0 + 1 });
+  const rT = G.goalAnswer(gT.key, [{ q: "x", a: "Try again" }], deps({ running: (p) => p === pT, ops: (req) => (tried.push(req), { job: "rT2", dir: ops }) }));
+  ok("\"Try again\" with a run already on it: no second run, and it says so", tried.length === 0 && /already/.test(rT.said), [tried, rT]);
+  run("rT", pT, { at: t0 + 2, state: "done" });
+  const rT2 = G.goalAnswer(gT.key, [{ q: "x", a: "Try again" }], deps({ running: () => false, ops: (req) => (tried.push(req), { job: "rT3", dir: ops }) }));
+  ok("…with none: one run, and the tick gets no extra \"What's left\" run on top of it", tried.length === 1 && /on it now/.test(rT2.said) && G.goalById(gT.key).leftTries >= 1, [tried.length, rT2, G.goalById(gT.key).leftTries]);
+
   console.log("GOALS — an email that's waited a week comes up, not left forever");
   const old = [{ id: "w9", to: "pat@example.com", subject: "Domains", sent: new Date(Date.now() - 9 * DAY).toISOString(), status: "waiting", from: { lane: "atlas" } }];
   ok("a card: no reply in 9 days, keep waiting or stop", G.goalCards({ waits: old }).some((c) => c.path === "goal:wait:w9" && /No reply in 9 days from pat@example\.com about "Domains"/.test(c.q)));

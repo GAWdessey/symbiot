@@ -119,6 +119,9 @@ try {
   const g = judge("Bash", { command: "gh pr merge 251 --repo acme/app --merge" }, { cwd: HOME, home: HOME });
   ok("the guard holds `gh pr merge` there, says why and what to do, and offers the user no way round it", !!(g && g.why) && /design critic/.test(g.why) && /UI-REVIEW\.md/.test(g.why) && !g.setting, g);
   ok("…by a PR's address too, and not in another repo", !!judge("Bash", { command: "gh pr merge https://github.com/acme/app/pull/9" }, { cwd: HOME, home: HOME }) && !judge("Bash", { command: "gh pr merge 3 -R acme/other" }, { cwd: HOME, home: HOME }));
+  D.noteOpen(mlane, { "Build the vault page": { rounds: 1, at: Date.now() } }, { slug: "acme/app", branch: "vault-page" });
+  ok("only that work's own branch is held: another PR into the repo merges (a red main's fix sat behind a card review, 25 Oct 2026)", D.holdsMerge("acme/app", { branch: "fix-main" }).length === 0 && D.holdsMerge("acme/app", { branch: "vault-page" }).length === 1 && D.holdsMerge("acme/app").length === 1);
+  ok("…in the guard too, by the branch the merge names", !judge("Bash", { command: "gh pr merge fix-main --repo acme/app --merge" }, { cwd: HOME, home: HOME }) && !!judge("Bash", { command: "gh pr merge vault-page -R acme/app" }, { cwd: HOME, home: HOME }));
   D.noteOpen(mlane, { "Build the vault page": { rounds: 1, passed: true } }, { slug: "acme/app" });
   ok("passed: the merge is open again", D.holdsMerge("acme/app").length === 0 && !judge("Bash", { command: "gh pr merge 251 --repo acme/app" }, { cwd: HOME, home: HOME }));
   D.noteOpen(mlane, { "Build the vault page": { rounds: 2, failed: true } }, { slug: "acme/app" });

@@ -455,7 +455,7 @@ function report(e, o, { run = runHandoff, running = runningHandoff, waiting = wa
   if (rec && rec.state === "waiting" && rec.waitingOn !== "lane") return true;
   const waitsHere = !!rec && rec.state === "waiting" && rec.waitingOn === "lane";
   if (waitsHere) settle(p, `${e.to.lane} reported back`);
-  if (!running(p) && (waitsHere || /^\s*(?:[-*+]|\d+[.)])\s*\[ \]/m.test(readSym(p, "TASKS.md"))) && auto(p, { now })) run(p, { force: waitsHere || (!!o.settled && !waiting(p)) });
+  if (!running(p) && (waitsHere || /^\s*(?:[-*+]|\d+[.)])\s*\[ \]/m.test(readSym(p, "TASKS.md"))) && auto(p, { now, key: `handover:${e.id || firstLine(e.text)}` })) run(p, { force: waitsHere || (!!o.settled && !waiting(p)) });
   return true;
 }
 
@@ -669,12 +669,27 @@ async function orcaRelink({ map, cli, orca = runOrca, remoteOf } = {}) {
 // longer one, and result, all of what came back, open under it. What reads the
 // same (one lane to the same lane, the same first line: a run that handed it
 // over twice) is one row, the newest, with how many times (times).
+// Where a started handover really is, for the row's label: the ledger says "started" for good, so a
+// run that ended, or asked the user something, still read "working on it" (25 Oct 2026: two steve → ops rows
+// sat there for hours with no ops run). { stage } is running | asks | ended | queued, or nothing.
+function stageOf(e, { running = runningHandoff, status = e.status } = {}) {
+  if (status !== "started" || !e.to.path || e.reportedAt) return {};
+  const p = e.to.path;
+  if (running(p)) return { stage: "running" };
+  if (lastRunStart(p) < e.at) return { stage: "queued" };
+  return { stage: openQuestions(p) ? "asks" : "ended" };
+}
+// Whether a row counts as under way on the Workdesk: not one that reported back, was dropped (Skip),
+// couldn't go, or whose run ended with nothing left for the user (25 Oct 2026: "under way" counted 13,
+// a Kaggle submission done hours before and a "Permission denied" job among them).
+const underWay = (e, row) => !e.reportedAt && !e.skipped && ["started", "held", "blocked"].includes(row.status) && row.stage !== "ended";
 function lanesState() {
   const out = [], byKey = new Map();
   for (const e of loadLedger().handoffs.slice().reverse()) {
     const k = [e.from.lane, e.to.lane, firstLine(e.text).replace(/\s+/g, " ").trim()].join("\n").toLowerCase();
     if (byKey.has(k)) { byKey.get(k).times++; continue; }
-    const row = { id: e.id, from: e.from.lane, to: e.to.lane, text: clipWords(firstLine(e.text), 160), ...(e.text.trim() !== firstLine(e.text).trim() || e.text.length > 160 ? { full: e.text } : {}), at: e.at, status: (e.status === "held" || e.status === "blocked") && e.to.path && lastRunStart(e.to.path) >= e.at ? "started" : e.status, ...(e.status === "blocked" && e.note ? { note: e.note } : {}), ...(e.error ? { error: e.error } : {}), ...(e.result ? { result: e.result } : {}), times: 1 };
+    const row = { id: e.id, from: e.from.lane, to: e.to.lane, text: clipWords(firstLine(e.text), 160), ...(e.text.trim() !== firstLine(e.text).trim() || e.text.length > 160 ? { full: e.text } : {}), at: e.at, status: (e.status === "held" || e.status === "blocked") && e.to.path && lastRunStart(e.to.path) >= e.at ? "started" : e.status, ...(e.status === "blocked" && e.note ? { note: e.note } : {}), ...(e.error ? { error: e.error } : {}), ...(e.result ? { result: e.result } : {}), ...(e.skipped ? { skipped: true } : {}), times: 1 };
+    Object.assign(row, stageOf(e, { status: row.status })); row.live = underWay(e, row);
     byKey.set(k, row); out.push(row);
   }
   return { handoffs: out.slice(0, 30) };
@@ -841,4 +856,4 @@ async function shipHanded({ review = pendingReview, ship = approveChanges, diff 
   return done;
 }
 
-export { projectOf, handedFor, handedLookup, secretIn, shipHanded, HELD_HANDED, nearLane, laneTarget, staleOutcome, STALE_AFTER, ancestry, loops, shareAnswer, sharedFor, sharedTo, answerReaches, linkedPaths, topicsOf, ownHosts, COMMON_HOSTS, parentOf, SHARED, LEDGER, MAX_CHAIN, loadLedger, laneOf, lastRunStart, dispatch, outcome, report, handingOf, lanesTick, lanesState, aboutIt, partlyDone, remoteKey, orcaMoves, orcaRelink, stuckHandovers, allowHandover, skipHandover, namedDirs, alike, doneSince };
+export { projectOf, handedFor, handedLookup, secretIn, shipHanded, HELD_HANDED, nearLane, laneTarget, staleOutcome, STALE_AFTER, ancestry, loops, shareAnswer, sharedFor, sharedTo, answerReaches, linkedPaths, topicsOf, ownHosts, COMMON_HOSTS, parentOf, SHARED, LEDGER, MAX_CHAIN, loadLedger, laneOf, lastRunStart, dispatch, outcome, report, handingOf, lanesTick, lanesState, stageOf, underWay, aboutIt, partlyDone, remoteKey, orcaMoves, orcaRelink, stuckHandovers, allowHandover, skipHandover, namedDirs, alike, doneSince };
