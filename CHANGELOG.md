@@ -8,6 +8,12 @@ What each Symbiot release brought, newest first. When Approve bumps the version,
 - **The question card has room to breathe.** Its text no longer sits against the card's left edge, and on a phone each choice is a full-width button.
 - **"Files changed" counts only the agent's own work.** A run kept in a folder inside a project no longer shows that project's changed files as its own, so a run that only sent an email says "No files changed."
 
+## 0.93.1 — 2026-10-26
+
+- **A step that only you can take now says exactly what to do.** A card asking you to sign in names the site, the account to sign in as and what the agent does there next, and its button says what you're confirming ("I'm signed in") instead of something vague like "Access is set up". A card never asks you to grant access to one of Symbiot's own pages.
+- **Vague cards go back to the agent instead of to you.** If a card can't say which site, which account or what happens next, you don't see it. Its agent is asked to write the step again, exactly.
+- **Old cards clear once the work moves on.** A goal's card asking for your step goes away once its agent carries on, once the agent's own card for that step is showing, or once the agent is waiting on a newer step. It used to stay up after the agent had moved on.
+
 ## 0.93.0 — 2026-10-26
 
 - **Agents can sign in with a password from your vault, without seeing it.** On a page in your own Chrome, an agent can put a password or code you saved in the Vault into its box with `symbiot screens secret`. Symbiot reads it and the extension fills it in, so the agent never sees it, and it never shows up in a map of the page, an answer or a log. This works even for agents that can't read the vault.
