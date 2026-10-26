@@ -9,7 +9,7 @@ export default `// The Vault page (vaultview.mjs): what's saved, grouped by the 
 // each use, VLT.until). Values it showed live only here (VLT.shown) and go when it locks, when you
 // leave the page or the window is hidden. A copied value leaves the clipboard after VCLIP_MS
 // (vaultClip); a delete waits VDEL_MS for Undo. Nothing here is sent to the AI or kept elsewhere.
-var VLT={list:[],token:'',until:0,shown:{},q:'',f:'all',sel:'',one:false,pin:true,wait:0,waitTo:0,log:[],then:null,busy:false,mode:'',state:'load',ok:{},del:null,sheet:''},VLT_T=null,VCLIP_MS=30000,VCLIP={t:null,v:'',pend:false},VDEL_MS=8000,VMSG_T=null;
+var VLT={list:[],token:'',until:0,shown:{},q:'',f:'all',sel:'',one:false,pin:true,wait:0,waitTo:0,log:[],then:null,busy:false,mode:'',state:'load',ok:{},okn:'',del:null,sheet:''},VLT_T=null,VCLIP_MS=30000,VCLIP={t:null,v:'',pend:false},VDEL_MS=8000,VMSG_T=null;
 var VIC={lock:"<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'><rect x='4' y='11' width='16' height='10' rx='2.5'/><path d='M8 11V7.5a4 4 0 0 1 8 0V11'/></svg>",
 open:"<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'><rect x='4' y='11' width='16' height='10' rx='2.5'/><path d='M8 11V7.5a4 4 0 0 1 7.7-1.5'/></svg>",
 eye:"<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'><path d='M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z'/><circle cx='12' cy='12' r='3'/></svg>",
@@ -74,7 +74,7 @@ head="<div class='vdh'>"+vaultMono(e.group)+"<div class='vtt'><h2>Rename</h2><p>
 else head="<div class='vdh'>"+vaultMono(e.group)+"<div class='vtt'><h2>"+esc(e.label)+"</h2><p>"+esc([e.group==='Other'?'':e.group,e.kind].filter(Boolean).join(' · '))+"</p></div><div class='vdact'><button type='button' class='ghost' data-va='rename' data-n='"+n+"'>Rename</button><button type='button' class='ghost vdel' data-va='del' data-n='"+n+"'>Delete</button></div></div>";
 var conf=VLT.mode==='delete'?"<div class='vconfirm' role='alert'><p><b>Delete “"+esc(e.label)+"”?</b> Agents that use it will have to ask you for it again. You can undo this for a few seconds.</p><div class='vsb' style='justify-content:flex-start'><button type='button' class='vdanger' data-va='delyes' data-n='"+n+"'>Delete</button><button type='button' class='ghost' data-va='cancel'>Keep it</button></div></div>":'';
 var iss=VLT.mode?'':(e.issues||[]).map(function(x){return vaultIssue(e,x);}).join('');
-var meta="<dl class='vmeta'>"+(e.account?"<dt>Account</dt><dd>"+esc(e.account)+"</dd>":'')+"<dt>Saved</dt><dd>"+esc(vaultDate(e.saved)||'Unknown')+"</dd><dt>Last shown or copied</dt><dd>"+esc(vaultLast(e.name))+"</dd><dt>Agents ask for</dt><dd><code>"+esc(e.name)+"</code><button type='button' class='vtxt' data-va='copyname' data-n='"+n+"'>Copy name</button></dd></dl>";
+var meta="<dl class='vmeta'>"+(e.account?"<dt>Account</dt><dd>"+esc(e.account)+"</dd>":'')+"<dt>Saved</dt><dd>"+esc(vaultDate(e.saved)||'Unknown')+"</dd><dt>Last shown or copied</dt><dd>"+esc(vaultLast(e.name))+"</dd><dt>Agents ask for</dt><dd><code>"+esc(e.name)+"</code><button type='button' class='vtxt' data-va='copyname' data-n='"+n+"'>"+(VLT.okn===e.name?VIC.check+'Copied':'Copy name')+"</button></dd></dl>";
 return back+head+conf+iss+(VLT.mode==='rename'?'':vaultField(e)+meta);}
 function vaultEmptyDetail(){return "<div class='vempty'><b>Pick one to see it</b>Its value stays hidden until you unlock the vault.</div>";}
 function vaultDraw(){if(current!=='vault')return;var pv=$('panel-vault'),box=$('vaultlist'),det=$('vaultdetail'),ch=$('vaultlock'),fl=$('vaultfilters');if(!box||!det)return;
@@ -114,7 +114,7 @@ if(!VLT.pin&&p2&&p2.value!==pin){say("The two PINs don't match.");p2.focus();ret
 VLT.busy=true;say('');var b=document.querySelector("#vaultsheet [data-va='unlock']");if(b){b.disabled=true;b.textContent=VLT.pin?'Unlocking…':'Creating…';}
 api(VLT.pin?'/api/vault/unlock':'/api/vault/pin',{pin:pin}).then(function(r){VLT.busy=false;
 if(!r||!r.ok){if(r&&r.wait){VLT.wait=r.wait;VLT.waitTo=Date.now()+r.wait;vaultTimer();}vaultSheet('unlock',{err:(r&&r.error)||"Couldn't unlock it."});return;}
-var was=!VLT.pin;VLT.pin=true;VLT.wait=0;VLT.token=r.token;VLT.until=r.until||Date.now()+(r.unlockMs||300000);vaultTimer();var then=VLT.then;VLT.then=null;vaultClose();if(was)vaultSay('Your vault PIN is set, and the vault is unlocked.','');vaultDraw();vaultRun(then);}).catch(function(){VLT.busy=false;vaultSheet('unlock',{err:"Couldn't reach Symbiot to unlock it."});});}
+var was=!VLT.pin;VLT.pin=true;VLT.wait=0;VLT.token=r.token;VLT.until=r.until||Date.now()+(r.unlockMs||300000);vaultTimer();var then=VLT.then;VLT.then=null;vaultClose();vaultSay(was?'Your vault PIN is set, and the vault is unlocked.':'');vaultDraw();vaultRun(then);}).catch(function(){VLT.busy=false;vaultSheet('unlock',{err:"Couldn't reach Symbiot to unlock it."});});}
 // Show or Copy (i: one code of a set)
 function vaultGet(name,act,i){var e=vaultFind(name);if(!vaultOpen()){vaultDrop();vaultNeed({act:act,name:name,i:i,why:(act==='copy'||act==='copyone'?'To copy':'To show')+' “'+(e?e.label:name)+'”'});return;}
 api('/api/vault/value',{name:name,token:VLT.token,act:act==='reveal'||act==='show'?'reveal':'copy'}).then(function(r){if(r&&r.locked){vaultDrop();vaultNeed({act:act,name:name,i:i,why:'To '+(act==='show'?'show':'copy')+' “'+(e?e.label:name)+'”'});vaultDraw();return;}
@@ -153,7 +153,7 @@ else if(a==='filter'){VLT.f=b.getAttribute('data-f');vaultDraw();}
 else if(a==='clear'){VLT.f='all';VLT.q='';var s=$('vaultsearch');if(s)s.value='';vaultDraw();}
 else if(a==='show'||a==='copy'||a==='copyone')vaultGet(n,a,b.getAttribute('data-i'));
 else if(a==='hide'){delete VLT.shown[n];vaultDraw();}
-else if(a==='copyname')vaultClip(n).then(function(ok){vaultSay(ok?'Copied its name.':"This window can't use the clipboard.",ok?'':'err');});
+else if(a==='copyname')vaultClip(n).then(function(ok){if(!ok){vaultSay("This window can't use the clipboard.",'err');return;}VLT.okn=n;vaultDraw();setTimeout(function(){if(VLT.okn===n){VLT.okn='';vaultDraw();}},2500);});
 else if(a==='rename')vaultNeed({act:'rename',name:n,why:'To rename it'});
 else if(a==='renamesave')vaultRenameSave(n);
 else if(a==='del')vaultNeed({act:'del',name:n,why:'To delete it'});

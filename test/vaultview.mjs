@@ -122,6 +122,9 @@ try {
   if (!/Agents ask for/.test(det) || !/data-va=.pick./.test(det)) console.log(det.slice(0, 1500));
   page.VLT.mode = "delete"; const del = page.vaultDetailHtml(tw); page.VLT.mode = "";
   ok("Delete asks first, in the page, and says it can be undone", /Delete “Token”\?/.test(del) && /data-va='delyes'/.test(del) && /undo/.test(del));
+  page.VLT.ok[tw.name] = "c"; page.VLT.okn = tw.name; const cop = page.vaultDetailHtml(tw); page.VLT.ok = {}; page.VLT.okn = "";
+  ok("Copy answers where you pressed: Copied on its button, the 30 s note in its row, and Copy name the same", /data-va='copy'[^>]*><svg[^]*?<\/svg>Copied<\/button>/.test(cop) && /class='vok' role='status'>Copied\. It leaves the clipboard in 30 seconds/.test(cop) && /data-va='copyname'[^>]*><svg[^]*?<\/svg>Copied<\/button>/.test(cop));
+  ok("…and the unlock clears a note left from before it", /vaultClose\(\);vaultSay\(was\?/.test(uiJs));
   ok("the page waits 30 seconds", page.VCLIP_MS === 30000);
   const board = { text: "", focused: true, writeText(t) { if (!this.focused) return Promise.reject(new Error("Document is not focused")); this.text = t; return Promise.resolve(); } };
   const timers = []; const later = (f, ms) => { timers.push({ f, ms, live: true }); return timers.length; }, stop = (id) => { if (timers[id - 1]) timers[id - 1].live = false; };

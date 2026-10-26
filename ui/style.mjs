@@ -1054,6 +1054,7 @@ body.lq-light .vmono{color:hsl(var(--h) 55% 28%);background:hsl(var(--h) 60% 90%
 .vmeta code{font:500 13px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:var(--ink);color:var(--bone);padding:2px 7px;border-radius:6px}
 .vmeta button{margin-left:6px}
 #panel-vault .vmeta button.vtxt{min-height:28px;padding:0 6px;font-size:12.5px;color:var(--faint)}
+#panel-vault .vmeta button.vtxt svg{width:13px;height:13px;vertical-align:-2px;margin-right:4px}
 .vform{display:grid;gap:12px;margin-top:2px}
 .vform label{display:grid;gap:5px;font-size:13px;color:var(--faint)}
 #panel-vault .vform input,#vaultsheet input,#vaultsheet textarea{width:100%;min-height:42px;font-size:14.5px;border-radius:10px;box-sizing:border-box}
@@ -1108,7 +1109,7 @@ body.lq-liquid .vsheet{background:#16181C}body.lq-liquid.lq-light .vsheet{backgr
 #vaultmsg{bottom:96px}
 .vbar{flex-wrap:wrap}.vsearch{flex:1 1 100%}.vchip{flex:1}
 .vfilt{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;margin-left:-2px;padding:0 2px 2px}.vfilt::-webkit-scrollbar{display:none}#panel-vault .vfilt button{flex:none}
-.vmeta{grid-template-columns:minmax(0,1fr);gap:2px}.vmeta dd{margin-bottom:10px}
+.vmeta{grid-template-columns:minmax(0,1fr);gap:2px}.vmeta dd{margin-bottom:10px}#panel-vault .vmeta button.vtxt{min-height:40px}
 }
 body.lq-liquid.lq-light .vlock.open{border-color:var(--green)}
 @media (max-width:560px){.vrow{grid-template-columns:minmax(0,1fr)}.vrow .va{grid-column:1;grid-row:auto;margin-top:6px}.vrow .va button{flex:1}.vlock input{flex:1 1 100%;width:100%}.vlock button{flex:1}}
