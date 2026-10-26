@@ -2,6 +2,10 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one), for anyone who installs the app: what changed in it, never whose work it was (no projects, people, accounts, services, run ids or task wording of the person who made it). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.90.18 — 2026-10-26
+
+- **The keyboard stays put after you unlock the Vault.** When Copy, Show or Add asks for your PIN, focus goes back to that button once the vault unlocks or you press Escape, instead of falling to the top of the page.
+
 ## 0.90.17 — 2026-10-26
 
 - **A copy that fails says so where you pressed.** When this window can't use the clipboard, the Copy button reads Not copied and the line under it says why, in red, instead of a note at the foot of the screen that covered other buttons on a phone. Copy name does the same, beside the name.
