@@ -108,6 +108,17 @@ try {
   ok("…a lane's brief is a run's, and isn't rewritten", lt.includes(KEY.slice(-60)), lt);
   ok("…while what's around them stays", /^- \[ \] Save the key: it begins '/.test(lt) && JSON.parse(tj)[0].id === "t1");
 
+  console.log("ONE PASSWORD, TWO SITES — a pasted password is named for the site and account around it (26 Oct 2026)");
+  const PW2 = "Lantern7$Quill";
+  saveSecret("google-garth-ghost-ai", [PW2]);
+  const cf = captureSecrets(`Build, protect, and connect with Cloudflare garth@dailify.co.za ${PW2} Password requirements Password requirements met 8 characters 1 number 1 special character e.g., $, !, @, %, & No leading or trailing whitespace`);
+  ok("a password pasted from Cloudflare's page beside its email is named for Cloudflare and that account", cf.saved.join() === "cloudflare password (garth@dailify.co.za)" && cf.text.includes("[saved: cloudflare password (garth@dailify.co.za)]") && getSecret("cloudflare password (garth@dailify.co.za)").value === PW2, cf);
+  ok("…not filed under a Google login that happens to hold the same password, which stays as it was", getSecret("google-garth-ghost-ai").value === PW2 && listSecrets().find((x) => x.name === "google-garth-ghost-ai").count === 1, listSecrets());
+  const again2 = captureSecrets(`my google password for garth@ghost-ai.co.za is ${PW2}`);
+  ok("…while the same password pasted for the login it's held by keeps that name", again2.saved.join() === "google-garth-ghost-ai", again2);
+  ok("…and an email right before \"password\" is the account, never the site (\"za password\")", findSecrets(`garth@dailify.co.za password ${PW2}`).found[0].name === "password (garth@dailify.co.za)" && findSecrets(`the dailify.co.za password is ${PW2}`).found[0].name === "dailify.co.za password", findSecrets(`garth@dailify.co.za password ${PW2}`).found);
+  deleteSecret("google-garth-ghost-ai"); deleteSecret("cloudflare password (garth@dailify.co.za)");
+
   console.log("A JWT API KEY, AND A WAIT IT SATISFIES");
   const JWT = "eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9." + "eyJhdWQiOiI5NGQ1OWNlZi1kYmI4LTRlYTUtYjE3OC1kMjU0MGZjZDY5MTkiLCJzdWIiOiI4MjAwNjczIn0" + ".c2lnbmF0dXJlLXBhcnQtMTIzNDU2Nzg5MA";
   const jr = captureSecrets(`here is my lemon squeezy test api key ${JWT}`);

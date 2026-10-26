@@ -254,7 +254,7 @@ function siteOf(sentence) {
   const m = s.match(SITE_WORDS); if (m && !/\u0000/.test(m[1])) return m[1].trim().toLowerCase();
   const d = s.match(/\b((?:[a-z0-9-]+\.)+[a-z]{2,})\b/i); if (d) return d[1].toLowerCase().replace(/^www\./, "");
   const k = s.match(KNOWN_SITE); if (k) return k[1].toLowerCase();
-  const b = s.match(/\b((?:[a-z0-9]+\s+){1,2})(?:password|passwd|pw|login)\b/i);
+  const b = s.replace(/\S*\u0000\S*/g, " ").match(/\b((?:[a-z0-9]+\s+){1,2})(?:password|passwd|pw|login)\b/i); // never the end of an email ("za password")
   const w = b ? b[1].trim().toLowerCase().split(/\s+/).filter((x) => !["my", "the", "is", "and", "a", "your", "with", "new", "its", "it's", "here", "heres"].includes(x)) : [];
   return w.join(" ");
 }
@@ -348,9 +348,20 @@ function heldName(value) {
   for (const name of Object.keys(readIndex().names)) { const e = load(name); if (e && Array.isArray(e.values) && e.values.some((x) => x.v === value)) return name; }
   return "";
 }
+// The words a password's name gives its site and account by ("cloudflare password (garth@dailify.co.za)"
+// -> cloudflare, garth, dailify; "google-garth-ghost-ai" -> google, garth, ghost): no "password", no ".co.za".
+const NOT_OWNER = new Set(["password", "passwd", "passcode", "pw", "pass", "login", "account", "my", "new", "the", "www", "com", "co", "za", "org", "net", "io", "ai", "dev", "app", "uk", "us"]);
+const ownerWords = (name) => String(name || "").toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 1 && !NOT_OWNER.has(w));
 // Save what was found: under the name it's held by already when every value is, else its own. The name, or "".
+// A password is the user's for one site and account, and people use one on several: one pasted for a site
+// and account the held name doesn't name is a login of its own (26 Oct 2026: a new Cloudflare password,
+// pasted from Cloudflare's page beside garth@dailify.co.za, was the same as a Google login's and was
+// filed as "google-garth-ghost-ai").
 function keep(name, values) {
-  const held = values.map(heldName); if (held[0] && held.every((h) => h === held[0])) return held[0];
+  const held = values.map(heldName);
+  const pw = /\bpass(?:word|code)\b/i.test(name), mine = ownerWords(name);
+  const same = (h) => !pw || mine.every((w) => ownerWords(h).includes(w));
+  if (held[0] && held.every((h) => h === held[0]) && same(held[0])) return held[0];
   return saveSecret(name, values).ok ? name : "";
 }
 // A run in Symbiot's sandbox can't read the vault (vault.json is sealed from it): "no secrets

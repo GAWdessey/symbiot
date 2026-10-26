@@ -2,6 +2,11 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one), for anyone who installs the app: what changed in it, never whose work it was (no projects, people, accounts, services, run ids or task wording of the person who made it). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.94.2 — 2026-10-26
+
+- **A pasted password is saved for the site it's on.** Paste a sign-up or new-password page into Home and the password is saved under that page's site and the account shown beside it, even when you already use the same password elsewhere. It's no longer filed under another site's login that happens to match, and an email address right before "password" is read as the account, not the site.
+- **The Vault keeps both logins that share a password.** Two sites' logins with the same password are both real: the Vault says they share it and suggests changing one on its site, instead of telling you to delete one.
+
 ## 0.94.1 — 2026-10-26
 
 - **A goal stops asking for a step that's already done.** When a later run on the same work finishes, the earlier runs that were waiting on you, or stopped with work left, are closed with it. Your goal no longer brings back a question you've answered, or one another run has already taken care of, and it can close once its work is done.
