@@ -31,7 +31,7 @@ import { denyList } from "./outward.mjs";
 import { listSecrets, getSecret, saveSecret, markUsed, deleteSecret, scrubStored, repairFalseSaves } from "./vault.mjs";
 import { vaultList, vaultValue, vaultLog, setPin, unlock as vaultUnlock, lock as vaultLock, addEntry as vaultAdd, renameEntry as vaultRename, removeEntry as vaultRemove } from "./vaultview.mjs";
 import { SCREENS_SOCK, sockGate, loadScreens, screenImage, captureScreen, splitScreen, listMonitors, allowScreenshots, importScreen, setRegions, renameScreen, removeScreen, blueprint, clickRegion } from "./screens.mjs";
-import { setupOwnChrome, refreshOwnChrome, startBroker, ownChromeStatus, mapInOwnChrome, OWN_SOCK, ownScreen, pressInOwnChrome, typeInOwnChrome, scrollInOwnChrome, NOT_YET } from "./ownchrome.mjs";
+import { setupOwnChrome, refreshOwnChrome, startBroker, ownChromeStatus, mapInOwnChrome, ownChromeFor, OWN_SOCK, ownScreen, pressInOwnChrome, typeInOwnChrome, chooseInOwnChrome, fillInOwnChrome, scrollInOwnChrome, wholeInOwnChrome, uploadInOwnChrome } from "./ownchrome.mjs";
 import { sessionCookie, mapPage, wholePage, pressRegion, typeRegion, chooseRegion, fillForm, verifyPage, uploadRegion, scrollPage, signIn, keepBrowserOpen, isTrusted, trustedSites, trustSite, untrustSite, openSymbiotBrowser, closeSymbiotBrowser, onBrowserClosed, setBrowserHub, siteUrl, browserHub, windowOpen } from "./headless.mjs";
 import { weeklyState, setWeekly, runWeekly, startWeekly, autostartState, setAutostart, installLauncher, iconSvg, setLauncherLook, desktopNotify } from "./desktop.mjs";
 import { markNews, newsSince, watchState, addWatch, setEvery, removeWatch, clearNews, seenWatch, checkWatch, startWatches, setBrief, draftReply, openChat, watchBoard, boardChat, clearBoardChat } from "./watch.mjs";
@@ -629,7 +629,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
         if (!b.out || !out.startsWith(home + "/") || (out.startsWith(CONFIG_DIR + "/") && !out.startsWith(join(CONFIG_DIR, "drafts") + "/"))) return json(res, { error: "Screenshots go in the run's own folder." });
         return json(res, await shoot(String(b.url || ""), { out, sizes: String(b.sizes || "1440x900,390x844"), full: b.full === true, bin: chromeBinary() }));
       }
-      if (u.pathname === "/api/screens/map" && req.method === "POST") { const b = await readBody(req); if (b.chrome === "own") return json(res, screenOut(await mapInOwnChrome(b.site, b.name))); return json(res, screenOut(await mapPage(b.site, b.name, { whole: b.whole === true, who: String(b.who || "") }))); }
+      if (u.pathname === "/api/screens/map" && req.method === "POST") { const b = await readBody(req); if (b.chrome === "own" || (b.chrome !== "hidden" && !b.whole && ownChromeFor(b.site))) return json(res, screenOut(await mapInOwnChrome(b.site, b.name))); return json(res, screenOut(await mapPage(b.site, b.name, { whole: b.whole === true, who: String(b.who || "") }))); }
       // Symbiot's extension in the user's own Chrome: whether it's set up and connected, and setting it up (ownchrome.mjs)
       if (u.pathname === "/api/own-chrome") return json(res, ownChromeStatus());
       if (u.pathname === "/api/own-chrome/setup" && req.method === "POST") return json(res, setupOwnChrome());
@@ -640,9 +640,12 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
         if (own) {
           const verb = u.pathname.split("/").pop(), opts = { confirmed: b.confirmed === true, noSend: b.noSend === true };
           if (verb === "press") return json(res, screenOut(await pressInOwnChrome(own.id, String(b.region || ""), opts)));
-          if (verb === "type") return json(res, screenOut(await typeInOwnChrome(own.id, String(b.region || ""), b.text, { ...opts, enter: b.enter === true })));
+          if (verb === "type" || verb === "replace") return json(res, screenOut(await typeInOwnChrome(own.id, String(b.region || ""), b.text, { ...opts, enter: b.enter === true, ...(verb === "replace" ? { replace: String(b.replace == null ? "" : b.replace) } : {}) })));
           if (verb === "scroll") return json(res, screenOut(await scrollInOwnChrome(own.id, String(b.to || "down"))));
-          return json(res, NOT_YET({ replace: "Replacing part of a field", choose: "Choose", fill: "Fill", upload: "Upload", whole: "Whole page" }[verb]));
+          if (verb === "choose") return json(res, screenOut(await chooseInOwnChrome(own.id, String(b.region || ""), b.option, opts)));
+          if (verb === "fill") return json(res, screenOut(await fillInOwnChrome(own.id, Array.isArray(b.fields) ? b.fields.map((f) => ({ region: String(f.region || ""), text: f.text })) : [], { ...opts, press: String(b.press || "") })));
+          if (verb === "whole") return json(res, screenOut(await wholeInOwnChrome(own.id)));
+          return json(res, screenOut(await uploadInOwnChrome(own.id, String(b.region || ""), Array.isArray(b.files) ? b.files.map(String) : String(b.files || ""), opts)));
         }
         req.symbiotBody = b;
       }

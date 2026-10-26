@@ -588,7 +588,7 @@ async function cmdScreens() {
   const who = process.env.SYMBIOT_AGENT || process.cwd();
   // --own-chrome: in the user's own Chrome, through Symbiot's extension there (ownchrome.mjs); only the app holds it
   if (sub === "map" && has("own-chrome")) return out(screenJson((await viaApp("/api/screens/map", { site: a1, name: flag("name", ""), chrome: "own", who })) || { error: "Your own Chrome is reached through the Symbiot app: start it (symbiot open), then map again." }));
-  if (sub === "map") { const body = { site: a1, name: flag("name", ""), whole: has("whole"), who }; return out(screenJson((await viaApp("/api/screens/map", body)) || await H.mapPage(body.site, body.name, { whole: body.whole, who }))); }
+  if (sub === "map") { const body = { site: a1, name: flag("name", ""), whole: has("whole"), who, ...(has("hidden") ? { chrome: "hidden" } : {}) }; return out(screenJson((await viaApp("/api/screens/map", body)) || await H.mapPage(body.site, body.name, { whole: body.whole, who }))); }
   if (sub === "whole") {
     const s = find(a1); if (!s) return out({ error: "No screen " + (a1 || "") + ". symbiot screens lists them." });
     return out(screenJson((await viaApp("/api/screens/whole", { id: s.id, who })) || alone(await H.wholePage(s.id, { who }))));
@@ -650,7 +650,9 @@ async function cmdScreens() {
                                                its buttons, links and fields (JSON);
                                                --whole: all of the page in one tall screen;
                                                --own-chrome: in your own Chrome instead,
-                                               through Symbiot's extension there
+                                               through Symbiot's extension there (a site
+                                               you allowed there goes there by itself;
+                                               --hidden keeps it in the hidden browser)
   symbiot screens show <id>                    a screen's blueprint (JSON)
   symbiot screens press <id> <region> [--yes]  press a region there, map where it lands
   symbiot screens type <id> <field> "text" [--enter] [--yes]

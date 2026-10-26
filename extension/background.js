@@ -6,6 +6,7 @@
 // What it runs in a page is page.js, which ships with it; the app names a function there, never code.
 const HOST = "com.symbiot.chrome";
 let port = null, stopped = false;
+const pieces = {}; // Upload's files on their way in, by key
 
 // Its window, its tabs (one per site) and the sites waiting for your Allow, kept across the worker's restarts.
 const get = async (k, d) => ((await chrome.storage.session.get(k))[k] ?? d);
@@ -128,6 +129,25 @@ const OPS = {
     const t = await chrome.tabs.get(tab);
     if (!(await allowed(t.url))) { await askFor(t.url); return { error: "not allowed", origin: originOf(t.url) }; }
     return { result: await inPage(tab, String(fn), Array.isArray(args) ? args : []) };
+  },
+  // a file for Upload, a piece at a time (a message from Symbiot carries at most 1 MB), kept here till attach
+  async put({ key, file, part, parts, data }) {
+    const k = String(key); if (!pieces[k]) pieces[k] = { at: Date.now(), files: [] };
+    const f = pieces[k].files[file] = pieces[k].files[file] || { parts: [], n: parts };
+    f.parts[part] = String(data || "");
+    for (const [x, v] of Object.entries(pieces)) if (Date.now() - v.at > 600000) delete pieces[x];
+    return { ok: true };
+  },
+  // the pieces put together, into the file box page.js found in one of its tabs
+  async attach({ tab, key, files }) {
+    const got = pieces[String(key)]; delete pieces[String(key)];
+    if (!got) return { error: "The file didn't arrive whole. Try the upload again." };
+    if (!(await mine(tab))) return { error: "That tab isn't one of Symbiot's." };
+    const t = await chrome.tabs.get(tab);
+    if (!(await allowed(t.url))) { await askFor(t.url); return { error: "not allowed", origin: originOf(t.url) }; }
+    const list = (files || []).map((m, i) => { const f = got.files[i]; return f && f.parts.length === f.n && f.parts.every((x) => typeof x === "string") ? { name: String(m.name || "file"), type: String(m.type || ""), b64: f.parts.join("") } : null; });
+    if (!list.length || list.some((x) => !x)) return { error: "The file didn't arrive whole. Try the upload again." };
+    return { result: await inPage(tab, "attach", [list]) };
   },
   async wait({ tab, ms }) { if (await mine(tab)) await loaded(tab, Math.min(60000, Number(ms) || 30000)); return { ok: true }; },
   stop,

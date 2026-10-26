@@ -81,14 +81,20 @@ function judgeChrome(tool, input = {}, { session = "", home = homedir(), now = D
   const tagged = (String(input.action_summary || "").match(/\[go:([0-9a-f]{6,})\]/i) || [])[1] || "", summary = String(input.action_summary || "").replace(/\s*\[go:[0-9a-f]+\]\s*/gi, " ").trim();
   if (!summary) return { why: "say what this action does (action_summary) on every click, key, type and fill in the user's own Chrome: the membrane holds sends, payments and deletes for the user's Go" };
   const kind = name === "computer" && enterIn(input) ? "send" : heldFor(summary, host); if (!kind) return go();
-  // held: let it through once if the user said Go to this very action; else hold it and say how to ask
+  return holdOrGo(host, summary, kind, { tagged, session, home, now }) || go();
+}
+// Held: let it through once if the user said Go to this very action (null); else hold it and say how
+// to ask for their Go ({ why, held }). Claude in Chrome's actions (judgeChrome) and Symbiot's own
+// extension in the user's Chrome (ownchrome.mjs) share the holds and the Go cards. retry: how the
+// agent tries it again after the Go, said at the end.
+function holdOrGo(host, summary, kind, { tagged = "", session = "", home = homedir(), now = Date.now(), retry = "" } = {}) {
   const holds = readJson(HOLDS(home), []), live = (h) => h.go && !h.used && now - h.go < GO_FOR;
   const mine = (tagged && holds.find((h) => h.id === tagged && h.host === host && live(h))) || holds.find((h) => h.host === host && key(h.summary) === key(summary) && live(h));
-  if (mine) { mine.used = now; writeJson(HOLDS(home), holds); return go(); }
+  if (mine) { mine.used = now; writeJson(HOLDS(home), holds); return null; }
   let h = holds.find((x) => x.host === host && key(x.summary) === key(summary) && !x.go && now - x.at < 86400000);
   if (!h) { h = { id: randomBytes(4).toString("hex"), host, summary: summary.slice(0, 200), kind, at: now, session }; holds.push(h); writeJson(HOLDS(home), holds.slice(-200)); }
   const word = { send: "sends", pay: "pays", delete: "deletes" }[kind];
-  return { why: `this ${word} as the user, on ${host} ("${h.summary}"), so it waits for their Go. Ask in .symbiot/QUESTIONS.md: a ### heading saying plainly what it ${word}, ending {#chrome-go-${h.id}}, ${kind === "pay" && addsPayment(h.summary) ? "a context line saying first that the site may hold or charge money on the card once it's added, with roughly how much if known, " : ""}and one option, "🤖 Agent: go ahead: ${h.summary}". Stop there; once they say Go, the same action goes through, once: when you retry it, start its action_summary with [go:${h.id}]`, held: h.id };
+  return { why: `this ${word} as the user, on ${host} ("${h.summary}"), so it waits for their Go. Ask in .symbiot/QUESTIONS.md: a ### heading saying plainly what it ${word}, ending {#chrome-go-${h.id}}, ${kind === "pay" && addsPayment(h.summary) ? "a context line saying first that the site may hold or charge money on the card once it's added, with roughly how much if known, " : ""}and one option, "🤖 Agent: go ahead: ${h.summary}". Stop there; once they say Go, ${retry || `the same action goes through, once: when you retry it, start its action_summary with [go:${h.id}]`}`, held: h.id };
 }
 // A connector that sends as the user (mail's send, reply and forward, a calendar invite or reply, a
 // shared file): held for their Go like a send in their Chrome, on the same kind of card. The guard
@@ -200,4 +206,4 @@ function setActSite(host, on, { load, save }) {
   cfg.chromeAct = [...list]; save(cfg); return { ok: true, sites: cfg.chromeAct };
 }
 
-export { judgeChrome, judgeConnector, recipients, CONNECTOR_SENDS, seen, openTabs, goAhead, setActSite, setActAll, actSites, hostOf, signInNotNeeded, switchOnAct, actAsk, SETTING, PREFIX, READS, ACTS };
+export { holdOrGo, judgeChrome, judgeConnector, recipients, CONNECTOR_SENDS, seen, openTabs, goAhead, setActSite, setActAll, actSites, hostOf, signInNotNeeded, switchOnAct, actAsk, SETTING, PREFIX, READS, ACTS };

@@ -2,6 +2,13 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one), for anyone who installs the app: what changed in it, never whose work it was (no projects, people, accounts, services, run ids or task wording of the person who made it). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.92.0 — 2026-10-26
+
+- **Everything Symbiot does on a page now works in your own Chrome.** Choose in a menu, Fill a form and press its button, Replace part of a field, Upload a file and Whole page now work there too, along with Press, Type and Scroll. Choose, Fill and Upload use the same page code as Symbiot's own browser. A whole page is drawn as one tall screen.
+- **Sends, payments and deletes wait for your Go.** When an agent wants to press Send, Post, Pay or Delete in your Chrome, or Enter in a message box, you get a card first. Once you say Go, that one press goes through, once. The same holds and cards already cover agents acting in your Chrome another way.
+- **A site you allowed goes to your Chrome by itself.** Once you've pressed Allow for a site on Symbiot's button in Chrome, agents' maps of that site use your Chrome without being told to.
+- **Chrome closed? Symbiot opens it quietly.** If the extension has connected before and you haven't pressed Stop, Symbiot starts Chrome with no window and waits for the extension. It never adds anything that would mark Chrome as automated.
+
 ## 0.91.0 — 2026-10-26
 
 - **Symbiot can work in your own Chrome.** Some sites turn away a browser under remote control. Symbiot now has its own Chrome extension, so it can work in your everyday Chrome instead, signed in as you, with nothing that marks it as automated. Set it up in Settings → Connections → Your own Chrome. Set up prepares the extension and connects it to Symbiot, and the card shows how to load it in Chrome once. After that, the card says whether it's connected.

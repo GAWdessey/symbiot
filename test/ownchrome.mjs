@@ -7,7 +7,7 @@
 //
 //   node test/ownchrome.mjs
 //
-import { mkdtempSync, mkdirSync, readFileSync, existsSync, rmSync, readdirSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync, rmSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { spawn } from "node:child_process";
@@ -63,7 +63,7 @@ try {
   const sh = readFileSync(hm.path, "utf8");
   ok("the launcher runs node with the host and the app's socket, quoted", sh.startsWith("#!/bin/sh\nexec '") && sh.includes("ownchrome-host.mjs") && sh.includes("--sock '" + O.OWN_SOCK + "'"), sh);
   const { browserBrief, OWN_EXT_LINE } = await import("../browserfails.mjs");
-  ok("once it's set up, every brief names the route and what stays the user's", browserBrief(false, []).includes(OWN_EXT_LINE) && /--own-chrome/.test(OWN_EXT_LINE) && /never presses Send, Post, Pay or Delete/.test(OWN_EXT_LINE));
+  ok("once it's set up, every brief names the route and what stays the user's", browserBrief(false, []).includes(OWN_EXT_LINE) && /--own-chrome/.test(OWN_EXT_LINE) && /sends, posts, pays or deletes, or Enter in a message box, waits for their Go/.test(OWN_EXT_LINE));
   ok("Windows: a registry key per browser, pointing at the host's manifest", O.browsers(fake, "win32").every((b) => b.key && b.key.endsWith("\\NativeMessagingHosts\\" + O.HOST_NAME)));
   const regs = []; O.setupOwnChrome({ home: fake, platform: "win32", run: (cmd, args) => { regs.push([cmd, ...args].join(" ")); return { status: 0 }; } });
   ok("…written with reg add, its default value the manifest", regs.length === 4 && regs.every((r) => /^reg add HKCU\\Software\\.+ \/ve \/t REG_SZ \/d .+com\.symbiot\.chrome\.json \/f$/.test(r)), regs);
@@ -77,6 +77,7 @@ try {
   host.stdout.on("data", (d) => { const r = unframe(Buffer.concat([hbuf, d])); hbuf = r.rest; fromHost.push(...r.out); });
   host.stdin.write(frame({ event: "hello", version: "0.1.0", origins: ["https://example.com/*", "chrome://favicon/*"], asks: [], stopped: false }));
   const st = await until(() => O.ownChromeStatus().connected && O.ownChromeStatus());
+  ok("a site allowed there goes there by itself; any other, or a page that isn't a web address, doesn't", await until(() => O.ownChromeFor("example.com/x")) && !O.ownChromeFor("https://other.example/") && !O.ownChromeFor("chrome://settings"));
   ok("its hello reaches the app: connected, with the sites Chrome allowed", st && st.version === "0.1.0" && st.origins.join() === "https://example.com", st);
   const q = O.askChrome("map", { url: "https://example.com/" }, { timeout: 5000 });
   const asked = await until(() => fromHost.find((m) => m.op === "map"));
@@ -112,18 +113,30 @@ try {
   W.granted.delete("https://example.com/*");
   r = await W.ask({ op: "run", tab: tab1, fn: "click", args: [1, 2] });
   ok("Forget in Chrome: its tab there is refused at once", r.error === "not allowed", r);
+  W.granted.add("https://example.com/*");
+  await W.ask({ op: "put", key: "k1", file: 0, part: 1, parts: 2, data: "Q0Q=" });
+  await W.ask({ op: "put", key: "k1", file: 0, part: 0, parts: 2, data: "QUJ" });
+  r = await W.ask({ op: "attach", tab: tab1, key: "k1", files: [{ name: "a.txt", type: "text/plain" }] });
+  const att = W.calls.filter((c) => c.args && c.args[0] === "attach").pop();
+  ok("Upload's pieces, in any order, put together and handed to page.js's attach in its tab", r.result && r.result.attached === 1 && att && att.args[1][0][0].b64 === "QUJQ0Q=" && att.args[1][0][0].name === "a.txt", { r, att: att && att.args });
+  r = await W.ask({ op: "attach", tab: tab1, key: "k1", files: [{ name: "a.txt" }] });
+  ok("…once: asked again, it says the file didn't arrive", /didn't arrive whole/.test(r.error || ""), r);
+  await W.ask({ op: "put", key: "k2", file: 0, part: 0, parts: 2, data: "QUJ" });
+  ok("…and a file missing a piece isn't put in the box", /didn't arrive whole/.test((await W.ask({ op: "attach", tab: tab1, key: "k2", files: [{ name: "a.txt" }] })).error || ""));
+  W.granted.delete("https://example.com/*");
   r = await W.ask({ op: "stop" });
   ok("Stop closes its tabs and lets go of Symbiot", r.ok && W.tabs.size === 0 && W.disconnected === true && W.local.stopped === true, { tabs: W.tabs.size });
 
   console.log("MAPPING AND ACTING THROUGH IT — the screen, the rules");
   saveConfig({ ...loadConfig(), trustedSites: ["example.com"], sites: [{ hosts: ["linked.example"] }] });
+  O.setStarter(() => { throw new Error("no Chrome is started in these tests"); });
   const fakeExt = await extension(sock);
   ok("a site that isn't linked or trusted in Symbiot isn't opened in your Chrome", /isn't one of your linked or trusted sites/.test((await O.mapInOwnChrome("https://other.example/")).error || "") && !fakeExt.got.some((m) => m.op === "map"));
   fakeExt.on.map = (m) => m.url.includes("linked.example") ? { error: "not allowed", origin: "https://linked.example" } : look(m.url);
   r = await O.mapInOwnChrome("https://linked.example/");
   ok("a linked site Chrome hasn't allowed: where to press Allow", /click Symbiot's button in the toolbar and press Allow next to linked\.example/.test(r.error || "") && r.allow === "linked.example", r);
   const s = await O.mapInOwnChrome("https://example.com/inbox", "Inbox");
-  ok("an allowed one: saved as a screen of your own Chrome, its regions in the picture's pixels", s.via === "own-chrome" && s.name === "Inbox" && s.page.dpr === 2 && s.regions.length === 3 && s.regions[0].x === 20 && s.regions[0].w === 200, s);
+  ok("an allowed one: saved as a screen of your own Chrome, its regions in the picture's pixels", s.via === "own-chrome" && s.name === "Inbox" && s.page.dpr === 2 && s.regions.length === 6 && s.regions[0].x === 20 && s.regions[0].w === 200, s);
   ok("…and kept as one", (loadScreens().find((x) => x.id === s.id) || {}).via === "own-chrome" && O.ownScreen(s.id));
   fakeExt.on.map = (m) => ({ ...look(m.url), png: "" });
   const d = await O.mapInOwnChrome("https://example.com/inbox", "Drawn");
@@ -132,22 +145,80 @@ try {
   const send = s.regions.find((x) => x.label === "Send"), del = s.regions.find((x) => x.label === "Delete account"), box = s.regions.find((x) => x.label === "Message");
   fakeExt.got.length = 0;
   r = await O.pressInOwnChrome(s.id, send.id, { confirmed: true });
-  ok("Send is never pressed by an agent in your own Chrome, confirmed or not", r.held === "send" && /never presses it there/.test(r.error) && !fakeExt.got.length, r);
+  ok("Send waits for the user's Go, confirmed or not: a hold, and the card to ask for it, nothing pressed", r.held === "send" && /^[0-9a-f]{8}$/.test(r.hold) && new RegExp("\\{#chrome-go-" + r.hold + "\\}").test(r.error) && /go ahead: Clicks Send/.test(r.error) && !fakeExt.got.length, r);
+  const again = await O.pressInOwnChrome(s.id, send.id, { confirmed: true });
+  ok("…asked again before the Go: the same hold, not a second card", again.hold === r.hold);
+  const { goAhead } = await import("../chromegate.mjs");
+  goAhead(r.hold);
+  const went = await O.pressInOwnChrome(s.id, send.id, { confirmed: true });
+  ok("…after the Go: pressed, once", went.pressed === "Send" && fakeExt.got.some((m) => m.fn === "click"), went);
+  ok("…and the next Send waits again", (await O.pressInOwnChrome(s.id, send.id, { confirmed: true })).held === "send");
+  ok("a draft-only run never sends, Go or not", /only drafts/.test((await O.pressInOwnChrome(s.id, send.id, { confirmed: true, noSend: true })).error || ""));
+  fakeExt.got.length = 0;
   r = await O.pressInOwnChrome(s.id, del.id, { confirmed: true });
-  ok("…nor a delete", r.held === "delete", r);
+  ok("…a delete waits for the Go too", r.held === "delete" && /deletes as the user/.test(r.error) && !fakeExt.got.length, r);
   r = await O.typeInOwnChrome(s.id, box.id, "Hello there", { enter: true });
-  ok("Enter in a message box can send: held too", r.held === "send" && !fakeExt.got.some((m) => m.fn === "type"), r);
+  ok("Enter in a message box can send: held for the Go, nothing typed", r.held === "send" && /Presses Enter in Message/.test(r.error) && !fakeExt.got.some((m) => m.fn === "type"), r);
   r = await O.typeInOwnChrome(s.id, box.id, "Hello there");
   ok("typing on a trusted site: clicked where the field is now (page pixels), typed, the page mapped again", r.typed === "Message" && r.via === "own-chrome" && r.found === true && r.kept === true && fakeExt.got.some((m) => m.fn === "click" && m.args[0] === 210 && m.args[1] === 70) && fakeExt.got.some((m) => m.fn === "type" && m.args[0] === "Hello there" && m.args[1] === false), { r, got: fakeExt.got.map((m) => [m.op, m.fn, m.args]) });
+  fakeExt.got.length = 0;
+  r = await O.typeInOwnChrome(s.id, box.id, "there", { replace: "Hello" });
+  ok("Replace: the part selected, the new text put in its place", r.replaced === "Hello" && fakeExt.got.some((m) => m.fn === "selectPart" && m.args[0] === "Hello") && fakeExt.got.some((m) => m.fn === "insert" && m.args[0] === "there"), { r, got: fakeExt.got.map((m) => [m.fn, m.args]) });
   saveConfig({ ...loadConfig(), trustedSites: [], sites: [{ hosts: ["example.com"] }] });
   r = await O.pressInOwnChrome(s.id, box.id);
   ok("on a site that's linked but not trusted: your confirmation first", r.confirm === true && r.host === "example.com", r);
+  const plan = s.regions.find((x) => x.label === "Plan"), subj = s.regions.find((x) => x.label === "Subject"), save = s.regions.find((x) => x.label === "Save");
+  fakeExt.got.length = 0;
+  const run0 = fakeExt.on.run;
+  fakeExt.on.run = (m) => m.fn === "chooseSelect" ? { result: { native: true, chose: "Pro", value: "pro" } } : run0(m);
+  saveConfig({ ...loadConfig(), trustedSites: ["example.com"] });
+  r = await O.chooseInOwnChrome(s.id, plan.id, "Pro");
+  ok("Choose: a native menu set in the page, by its label", r.chose === "Pro" && r.value === "pro" && fakeExt.got.some((m) => m.fn === "chooseSelect" && m.args[0] === "#p" && m.args[3] === "Pro"), r);
+  ok("…only on a menu", /isn't a menu/.test((await O.chooseInOwnChrome(s.id, box.id, "x")).error || ""));
+  fakeExt.on.run = (m) => m.fn === "chooseSelect" ? { result: { native: false } } : m.fn === "chooseOption" ? { result: { chose: "Delete everything", at: { x: 5, y: 5 } } } : run0(m);
+  r = await O.chooseInOwnChrome(s.id, plan.id, "Delete everything");
+  ok("…a site's own menu whose option deletes: not chosen by an agent", r.held === "delete" && !fakeExt.got.some((m) => m.fn === "click" && m.args[0] === 5), r);
+  fakeExt.on.run = run0; fakeExt.got.length = 0;
+  r = await O.fillInOwnChrome(s.id, [{ region: subj.id, text: "Hi" }, { region: box.id, text: "Body" }], { press: save.id });
+  ok("Fill: each field typed where it is, then Save pressed, one map after", JSON.stringify(r.typed) === '["Subject","Message"]' && r.pressed === "Save" && fakeExt.got.filter((m) => m.fn === "type").length === 2 && fakeExt.got.filter((m) => m.op === "look").length === 1, { r, got: fakeExt.got.map((m) => [m.op, m.fn]) });
+  fakeExt.got.length = 0;
+  r = await O.fillInOwnChrome(s.id, [{ region: box.id, text: "Body" }], { press: send.id });
+  ok("…with Send to press: held for the Go before anything is typed", r.held === "send" && !fakeExt.got.length, r);
+  fakeExt.on.run = (m) => m.fn === "find" && m.args[0] === "#save" ? { result: { x: 1, y: 1, by: "spot" } } : run0(m);
+  r = await O.fillInOwnChrome(s.id, [{ region: subj.id, text: "Hi" }], { press: save.id });
+  ok("…and a button that isn't on the page now: nothing typed or pressed", /isn't on the page now/.test(r.error || "") && !fakeExt.got.some((m) => m.fn === "type"), r);
+  fakeExt.on.run = run0;
+  const file = join(HOME, "invoice.pdf"); writeFileSync(file, Buffer.alloc(900 * 1024, 7));
+  const putN = { n: 0 }; let joined = "";
+  fakeExt.on.put = (m) => { putN.n++; joined += m.data; return { ok: true }; };
+  fakeExt.on.attach = (m) => ({ result: { ok: m.files.length === 1 && m.files[0].name === "invoice.pdf" && m.files[0].type === "application/pdf" && Buffer.from(joined, "base64").length === 900 * 1024 } });
+  fakeExt.on.run = (m) => m.fn === "fileBox" ? { result: { box: "the file box", how: "under the button", multiple: false } } : run0(m);
+  r = await O.uploadInOwnChrome(s.id, subj.id, file);
+  ok("Upload: the file sent in pieces a message can carry, put in the box whole", r.uploaded === "Subject" && putN.n === 3 && /the file box/.test(r.used), { r, pieces: putN.n });
+  fakeExt.on.run = (m) => m.fn === "fileBox" ? { result: null } : run0(m);
+  ok("…no file box on the page: says the system's file dialog can't be answered from here", /can't answer the system's file dialog/.test((await O.uploadInOwnChrome(s.id, subj.id, file)).error || ""));
+  ok("…a file that isn't there: says so", /No file at/.test((await O.uploadInOwnChrome(s.id, subj.id, join(HOME, "nope.pdf"))).error || ""));
+  fakeExt.on.run = run0;
+  let y = 0;
+  fakeExt.on.run = (m) => ({ result: m.fn === "height" ? { h: 1800, inside: false } : m.fn === "view" ? { w: 400, h: 600, dpr: 1 } : m.fn === "scroll" ? (y = Math.min(1200, m.args[0]), { from: 0, y, max: 1200 }) : m.fn === "collectWhole" ? { url: "https://example.com/inbox", title: "Inbox", items: [{ label: "Top", kind: "button", x: 5, y: 5, w: 50, h: 20, selector: "#t" }, ...(y >= 1200 ? [{ label: "Bottom", kind: "link", x: 5, y: 1700, w: 50, h: 20, selector: "#b" }] : [])] } : true });
+  r = await O.wholeInOwnChrome(s.id);
+  ok("Whole page: scrolled a window at a time to the bottom, drawn as one tall screen, top to bottom", r.drawn && r.h === 1800 && r.w === 400 && r.page.full === true && r.regions.map((x) => x.label).join() === "Top,Bottom" && /\(whole page\)$/.test(r.name) && fakeExt.got.filter((m) => m.fn === "wholeDone").length === 2, { r, got: fakeExt.got.filter((m) => m.op === "run").map((m) => [m.fn, m.args]) });
+  fakeExt.on.run = (m) => ({ result: m.fn === "height" ? { h: 900, inside: true } : null });
+  ok("…a page whose list scrolls inside it says to use Scroll", (await O.wholeInOwnChrome(s.id)).inside === true);
+  fakeExt.on.run = run0;
+  saveConfig({ ...loadConfig(), trustedSites: [], sites: [{ hosts: ["example.com"] }] });
   fakeExt.on.run = (m) => m.fn === "scroll" ? { result: { from: 0, y: 400, max: 800 } } : { result: null };
   r = await O.scrollInOwnChrome(s.id, "down");
   ok("Scroll: moved there, what's in the window then mapped, named for how far down", r.scrolled === "down" && r.name === "Inbox ↓ 50%" && r.via === "own-chrome", r);
   fakeExt.close(); await until(() => !O.ownChromeStatus().connected);
+  let started = 0; O.setStarter(() => { started++; });
   r = await O.pressInOwnChrome(s.id, box.id, { confirmed: true });
-  ok("Chrome gone: says so, and the hidden browser isn't used instead", r.offline === true && /isn't connected/.test(r.error), r);
+  ok("Chrome closed: started plainly once, and when the extension doesn't come, says so; the hidden browser isn't used instead", started === 1 && r.offline === true && /isn't connected/.test(r.error), { started, r });
+  r = await O.pressInOwnChrome(s.id, box.id, { confirmed: true });
+  ok("…not started again within the minute", started === 1 && r.offline === true);
+  O.setStarter(() => { started++; setTimeout(() => extension(sock).then((e) => { e.on.run = fakeExt.on.run; }), 300); });
+  r = await O.pressInOwnChrome(s.id, box.id, { confirmed: true });
+  ok("…and when it does come: carries on in it", started === 2 && r.pressed === "Message", r);
 } catch (e) { fail++; console.log("  ✗ threw: " + (e && e.stack || e)); }
 finally { for (const p of procs) try { p.kill(); } catch {} O.stopBroker(); rmSync(HOME, { recursive: true, force: true }); }
 console.log(`\n${pass} passed, ${fail} failed`);
@@ -159,13 +230,16 @@ function look(url) {
     { label: "Message", kind: "field", x: 10, y: 50, w: 100, h: 20, selector: "#m" },
     { label: "Send", kind: "button", x: 120, y: 50, w: 40, h: 20, selector: "#s" },
     { label: "Delete account", kind: "button", x: 10, y: 100, w: 80, h: 20, selector: "#d" },
+    { label: "Plan", kind: "menu", x: 10, y: 130, w: 80, h: 20, selector: "#p" },
+    { label: "Subject", kind: "field", x: 10, y: 160, w: 80, h: 20, selector: "#subj" },
+    { label: "Save", kind: "button", x: 100, y: 160, w: 40, h: 20, selector: "#save" },
   ] } };
 }
 // The extension's side of the app's socket, as the host passes it on: hello, then answers.
 async function extension(sock) {
   const c = connect(sock), got = [], on = {
     tab: () => ({ tab: 9, same: true }), map: (m) => look(m.url), look: () => look("https://example.com/inbox"), wait: () => ({ ok: true }),
-    run: (m) => ({ result: m.fn === "find" ? { x: 210, y: 70, by: "selector", clear: true } : m.fn === "modal" ? false : { ok: true, held: true } }),
+    run: (m) => ({ result: m.fn === "find" ? { x: 210, y: 70, by: "selector", clear: true } : m.fn === "modal" ? false : m.fn === "selectPart" ? { ok: true } : { ok: true, held: true } }),
   };
   let buf = "";
   c.on("data", (d) => { buf += d; for (let i = buf.indexOf("\n"); i >= 0; i = buf.indexOf("\n")) { const m = JSON.parse(buf.slice(0, i)); buf = buf.slice(i + 1); got.push(m); c.write(JSON.stringify({ id: m.id, ...on[m.op](m) }) + "\n"); } });
@@ -200,7 +274,7 @@ function worker() {
       group: async () => 7, captureVisibleTab: async () => "data:image/png;base64,AAAA", onRemoved: ev(),
     },
     tabGroups: { update: async (g, o) => { W.groupTitle = o.title; } },
-    scripting: { executeScript: async (o) => { W.calls.push(o); if (o.files) return []; const [fn, args] = o.args; return [{ result: { collect: { url: "https://example.com/a", title: "Fake", items: [] }, block: { text: "", review: "" }, view: { w: 1280, h: 800, dpr: 2 }, click: { clicked: args.join() } }[fn] }]; } },
+    scripting: { executeScript: async (o) => { W.calls.push(o); if (o.files) return []; const [fn, args] = o.args; return [{ result: { collect: { url: "https://example.com/a", title: "Fake", items: [] }, block: { text: "", review: "" }, view: { w: 1280, h: 800, dpr: 2 }, click: { clicked: args.join() }, attach: { attached: (args[0] || []).length } }[fn] }]; } },
     alarms: { create() {}, onAlarm: ev() },
     action: { setBadgeText: ({ text }) => { W.badge = text; }, setBadgeBackgroundColor() {} },
   };
