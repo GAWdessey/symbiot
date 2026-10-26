@@ -855,10 +855,14 @@ const BLOCK_TEXT = "(() => ({ text: (document.title + ' ' + ((document.body && d
 async function lineBlocked(page, info) {
   try {
     const { result } = await page.send("Runtime.evaluate", { expression: BLOCK_TEXT, returnByValue: true });
-    const v = (result && result.value) || {}, b = lineBlock(v.text); if (!b) return null;
-    const host = hostOf(info.url), e = noteBlocked(host, b, { review: v.review });
-    return { ...b, host, ...(e && e.review ? { review: e.review } : {}), note: `${host} refuses this computer's internet connection itself (${b.why}${b.ip ? ", " + b.ip : ""}): no browser on this computer gets past it, the user's own Chrome included. Use its API if it has one; otherwise the step is the user's, on their phone on mobile data (not Wi-Fi)${e && e.review ? ", and its review form is " + e.review : ""}.` };
+    return blockOf((result && result.value) || {}, info.url);
   } catch { return null; }
+}
+// What BLOCK_TEXT read ({ text, review }) on the page at url: its block, recorded, or null.
+function blockOf(v, url) {
+  const b = lineBlock(v.text); if (!b) return null;
+  const host = hostOf(url), e = noteBlocked(host, b, { review: v.review });
+  return { ...b, host, ...(e && e.review ? { review: e.review } : {}), note: `${host} refuses this computer's internet connection itself (${b.why}${b.ip ? ", " + b.ip : ""}): no browser on this computer gets past it, the user's own Chrome included. Use its API if it has one; otherwise the step is the user's, on their phone on mobile data (not Wi-Fi)${e && e.review ? ", and its review form is " + e.review : ""}.` };
 }
 // A sign-in page instead of the site.
 function signInPage(url) {
@@ -869,7 +873,7 @@ function signInPage(url) {
 // A screenshot and what's on it, saved as a screen named `name`, else for the page.
 function saveScreen(name, data, info, suffix = "") {
   const host = hostOf(info.url), base = String(name || "").trim() || info.title || host || "Page";
-  const s = addPageScreen(suffix ? base.slice(0, 80 - suffix.length) + suffix : base, Buffer.isBuffer(data) ? data : Buffer.from(data, "base64"), info, info.items);
+  const s = addPageScreen(suffix ? base.slice(0, 80 - suffix.length) + suffix : base, Buffer.isBuffer(data) ? data : Buffer.from(data, "base64"), info, info.items, info.via);
   if (s.error) return s;
   // a sign-in page instead of the site: say how to get past it once
   if (info.block) return { ...s, note: info.block.note, block: info.block };
@@ -1814,4 +1818,4 @@ function watchWindow({ every = 2000, start = 30000, idle = 0 } = {}) {
   if (WATCH.unref) WATCH.unref();
 }
 
-export { windowSince, snapProfile, SNAP, BROWSER_IDLE_MIN, takeChromeSignIn, open as openSite, linkedSite, CHROME_TRIED, typeInto, watcherBusy, WATCH_GRACE, noteAgentUse, windowMoved, saveSessions, showScreen, fillForm, verifyPage, sessionCookie, historyPage, SESSION_COOKIE, tabKey, siteUrl, browserArgs, sandboxProxy, reducedUa, windowUa, mapPage, wholePage, readPage, readTexts, readLinkedIn, LI_READ, pagePicture, pageClip, CLIP, isSend, pressRegion, typeRegion, chooseRegion, uploadRegion, uploadFiles, attachFiles, FILE_BOX, scrollPage, SCROLLS, signIn, keepBrowserOpen, closeBrowser, browserOpen, keepSessions, SESSION_KEEP, SESSIONS, loadSessions, trustedSites, isTrusted, trustSite, untrustSite, PROFILE , openSymbiotBrowser, closeSymbiotBrowser, onBrowserClosed, scratchPage, open as openPage, netWatch, IDLE, shortUrl, evaluate, SCROLLER, watchWindow, windowOpen, lockHolder, setBrowserHub , browserHub };
+export { saveScreen, blockOf, BLOCK_TEXT, collectJs, scrollJs, findRegion, MODAL_OPEN, SELECT_PART, DEEP, hostOf, oneAtATime, windowSince, snapProfile, SNAP, BROWSER_IDLE_MIN, takeChromeSignIn, open as openSite, linkedSite, CHROME_TRIED, typeInto, watcherBusy, WATCH_GRACE, noteAgentUse, windowMoved, saveSessions, showScreen, fillForm, verifyPage, sessionCookie, historyPage, SESSION_COOKIE, tabKey, siteUrl, browserArgs, sandboxProxy, reducedUa, windowUa, mapPage, wholePage, readPage, readTexts, readLinkedIn, LI_READ, pagePicture, pageClip, CLIP, isSend, pressRegion, typeRegion, chooseRegion, uploadRegion, uploadFiles, attachFiles, FILE_BOX, scrollPage, SCROLLS, signIn, keepBrowserOpen, closeBrowser, browserOpen, keepSessions, SESSION_KEEP, SESSIONS, loadSessions, trustedSites, isTrusted, trustSite, untrustSite, PROFILE , openSymbiotBrowser, closeSymbiotBrowser, onBrowserClosed, scratchPage, open as openPage, netWatch, IDLE, shortUrl, evaluate, SCROLLER, watchWindow, windowOpen, lockHolder, setBrowserHub , browserHub };

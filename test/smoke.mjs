@@ -278,6 +278,8 @@ const calls = [
   ["/api/links/unlink", "POST"],
   ["/api/line", "GET"],             // this computer's connection: sites that refuse it, the last check
   ["/api/line/check", "POST"],      // not in tests: SYMBIOT_NO_NET -> "Checking is switched off here"
+  ["/api/own-chrome", "GET"],        // Symbiot's extension in your own Chrome: set up? connected? which sites
+  ["/api/own-chrome/setup", "POST"], // writes its folder and registers its host with the browsers here (none in this HOME)
   ["/api/line/forget", "POST"],     // no host -> nothing forgotten
   ["/api/intuition", "POST"],       // no mode -> "Pick off, watch or act.", nothing changed
   ["/api/intuition/focus", "POST"], // no text -> "Nothing to save."

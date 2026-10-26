@@ -102,6 +102,21 @@ function pngCrop(img, r) {
   const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(r.w, 0); ihdr.writeUInt32BE(r.h, 4); ihdr[8] = img.depth; ihdr[9] = img.ctype;
   return Buffer.concat([PNG_SIG, pngChunk("IHDR", ihdr), ...img.keep, pngChunk("IDAT", deflateSync(raw)), pngChunk("IEND", Buffer.alloc(0))]);
 }
+// A drawing of a page instead of its picture, w×h: a light page with each region a white box
+// outlined in its kind's colour. For the user's own Chrome (ownchrome.mjs), where Chrome lets an
+// extension take a picture of a page only with access to every site, not the sites allowed one by one.
+const WIRE = { field: [37, 99, 235], button: [22, 163, 74], link: [124, 58, 237], menu: [217, 119, 6] };
+function wirePng(w, h, boxes = []) {
+  w = Math.max(1, Math.min(4000, Math.round(w) || 1)); h = Math.max(1, Math.min(16000, Math.round(h) || 1));
+  const stride = w * 3, px = Buffer.alloc(stride * h, 0xf4);
+  const fill = (x0, y0, x1, y1, c) => { for (let y = Math.max(0, y0); y < Math.min(h, y1); y++) for (let x = Math.max(0, x0); x < Math.min(w, x1); x++) { const i = y * stride + x * 3; px[i] = c[0]; px[i + 1] = c[1]; px[i + 2] = c[2]; } };
+  for (const b of boxes) {
+    const x = Math.round(b.x) || 0, y = Math.round(b.y) || 0, bw = Math.round(b.w) || 0, bh = Math.round(b.h) || 0, c = WIRE[b.kind] || [100, 116, 139];
+    if (bw <= 0 || bh <= 0) continue;
+    fill(x, y, x + bw, y + bh, c); fill(x + 2, y + 2, x + bw - 2, y + bh - 2, [255, 255, 255]);
+  }
+  return pngCrop({ w, h, depth: 8, ctype: 2, bpp: 3, stride, px, keep: [] }, { x: 0, y: 0, w, h });
+}
 // One PNG per rectangle ({ x, y, w, h } in the image's pixels), or null when the
 // image can't be read or a rectangle doesn't fit inside it.
 function splitPng(buf, rects) {
@@ -414,14 +429,17 @@ function setRegions(id, regions) {
 // pixels, and the selector of what scrolls when it isn't the page itself), when
 // there's more; full is set on a map of the whole page in one tall screenshot, and
 // list on one whose list (its selector) was opened out in it.
-function addPageScreen(name, png, page, regions) {
+// via: what mapped it, the hidden browser ("headless") or the user's own Chrome ("own-chrome",
+// ownchrome.mjs), where acting on it happens too. dpr: screen pixels to a page pixel, when not 1.
+function addPageScreen(name, png, page, regions, via = "headless") {
   const size = pngSize(png); if (!size) return { error: "The page's screenshot isn't a PNG." };
   const id = newId();
   try { mkdirSync(SCREENS_DIR, { recursive: true }); writePrivate(screenFile(id), png); } catch (e) { return { error: String((e && e.message) || e) }; }
   const p = { url: String(page.url || "").slice(0, 2000), title: String(page.title || "").trim().slice(0, 200), ...(page.full ? { full: true } : {}), ...(page.full && typeof page.list === "string" && page.list.trim() ? { list: page.list.trim().slice(0, 1000) } : {}) };
   const sc = page.scroll || {}, max = Math.round(Number(sc.max) || 0);
   if (max > 0) p.scroll = { y: Math.max(0, Math.min(max, Math.round(Number(sc.y) || 0))), max, ...(typeof sc.selector === "string" && sc.selector.trim() ? { selector: sc.selector.trim().slice(0, 1000) } : {}) };
-  return addScreen(id, name, size, "headless", { page: p, regions: cleanRegions(size, regions) });
+  const dpr = Number(page.dpr) || 1; if (dpr !== 1 && dpr > 0 && dpr <= 4) p.dpr = dpr;
+  return addScreen(id, name, size, via === "own-chrome" ? via : "headless", { page: p, regions: cleanRegions(size, regions) });
 }
 function renameScreen(id, name) {
   const all = loadScreens(), s = all.find((x) => x.id === id); if (!s) return { error: "not found" };
@@ -496,4 +514,4 @@ function clickRegion(id, regionId) {
   return { error: `No click tool found. Install ${want}.` };
 }
 
-export { SCREENS_SOCK, screensGate, sockGate, loadScreens, screenImage, pngSize, pngDecode, splitPng, stitchPng, stitchListPng, captureCmds, monitorCmds, parseCosmicRandr, parseWlrRandr, parseKscreen, parseXrandr, parseLines, tidyMonitors, monitorAreas, listMonitors, portalAppId, allowScreenshots, captureScreen, splitScreen, importScreen, setRegions, addPageScreen, renameScreen, removeScreen, blueprint, center, clickCmds, clickRegion };
+export { SCREENS_SOCK, screensGate, sockGate, loadScreens, screenImage, pngSize, pngDecode, wirePng, splitPng, stitchPng, stitchListPng, captureCmds, monitorCmds, parseCosmicRandr, parseWlrRandr, parseKscreen, parseXrandr, parseLines, tidyMonitors, monitorAreas, listMonitors, portalAppId, allowScreenshots, captureScreen, splitScreen, importScreen, setRegions, addPageScreen, renameScreen, removeScreen, blueprint, center, clickCmds, clickRegion };
