@@ -138,6 +138,17 @@ try {
   const pr = T.precheck(real);
   ok("the card as it was written that day (\"Hold the credit\" is waiting, not money; an id before USD is no price): redo for the money warning", pr && pr.verdict === "redo" && /hold or a charge/.test(pr.why), pr);
   ok("a card on a board, a logo on a card: no money", T.precheck({ q: "Can you add the new task card to the board?", options: [] }) === null && T.precheck({ q: "Should I add the logo to the business card?", options: [] }) === null);
+
+  console.log("A KEY THE USER MADE, WHOSE VALUE NEVER REACHED THE VAULT (26 Oct 2026)");
+  const doubt = { q: "Your answer says you created one, but I can't find it. Can you make the tunnel-edit token?", context: "The vault has no tunnel-edit token.", options: ["👤 You (only you: your Cloudflare sign-in): make the token", "Skip this part"] };
+  const pd = T.precheck(doubt);
+  ok("a card that doubts the user made the token goes back, with the one line to say instead", pd && pd.verdict === "redo" && /The token exists, but its value isn't in the vault: roll it in <the site> and paste the value in chat/.test(pd.why) && /another card/.test(pd.why), pd);
+  ok("…the AI isn't asked for it", (await T.judge(doubt, {}, { write: async () => { throw new Error("asked"); } })).verdict === "redo");
+  const self = T.precheck({ q: "Can you roll the Cloudflare token?", options: ["👤 You (only you: your Cloudflare sign-in): roll it, then save it to the vault", "Skip this part"] });
+  ok("a card that has the user save it to the vault themselves goes back: a pasted value is saved by itself", self && self.verdict === "redo" && /saved there by itself/.test(self.why), self);
+  ok("…while asking them to paste it, the agent's own vault step, and a key the agent can't find on a server are left to judge", T.precheck({ q: "Can you paste the Cloudflare token in chat?", options: ["👤 You (only you: your Cloudflare token): roll it and paste it here"] }) === null && T.precheck({ q: "Shall I use the key you pasted?", options: ["🤖 Agent: I'll put it in the vault"] }) === null && T.precheck({ q: "I can't find the SSH key on the server: which one should I use?", options: ["Skip this part"] }) === null);
+  const { ONLY_YOU } = await import("../handover.mjs");
+  ok("every brief says a pasted key saves itself, and the one line for a made key that isn't in the vault", /never ask them to save it there or in a file/.test(ONLY_YOU) && /The token exists, but its value isn't in the vault: roll it in Cloudflare and paste the value in chat/.test(ONLY_YOU) && /never doubting they made it/.test(ONLY_YOU));
 } catch (e) { ok("ran", false, String((e && e.stack) || e)); }
 finally { rmSync(HOME, { recursive: true, force: true }); }
 console.log(`\n${fail ? "✗" : "✓"} triage: ${pass} passed, ${fail} failed`);

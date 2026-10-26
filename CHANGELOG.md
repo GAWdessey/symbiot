@@ -2,6 +2,10 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one), for anyone who installs the app: what changed in it, never whose work it was (no projects, people, accounts, services, run ids or task wording of the person who made it). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.94.3 — 2026-10-26
+
+- **A key you made but never pasted is asked for once, plainly.** When you've made a token on a site but its value never reached the vault, you get one line on one card: the token exists, roll it on the site and paste the value in chat. Cards no longer suggest you didn't make it, ask for it again on another card, or tell you to save it to the vault yourself: what you paste in chat or on a card is saved there by itself.
+
 ## 0.94.2 — 2026-10-26
 
 - **A pasted password is saved for the site it's on.** Paste a sign-up or new-password page into Home and the password is saved under that page's site and the account shown beside it, even when you already use the same password elsewhere. It's no longer filed under another site's login that happens to match, and an email address right before "password" is read as the account, not the site.

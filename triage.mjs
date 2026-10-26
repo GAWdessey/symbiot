@@ -92,6 +92,15 @@ const SPEND = /\b(?:buy|buying|bought|purchase|purchasing|pay|paying|spend|spend
 const spends = (t) => AMOUNT.test(t) && SPEND.test(t);
 const BECAUSE = /\b(?:because|since|so that|so (?:we|it|you|the|they)|why|instead of|rather than|the reason|needed (?:for|to|because)|otherwise|as (?:the|your) (?:old|current)|in place of|to (?:claim|get|keep|unlock|activate|verify)|can'?t (?:be )?(?:moved|transferred)|no (?:way|longer)|isn'?t (?:possible|available)|unavailable|expired|lost)\b/i;
 const NEW_ACCOUNT = /\b(?:create|make|open|set up|sign up for|register)\s+(?:a |an |your |the )?(?:new )?([A-Z][\w.-]+(?:\s[A-Z][\w.-]+)?)\s+account\b|\bsign up (?:at|for|with)\s+([A-Z][\w.-]+)/;
+// A key the user says they made, whose value never reached the vault: the card doubted them ("Your answer
+// says you created one, but I can't find it") or had them save it to the vault themselves, and another
+// agent asked again (a Cloudflare token, 26 Oct 2026). A value pasted in chat or on a card is saved by itself.
+const SAVE_YOURSELF = /\b(?:save|add|store|put|enter|keep|copy)\b[^.?!\n]{0,60}\b(?:in|into|to)\s+(?:the\s+|symbiot['’]?s\s+)?vault\b/i;
+const YOU_MADE = /\b(?:you (?:said|say|wrote|told me)?\s*(?:you(?:'|’)?ve |you )?(?:created|made|generated|rolled)|your (?:answer|reply|message) says you)\b/i;
+const NOT_FOUND = /\b(?:can(?:'|’)?t|cannot|couldn(?:'|’)?t|didn(?:'|’)?t|don(?:'|’)?t) (?:find|see|locate)\b|\b(?:has|holds|have) no\b[^.?!\n]{0,40}\b(?:token|key)\b|\bno sign of\b/i;
+const doubtsMade = (t) => (YOU_MADE.test(t) && NOT_FOUND.test(t)) || /\b(?:did|have) you (?:actually |really )?(?:create|make|generate|roll)d?\b[^.?!\n]{0,30}\b(?:token|key)\b/i.test(t);
+const byAgent = (t) => /^\s*🤖|^\s*(?:can|may|shall|should) i\b/i.test(String(t || ""));
+const MADE_KEY_LINE = "\"The token exists, but its value isn't in the vault: roll it in <the site> and paste the value in chat.\"";
 const READ_REPORT = /\b(?:read|go through|look over|look through|review|check)\s+(?:the|my|this|that|our)\s+(?:[\w'"“”‘’:-]+\s+){0,8}?(?:report|write-?up|findings)\b/i;
 // A hold Symbiot remembers on a site the card names ("LinkedIn reserved R425.45 on the card when it
 // was added"): the line, so the agent can give the amount. "" when none is.
@@ -110,6 +119,8 @@ function precheck(q, known = "") {
   // "read the report before I carry on": the card is the summary, not a pointer to one (a 7am report
   // planned under an account the user had since replaced, and they were sent to read it, 23 Oct 2026)
   if ([q.q, ...(q.options || [])].some((t) => READ_REPORT.test(String(t || "")))) return { verdict: "redo", why: "it sends the user to read a report instead of asking them something. First check the report against newer answers in ANSWERS.md and what Symbiot remembers (a newer decision, an account made since) and update it if it's out of date; then put a 2-3 line summary in the card's context and ask only the one question that's left, linking the report for detail" };
+  if ([q.q, ...(q.options || [])].some((t) => !byAgent(t) && SAVE_YOURSELF.test(String(t || "")))) return { verdict: "redo", why: `it tells the user to save a key or password to the vault themselves, and a value they paste in chat or on this card is saved there by itself. Ask them to paste it here instead; for one they made whose value never reached the vault, say it in one line: ${MADE_KEY_LINE}` };
+  if (/\b(?:token|key|password|secret)s?\b/i.test(all) && doubtsMade(all)) return { verdict: "redo", why: `it questions whether the user made the key. They did: its value just never reached the vault. Say it once, in one line, and nothing more: ${MADE_KEY_LINE} Don't ask for it on another card` };
   const m = all.match(NEW_ACCOUNT), svc = m && (m[1] || m[2]);
   if (svc && known) {
     const line = String(known).split("\n").find((l) => new RegExp(`\\b${svc.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i").test(l) && /\baccount\b/i.test(l));
