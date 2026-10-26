@@ -22,7 +22,7 @@ import { CONFIG_DIR, chromeBinary } from "./core.mjs";
 import { FILE_BOX, uploadFiles, siteUrl, saveScreen, blockOf, collectJs, scrollJs, findRegion, BLOCK_TEXT, MODAL_OPEN, SELECT_PART, DEEP, PAGE_HEIGHT, MAX_TALL, CHOOSE_SELECT, CHOOSE_OPTION, chooseSaid, hostOf, linkedSite, isTrusted } from "./headless.mjs";
 import { loadScreens, center, wirePng } from "./screens.mjs";
 import { heldFor } from "./sends.mjs";
-import { holdOrGo } from "./chromegate.mjs";
+import { holdOrGo, settleHold } from "./chromegate.mjs";
 import { listSecrets, getSecret, onSite, fillSite, bindSite } from "./vault.mjs";
 import { noteUse } from "./vaultview.mjs";
 
@@ -304,7 +304,10 @@ function saveLook(r, name) {
 // holdOrGo): it's their own identity in their own browser. Once they say Go, the same press goes
 // through, once.
 const RETRY = "do the same again (the same symbiot screens command): it goes through, once";
-const gate = (host, summary, kind) => { const h = holdOrGo(host, summary, kind, { retry: RETRY }); return h ? { error: h.why, held: kind, hold: h.held } : null; };
+// use(id): told which hold a Go let through, so what came of the press is noted on it (settleHold): the
+// history of presses after a Go says "Sent in your Chrome at 10:42" or what went wrong.
+const gate = (host, summary, kind, use = null) => { const h = holdOrGo(host, summary, kind, { retry: RETRY, onUse: use }); return h ? { error: h.why, held: kind, hold: h.held } : null; };
+const settled = (id, out, acted) => { if (id) try { settleHold(id, acted || !(out && out.error) ? { ok: true } : { ok: false, error: out.error }); } catch {} return out; };
 function ownScreen(id) { const s = loadScreens().find((x) => x.id === id); return s && s.via === "own-chrome" && s.page && s.page.url ? s : null; }
 const toPage = (s, p) => { const k = (s.page && s.page.dpr) || 1; return { x: p.x / k, y: p.y / k }; };
 async function tabOf(s) {
@@ -318,7 +321,8 @@ async function actInOwnChrome(id, regionId, verb, { confirmed = false, noSend = 
   const host = hostOf(s.page.url);
   if (noSend && verb === "Press" && heldFor("Clicks " + r.label, host) === "send") return { error: `"${r.label}" sends or posts. This run only drafts: it never presses Send, Post, Comment or Reply. The draft stays for the user to send or post.` };
   if (!confirmed && !isTrusted(s.page.url)) return { error: `${{ Type: "Typing into", Upload: "Attaching a file with", Choose: "Choosing in", Secret: "Filling a saved sign-in into" }[verb] || "Pressing"} "${r.label}" acts on the real site in your own Chrome, signed in as you, and ${host} isn't one of your trusted sites.`, confirm: true, host };
-  const held = before ? before(r, host) : null; if (held) return held;
+  let goId = ""; const held = before ? before(r, host, (h) => { goId = h; }) : null; if (held) return held;
+  let acted = false; const out = await (async () => {
   const t = await tabOf(s); if (t.error) return t;
   const run = (fn, args = []) => askChrome("run", { tab: t.tab, fn, args }).then((x) => x.error ? { error: refusedBy(x) } : x.result);
   const c = toPage(s, center(r));
@@ -328,15 +332,18 @@ async function actInOwnChrome(id, regionId, verb, { confirmed = false, noSend = 
   const at = hit ? { x: hit.x, y: hit.y } : c;
   const done = await act(run, at, r, t.tab);
   if (done && done.error) return { ...done, stay: true };
+  acted = true;
   await askChrome("wait", { tab: t.tab, ms: 15000 });
   const next = await askChrome("look", { tab: t.tab }, { timeout: 60000 });
   if (next.error) return { error: refusedBy(next) };
   const saved = saveLook(next, "");
   return saved.error ? saved : { ...saved, ...done, found: !!hit && hit.by === "selector", kept: !!t.same };
+  })();
+  return settled(goId, out, acted);
 }
 function pressInOwnChrome(id, regionId, opts = {}) {
   return actInOwnChrome(id, regionId, "Press", opts, async (run, at, r) => { const x = await run("click", [at.x, at.y]); return x && x.error ? x : { pressed: r.label }; },
-    (r, host) => { const k = heldFor("Clicks " + r.label, host); return k ? gate(host, "Clicks " + r.label, k) : null; });
+    (r, host, use) => { const k = heldFor("Clicks " + r.label, host); return k ? gate(host, "Clicks " + r.label, k, use) : null; });
 }
 // Enter sends in a chat or a message box: an agent presses it only in a search or filter box
 // replace: only that part of what's in the field is typed over (selected, then typed, as a person
@@ -355,10 +362,10 @@ function typeInOwnChrome(id, regionId, text, { enter = false, replace = null, ..
     }
     const x = await run("type", [text, !!enter]);
     return x && x.error ? x : { typed: r.label, ...(x && x.held === false ? { note: "The field doesn't show all of what was typed: check it on the new screen." } : {}) };
-  }, (r, host) => {
+  }, (r, host, use) => {
     if (!enter || /\b(search|find|filter|look ?up|query)\b/i.test(r.label || "")) return null;
     if (opts.noSend) return { error: `Enter in "${r.label}" can send it. This run only drafts: type without Enter, and the draft stays for the user to send.` };
-    return gate(host, `Presses Enter in ${r.label}`, "send");
+    return gate(host, `Presses Enter in ${r.label}`, "send", use);
   });
 }
 // Choose: an option in a menu, a native one set as the page listens for it, else the site's own
@@ -374,10 +381,10 @@ function chooseInOwnChrome(id, regionId, option, opts = {}) {
     await new Promise((ok) => setTimeout(ok, 400));
     const o = await run("chooseOption", [want]);
     if (!o || o.problem) return { error: chooseSaid(r, want, o || {}) };
-    const host = hostOf(s.page.url), kind = heldFor("Clicks " + o.chose, host), held = kind && gate(host, `Chooses ${o.chose} in ${r.label}`, kind);
+    let goId = ""; const host = hostOf(s.page.url), kind = heldFor("Clicks " + o.chose, host), held = kind && gate(host, `Chooses ${o.chose} in ${r.label}`, kind, (h) => { goId = h; });
     if (held) { await run("click", [at.x, at.y]); return held; } // the menu closed again, nothing chosen
-    const k = await run("click", [o.at.x, o.at.y]); if (k && k.error) return k;
-    return { chose: o.chose };
+    const k = await run("click", [o.at.x, o.at.y]); if (k && k.error) return settled(goId, k, false);
+    return settled(goId, { chose: o.chose }, true);
   });
 }
 // A saved sign-in from the vault (a password, a key, a code) into a field, in the user's own Chrome
@@ -405,7 +412,7 @@ async function secretInOwnChrome(id, regionId, name, opts = {}) {
     if (m.count > 1 || v.once) getSecret(name, { use: true });
     noteUse(name, "fill", { site });
     return { filled: r.label, secret: name, site, ...(x.held === false ? { note: "The box doesn't hold all of it: check it on the new screen." } : {}) };
-  }, () => m.site ? null : gate(host, `Fills your saved "${name}" on ${site}`, "fill"));
+  }, (r, h, use) => m.site ? null : gate(host, `Fills your saved "${name}" on ${site}`, "fill", use));
 }
 // Fill: several fields on the one screen, then one button if asked, in the same tab without
 // opening it again, as the hidden browser's fillForm does. Every field and the button must be
@@ -426,7 +433,8 @@ async function fillInOwnChrome(id, fields, { press = "", ...opts } = {}) {
   const k = button ? heldFor("Clicks " + button.label, host) : "";
   if (k && opts.noSend && k === "send") return { error: `"${button.label}" sends or posts. This run only drafts: fill without pressing it, and the draft stays for the user to send.` };
   if (!opts.confirmed && !isTrusted(s.page.url)) return { error: `Filling this form acts on the real site in your own Chrome, signed in as you, and ${host} isn't one of your trusted sites.`, confirm: true, host };
-  const held = k && gate(host, "Clicks " + button.label, k); if (held) return held;
+  let goId = ""; const held = k && gate(host, "Clicks " + button.label, k, (h) => { goId = h; }); if (held) return held;
+  let acted = false; const out = await (async () => {
   const t = await tabOf(s); if (t.error) return t;
   const run = (fn, args = []) => askChrome("run", { tab: t.tab, fn, args }).then((x) => x.error ? { error: refusedBy(x) } : x.result);
   const spots = [];
@@ -442,11 +450,13 @@ async function fillInOwnChrome(id, fields, { press = "", ...opts } = {}) {
     const x = await run("type", [text, false]); if (x && x.error) return { ...x, typed };
     typed.push(r.label);
   }
-  if (button) { const at = spots[spots.length - 1], c = await run("click", [at.x, at.y]); if (c && c.error) return { ...c, typed }; await askChrome("wait", { tab: t.tab, ms: 15000 }); }
+  if (button) { const at = spots[spots.length - 1], c = await run("click", [at.x, at.y]); if (c && c.error) return { ...c, typed }; acted = true; await askChrome("wait", { tab: t.tab, ms: 15000 }); }
   const next = await askChrome("look", { tab: t.tab }, { timeout: 60000 });
   if (next.error) return { error: refusedBy(next), typed };
   const saved = saveLook(next, "");
   return saved.error ? saved : { ...saved, typed, pressed: button ? button.label : "", kept: !!t.same };
+  })();
+  return settled(goId, out, acted);
 }
 // Scroll: the page (or the part of it that scrolls) moved, and what's in the window then mapped.
 async function scrollInOwnChrome(id, to = "down") {

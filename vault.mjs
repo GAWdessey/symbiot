@@ -119,6 +119,15 @@ function bindSite(name, host) {
   if (!e.site) store(name, { ...e, site });
   return { ok: true, name, site };
 }
+// The user's own change to where one fills (the Vault page, unlocked with their PIN: vaultview.mjs editEntry),
+// the only way a bound site moves or is cleared. Never on the app's socket, so a run can't move one. site "":
+// no site, so its next fill asks the user first and binds the site it's on then.
+function setSite(name, site) {
+  const e = load(name); if (!e) return { error: `No secret called "${name}".` };
+  const to = String(site || "").trim() ? fillSite(site) : ""; if (String(site || "").trim() && !to) return { error: "That isn't a website. Type its address, like example.com." };
+  const { site: _was, ...rest } = e; store(name, to ? { ...rest, site: to } : rest);
+  return { ok: true, name, site: to };
+}
 // Save secret values under a name. A name that exists gets the new values added to it.
 // site: the site it fills on (fillSite), when the one saving it knows; one that has a site keeps it (bindSite).
 function saveSecret(name, values, { site = "" } = {}) {
@@ -492,4 +501,4 @@ function heldFor(text) {
   return "";
 }
 
-export { fillSite, onSite, bindSite, toKeyring, heldFor, heldName, vaultSealed, repairFalseSaves, meetsStep, serviceOf, saveSecret, saveCode, CODE_TTL, listSecrets, getSecret, peekSecret, markUsed, deleteSecret, renameSecret, findSecrets, captureSecrets, scrubStored, SCRUB_V };
+export { fillSite, onSite, bindSite, setSite, toKeyring, heldFor, heldName, vaultSealed, repairFalseSaves, meetsStep, serviceOf, saveSecret, saveCode, CODE_TTL, listSecrets, getSecret, peekSecret, markUsed, deleteSecret, renameSecret, findSecrets, captureSecrets, scrubStored, SCRUB_V };

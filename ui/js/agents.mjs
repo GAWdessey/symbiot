@@ -17,14 +17,29 @@ function askHtml(a){var k=a.ask;if(!k)return '';var qs=k.questions||[],ss=k.sugg
 var h="<div class='aq' data-id='"+esc(a.id)+"'>";
 if(qs.length){h+="<h4><i class=ic-ask></i> "+qs.length+" question"+(qs.length>1?"s":"")+" for you</h4>";
 qs.forEach(function(q,i){var rl=q.release;h+="<div class='q' data-i='"+i+"'>"+(q.task?"<div class='qfor' title='"+escQ(q.task)+"'>for: "+esc(q.task)+"</div>":"")+"<div class='qt'>"+esc(q.shown||q.q)+"</div>"+(q.context?"<div class='qc'>"+codeText(q.context)+"</div>":"")+(rl?relHtml(rl):"");
+// a Go card: the hold's own line and money, then one press for Go and one for its no, each sent at once
+if(q.go&&(q.options||[]).length===2){var gi=q.go.line.indexOf(': ');h+="<div class='qgo'>"+(gi>0?"<b>"+esc(q.go.line.slice(0,gi))+"</b>: "+esc(q.go.line.slice(gi+2)):esc(q.go.line))+"</div>"+(q.go.money&&String(q.context||'').indexOf(q.go.money)<0?"<div class='qmoney'>"+esc(q.go.money)+"</div>":"")+"<div class='qgob'><button type='button' class='act qgoyes' data-j='0'>"+esc(q.go.button)+"</button><button type='button' class='ghost qgono' data-j='1'>"+esc(q.go.dont)+"</button></div>";
+h+="<input class='qother' placeholder='or tell the agent something' aria-label='tell the agent something: it won&#39;t count as a Go'></div>";return;}
 (q.options||[]).forEach(function(o,j){var off=rl&&rl.waiting&&DONEOPT.test(o);h+="<label class='opt"+(off?" off":"")+"'><input type='radio' name='q_"+esc(a.id)+"_"+i+"' value='"+j+"'"+(off?" disabled":"")+"><span>"+whoHtml((q.labels&&q.labels[j])||o)+(off?" <i>(once "+esc(rl.name+" "+rl.needs)+" is installed)</i>":"")+"</span></label>";});
 h+="<input class='qother' placeholder='"+((q.options&&q.options.length)?"or answer in your own words":"your answer")+"'></div>";});
-h+="<div class='row'><button class='act qsend' title='save the answers and hand the repo back to your agent'>Send answers &amp; continue</button><button class='ghost qsave' title='save the answers for the next run'>Save only</button></div>";}
+var allGo=qs.every(function(q){return q.go&&(q.options||[]).length===2;});
+h+="<div class='row'><button class='"+(allGo?'ghost':'act')+" qsend' title='save the answers and hand the repo back to your agent'>"+(allGo?'Send what you typed':'Send answers &amp; continue')+"</button>"+(allGo?"":"<button class='ghost qsave' title='save the answers for the next run'>Save only</button>")+"</div>";}
 if(ss.length){var shown=IDEASOPEN[a.path]?ss.length:(k.ideasShown||ss.length),nf=ss.filter(function(s){return s.from;}).length;h+="<h4><i class=ic-idea></i> "+(!nf?"Ideas from the agent":nf===ss.length?"Ideas for "+esc(a.name)+" from other agents":"Ideas for "+esc(a.name))+"</h4>";ss.forEach(function(s,i){if(i>=shown)return;h+=ideaHtml(s,i,'');});
 if(ss.length>shown)h+="<div class='row'><button class='ghost qmore' title='the agent ranks its ideas best first: weigh these two before adding more'>"+(ss.length-shown)+" more idea"+(ss.length-shown>1?"s":"")+", ranked lower</button></div>";}
 // ideas it had for another lane are on that lane's card (agents.mjs routeIdeas): here, one line saying where they went
 if(aw.length)h+="<details class='ideasent'><summary title='they show on that project&#39;s card, where + task adds them to its tasks'><i class=ic-idea></i> "+(k.sent||[]).map(function(x){return x.n+" idea"+(x.n>1?"s":"")+" sent to "+esc(x.repo);}).join(", ")+"</summary>"+aw.map(function(s,i){return ideaHtml(s,i,'1');}).join('')+"</details>";
 return h+"</div>";}
+// What came of the presses this agent's user said Go or Don't to (chromegate.mjs goHistory), newest first.
+function goClock(t){try{return new Date(t).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});}catch(e){return '';}}
+var GODONE={send:'Sent',pay:'Paid','delete':'Deleted',fill:'Filled'};
+function goState(g){var where=g.via?'through '+g.via:'in your Chrome';
+if(g.state==='refused')return "<span>You said "+esc(g.button.split(' ')[0]==='Fill'?"Don't fill":"Don't "+g.button.split(' ')[0].toLowerCase())+" at "+goClock(g.no)+": nothing was pressed</span>";
+if(g.state==='lapsed')return "<span class='bad'>Your Go lapsed: it wasn't used within 30 minutes</span>";
+if(g.state==='given')return "<span>Go given at "+goClock(g.go)+": waits for its agent to try again, until "+goClock(g.until)+"</span>";
+if(g.state==='failed')return "<span class='bad'>Didn't go through at "+goClock(g.used)+": "+esc(g.error||'')+"</span>";
+return "<span class='ok'>"+(g.landed?(GODONE[g.kind]||'Done'):'Pressed')+" "+where+" at "+goClock(g.used)+"</span>";}
+// each on two lines: the press and what came of it, then what it was and for which agent (agent:false leaves that out)
+function goesHtml(gs,agent){if(!gs||!gs.length)return '';return "<div class='goes'>"+gs.map(function(g){return "<div class='gor'><div class='goh'><b>"+esc(g.button)+(g.host?' on '+esc(g.host):g.via?' through '+esc(g.via):'')+"</b>"+goState(g)+"</div><div class='gow'>"+esc(g.summary)+(agent!==false&&g.agent?' &middot; for '+esc(g.agent):'')+"</div></div>";}).join('')+"</div>";}
 function ideaHtml(s,i,w){var dw=w?" data-w='1'":"";return "<div class='idea'><span style='flex:1'>"+esc(s.text)+(s.from?" <span class='tag' title='the "+escQ(s.from)+" agent had this idea for this project'>from "+esc(s.from)+"</span>":s.other?" <span class='tag' title='this idea is for another project, so + task adds it to that one'>for "+esc(s.repo)+"</span>":"")+"</span>"+(s.added?"<span class='tag'>in Tasks</span>":"<button class='ghost qidea' data-i='"+i+"'"+dw+" style='padding:3px 9px;font-size:12px'>+ task</button><button class='ghost qskip' data-i='"+i+"'"+dw+" title='turn this idea down: the next one moves up, and the agent is told not to suggest it again' style='padding:3px 9px;font-size:12px'>Skip</button>")+"</div>";}
 function ideaOf(a,btn){return (btn.getAttribute('data-w')?a.ask.away||[]:a.ask.suggestions||[])[+btn.getAttribute('data-i')];}
 var IDEASOPEN={};
@@ -44,6 +59,11 @@ if(!r||r.error){box.querySelectorAll('button').forEach(function(b){b.disabled=fa
 ans.forEach(function(x){var k=a.path+'|'+x.q;delete QDRAFT[k];bdSet(k,'');}); // sent: its drafts go
 if(r.talk){box.querySelectorAll('button').forEach(function(b){b.disabled=false;});box.querySelectorAll('input.qother').forEach(function(i){i.value='';});msg.innerHTML="<div class='lqblob'>"+blobTalk(r.talk,a.name)+"</div><div class='muted'>The question stays open: answer it when you're ready.</div>";return;}
 msg.innerHTML="<div class='note ok'>&#10003; Saved "+r.saved+" answer"+(r.saved>1?"s":"")+" for <b>"+esc(a.name)+"</b> in .symbiot/ANSWERS.md"+(r.rerun?" &middot; your agent is picking them up now.":".")+(r.yours&&r.yours.length?"<div class='err'><i class=ic-person></i> Still yours to do: "+esc(r.yours.join(' '))+"</div>":"")+(r.note?"<div class='muted'>"+esc(r.note)+"</div>":"")+"</div>";loadAgents();if(current==='asks')loadAsks();});}
+box.querySelectorAll('.qgoyes,.qgono').forEach(function(btn){btn.addEventListener('click',function(){var qe=btn.closest('.q'),q=a.ask.questions[+qe.getAttribute('data-i')];if(!q)return;var msg=document.getElementById(box.closest('#panel-asks')?'asksmsg':'agentsmsg');
+box.querySelectorAll('button').forEach(function(b){b.disabled=true;});
+api('/api/agents/answer',{path:a.path,answers:[{q:q.q,a:q.options[+btn.getAttribute('data-j')]}],rerun:true}).then(function(r){
+if(!r||r.error){box.querySelectorAll('button').forEach(function(b){b.disabled=false;});msg.innerHTML="<div class='note err'>"+esc((r&&r.error)||'failed')+"</div>";return;}
+var k=a.path+'|'+q.q;delete QDRAFT[k];bdSet(k,'');msg.innerHTML="<div class='note ok'>&#10003; "+esc(r.go||(btn.classList.contains('qgono')?q.go.dont+': nothing was pressed, and its agent knows.':'Saved.'))+"</div>";loadAgents();if(current==='asks')loadAsks();});});});
 var s1=box.querySelector('.qsend'),s2=box.querySelector('.qsave');
 if(s1)s1.addEventListener('click',function(){send(true);});if(s2)s2.addEventListener('click',function(){send(false);});
 var more=box.querySelector('.qmore');if(more)more.addEventListener('click',function(){IDEASOPEN[a.path]=true;loadAgents();});
@@ -176,10 +196,10 @@ if(ch&&(ch.dirty||ch.stat||(ch.commits&&ch.commits.length))){
   if(ch.stat)parts.push(esc(ch.stat));
   if(parts.length)b+="<div class='changed'>What it did &middot; "+parts.join(' &middot; ')+"</div>";
   if(ch.commits&&ch.commits.length)b+="<div class='commits'>"+ch.commits.map(function(c){return "<div><code>"+esc(c.hash)+"</code> "+esc(c.msg)+"</div>";}).join("")+"</div>";
-}else if(a.status==='done'){
+}else if(a.status==='done'&&pk){ // an ops run's folder isn't a repo: no files to change, so nothing to say
   b+="<div class='changed muted'>No files changed.</div>";
 }
-b+=waitHtml(a)+needsHtml(a)+askHtml(a)+handHtml(a)+factsHtml(a);
+b+=waitHtml(a)+needsHtml(a)+askHtml(a)+(a.goes&&a.goes.length?"<div class='aq'><h4><i class=ic-person></i> After your Go</h4>"+goesHtml(a.goes,false)+"</div>":"")+handHtml(a)+factsHtml(a);
 b+=a.work?("<details class='wkraw'><summary>what it said, in full</summary><pre class='alogout'>"+esc((a.tail&&a.tail.trim())||'(nothing yet)')+"</pre></details>"):("<pre class='alogout'>"+esc((a.tail&&a.tail.trim())||'(waiting for output…)')+"</pre>");
 return "<div class='agent' data-i='"+list.indexOf(a)+"'>"+b+"</div>";};
 el.innerHTML=agentGroups(list,agentBlock);var dn=el.querySelector('.agdone');if(dn)dn.addEventListener('toggle',function(){AGDONEOPEN=dn.open;});

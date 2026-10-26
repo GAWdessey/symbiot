@@ -284,6 +284,12 @@ body.lq-light .lqblob .bdoing{color:#5A6470}body.lq-contrast .lqblob .bdoing{col
 .lqblob .bwhy{font-size:11.5px;line-height:1.3;color:#8A919B;margin-top:3px;overflow:hidden;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2}
 .lqblob .nopt .brec{display:block;font-style:normal;font-size:10.5px;opacity:.7;margin-top:1px}
 body.lq-light .lqblob .bwhy{color:#5A6470}
+.lqblob .bgo{font-size:12px;line-height:1.35;color:#C9CDD3;margin-top:6px;overflow:hidden;overflow-wrap:anywhere;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2}
+.lqblob .bgo b{font-weight:600;color:#F3F0EA}
+.lqblob .bmoney{font-size:12px;line-height:1.35;color:#E8C27A;margin-top:3px;font-weight:600;overflow:hidden;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2}
+body.lq-light .lqblob .bgo{color:#2B3644}body.lq-light .lqblob .bgo b{color:#151A21}body.lq-light .lqblob .bmoney{color:#7A4F00}
+body.lq-contrast .lqblob .bgo,body.lq-contrast .lqblob .bgo b,body.lq-contrast .lqblob .bmoney{color:inherit}
+body.lq-look-pearl .lqblob .nopt.rec.bgoyes,body.lq-look-pearl .aq .qgoyes{background:linear-gradient(180deg,#4A505A 0%,#2A2E35 55%,#1B1E23 100%);color:#FFFFFF;border-color:#1B1E23}
 #lqupd{position:relative;margin-left:10px}
 #lqupd .lqupb{border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.06);color:#ECE9E4;border-radius:999px;padding:5px 12px;font:500 12.5px var(--sans);cursor:pointer;min-height:30px}
 #lqupd .lqupl{display:none;position:absolute;left:0;top:calc(100% + 6px);z-index:60;width:min(460px,calc(100vw - 32px));max-height:60vh;overflow-y:auto;background:#15191F;border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:6px;box-shadow:0 12px 40px rgba(0,0,0,.45)}
@@ -726,6 +732,11 @@ body.lq-light .rbackbar{background:rgba(246,248,251,.95);box-shadow:0 1px 0 rgba
 .aq label.opt.off{color:var(--faint);cursor:default}.aq .opt.off i{font-size:12px}
 .aq .qother{margin-top:7px;padding:7px 10px;font-size:13px}
 .aq .row{margin:10px 0 2px}
+.aq .qgo{font-size:13px;line-height:1.45;color:var(--text);margin-top:6px}.aq .qgo b{font-weight:600}
+.aq .qmoney{font-size:13px;margin-top:4px;color:var(--amber);font-weight:600}
+.aq .qgob{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}.aq .qgob button{min-height:40px;padding:8px 16px}
+.goes{margin-top:8px;font-size:12.5px;color:var(--faint);line-height:1.5}.goes .gor{padding:5px 0}.goes .goh{display:flex;flex-wrap:wrap;column-gap:10px;align-items:baseline}.goes b{color:var(--text);font-weight:600}.goes .gow{overflow-wrap:anywhere}
+.goes .ok{color:var(--green)}.goes .bad{color:var(--amber)}
 label.check{display:flex;gap:8px;align-items:center;font-size:13px;color:var(--text);margin:6px 0}
 label.check input{width:auto}
 .alogout{white-space:pre-wrap;background:var(--ink);border:1px solid var(--line);border-radius:8px;padding:10px;margin-top:10px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;line-height:1.5;color:var(--text);max-height:260px;overflow:auto}
@@ -938,9 +949,9 @@ body.lq-liquid #panel-tasks > .note,body.lq-liquid #panel-tasks .tnote{font-size
 body.lq-liquid .aq{border:1px solid rgba(255,255,255,.08);border-left:2px solid var(--amber);border-radius:14px;background:rgba(255,255,255,.03);padding:12px 16px}
 body.lq-liquid.lq-light .aq{border-color:rgba(21,26,33,.08);border-left-color:var(--amber);background:rgba(255,255,255,.55)}
 body.lq-liquid .aq h4{font:600 11px var(--sans);letter-spacing:.1em;display:flex;align-items:center;gap:6px}
-body.lq-liquid .aq .q{border-bottom-color:var(--line)}
-body.lq-liquid .aq label.opt{gap:10px;padding:4px 0}
-body.lq-liquid .aq .opt input{margin-top:1px}
+body.lq-liquid .aq .q{border-bottom-color:var(--line);padding:14px 16px;margin-top:8px}
+body.lq-liquid .aq label.opt{gap:10px;padding:4px 0;align-items:center}
+body.lq-liquid .aq .opt input{margin-top:0}
 body.lq-liquid .who{display:inline-flex;align-items:center;gap:4px;padding:1px 8px;border-radius:999px;background:rgba(255,255,255,.07);font-size:12px;font-weight:600;color:var(--bone);white-space:nowrap}
 body.lq-liquid.lq-light .who{background:rgba(21,26,33,.06)}
 /* drift */
@@ -1057,7 +1068,7 @@ body.lq-light .vmono{color:hsl(var(--h) 55% 28%);background:hsl(var(--h) 60% 90%
 #panel-vault .vmeta button.vtxt{min-height:28px;padding:0 6px;font-size:12.5px;color:var(--faint)}
 #panel-vault .vmeta button.vtxt svg{width:13px;height:13px;vertical-align:-2px;margin-right:4px}
 .vform{display:grid;gap:12px;margin-top:2px}
-.vform label{display:grid;gap:5px;font-size:13px;color:var(--faint)}
+.vform label{display:grid;gap:5px;font-size:13px;color:var(--faint)}.vform .vhint{font-size:12px;line-height:1.4;color:var(--faint)}.vmeta .vnosite{color:var(--faint)}
 #panel-vault .vform input,#vaultsheet input,#vaultsheet textarea{width:100%;min-height:42px;font-size:14.5px;border-radius:10px;box-sizing:border-box}
 #vaultsheet textarea{min-height:120px;padding:10px 12px;font:500 14px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;resize:vertical}
 .vsb{display:flex;align-items:center;gap:8px;justify-content:flex-end;flex-wrap:wrap;margin-top:6px}
@@ -1073,6 +1084,8 @@ body.lq-light .vmono{color:hsl(var(--h) 55% 28%);background:hsl(var(--h) 60% 90%
 .vlog .vlr{display:flex;gap:10px;padding:6px 0;border-top:1px solid var(--line)}.vlog .vlr b{color:var(--text);font-weight:500;flex:1;min-width:0;overflow-wrap:anywhere}
 #panel-vault .vback{display:none}
 #vaultmsg{position:fixed;left:16px;right:16px;bottom:104px;margin:0 auto;width:fit-content;max-width:560px;box-sizing:border-box;z-index:85;display:flex;align-items:center;gap:12px;padding:10px 10px 10px 16px;border-radius:12px;background:var(--bone);color:var(--ink);font-size:14px;line-height:1.4;box-shadow:0 10px 30px rgba(0,0,0,.35)}
+.ownpress{margin-top:12px;font-size:13px}.ownpress>b{display:block;margin-bottom:2px;color:var(--bone)}
+@media (max-width:600px){#ownrow,#linerow{flex-direction:column;align-items:stretch;gap:10px}#ownrow>button,#linerow>button{width:100%;min-height:40px}}
 .ownsteps{margin:6px 0 4px;padding-left:22px}.ownsteps li{margin:4px 0}.ownpathrow{display:flex;gap:8px;align-items:center;margin-top:4px}.ownpath{flex:1;min-width:0;overflow-wrap:anywhere;word-break:break-all;font-size:12.5px;line-height:1.5}.owncopy{flex:none}
 #vaultmsg:empty{display:none}#vaultmsg.err{background:var(--vred);color:#1B0B0C}body.lq-light #vaultmsg.err{color:#fff}
 #vaultmsg button{min-height:32px;padding:0 12px;border-radius:8px;border:0;background:rgba(0,0,0,.12);color:inherit;font:600 13.5px var(--sans);cursor:pointer}

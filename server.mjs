@@ -32,6 +32,7 @@ import { listSecrets, getSecret, saveSecret, markUsed, deleteSecret, scrubStored
 import { vaultList, vaultValue, vaultLog, setPin, unlock as vaultUnlock, lock as vaultLock, addEntry as vaultAdd, renameEntry as vaultRename, removeEntry as vaultRemove } from "./vaultview.mjs";
 import { SCREENS_SOCK, sockGate, loadScreens, screenImage, captureScreen, splitScreen, listMonitors, allowScreenshots, importScreen, setRegions, renameScreen, removeScreen, blueprint, clickRegion } from "./screens.mjs";
 import { setupOwnChrome, refreshOwnChrome, startBroker, ownChromeStatus, mapInOwnChrome, ownChromeFor, OWN_SOCK, ownScreen, pressInOwnChrome, typeInOwnChrome, chooseInOwnChrome, fillInOwnChrome, scrollInOwnChrome, wholeInOwnChrome, uploadInOwnChrome, secretInOwnChrome } from "./ownchrome.mjs";
+import { goHistory } from "./chromegate.mjs";
 import { sessionCookie, mapPage, wholePage, pressRegion, typeRegion, chooseRegion, fillForm, verifyPage, uploadRegion, scrollPage, signIn, keepBrowserOpen, isTrusted, trustedSites, trustSite, untrustSite, openSymbiotBrowser, closeSymbiotBrowser, onBrowserClosed, setBrowserHub, siteUrl, browserHub, windowOpen } from "./headless.mjs";
 import { weeklyState, setWeekly, runWeekly, startWeekly, autostartState, setAutostart, installLauncher, iconSvg, setLauncherLook, desktopNotify } from "./desktop.mjs";
 import { markNews, newsSince, watchState, addWatch, setEvery, removeWatch, clearNews, seenWatch, checkWatch, startWatches, setBrief, draftReply, openChat, watchBoard, boardChat, clearBoardChat } from "./watch.mjs";
@@ -631,7 +632,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       }
       if (u.pathname === "/api/screens/map" && req.method === "POST") { const b = await readBody(req); if (b.chrome === "own" || (b.chrome !== "hidden" && !b.whole && ownChromeFor(b.site))) return json(res, screenOut(await mapInOwnChrome(b.site, b.name))); return json(res, screenOut(await mapPage(b.site, b.name, { whole: b.whole === true, who: String(b.who || "") }))); }
       // Symbiot's extension in the user's own Chrome: whether it's set up and connected, and setting it up (ownchrome.mjs)
-      if (u.pathname === "/api/own-chrome") return json(res, ownChromeStatus());
+      if (u.pathname === "/api/own-chrome") { let presses = []; try { presses = goHistory({ n: 12 }); } catch {} return json(res, { ...ownChromeStatus(), presses }); }
       if (u.pathname === "/api/own-chrome/setup" && req.method === "POST") return json(res, setupOwnChrome());
       // press / type: refused unless confirmed, or the page's site is one you trust
       // a screen mapped in the user's own Chrome is acted on there, never in the hidden browser (ownchrome.mjs)
@@ -684,8 +685,8 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       if (u.pathname === "/api/vault/lock" && req.method === "POST") { const b = await readBody(req); return json(res, vaultLock(b.token)); }
       if (u.pathname === "/api/vault/value" && req.method === "POST") { const b = await readBody(req); return json(res, vaultValue(String(b.name || ""), { token: String(b.token || ""), act: b.act === "copy" ? "copy" : "reveal" })); }
       // Keeping it tidy, on an unlocked page only: add one, rename one, delete one (vaultview.mjs).
-      if (u.pathname === "/api/vault/add" && req.method === "POST") { const b = await readBody(req); return json(res, vaultAdd({ label: b.label, account: b.account, values: Array.isArray(b.values) ? b.values : [], token: String(b.token || "") })); }
-      if (u.pathname === "/api/vault/rename" && req.method === "POST") { const b = await readBody(req); return json(res, vaultRename(String(b.name || ""), { label: b.label, account: b.account, token: String(b.token || "") })); }
+      if (u.pathname === "/api/vault/add" && req.method === "POST") { const b = await readBody(req); return json(res, vaultAdd({ label: b.label, account: b.account, values: Array.isArray(b.values) ? b.values : [], site: typeof b.site === "string" ? b.site : "", token: String(b.token || "") })); }
+      if (u.pathname === "/api/vault/rename" && req.method === "POST") { const b = await readBody(req); return json(res, vaultRename(String(b.name || ""), { label: b.label, account: b.account, ...(typeof b.site === "string" ? { site: b.site } : {}), token: String(b.token || "") })); }
       if (u.pathname === "/api/vault/delete" && req.method === "POST") { const b = await readBody(req); return json(res, vaultRemove(String(b.name || ""), { token: String(b.token || "") })); }
       if (u.pathname === "/api/screens/signin" && req.method === "POST") { const b = await readBody(req); return json(res, await signIn(b.site)); }
       // What Symbiot remembers across the app (mind.mjs), and forgetting it.

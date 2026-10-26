@@ -53,7 +53,10 @@ api('/api/line/check',{}).then(function(r){k.disabled=false;k.textContent=r&&r.e
 // Your own Chrome (ownchrome.mjs): Set up writes the extension's folder and registers its host
 // with each Chromium browser here; then the steps to load it in Chrome once, or, once it's
 // connected, the sites Chrome allowed it and those waiting for an Allow on its toolbar button.
-function ownHtml(d){if(!d||!d.setUp)return '';var h='';
+// The presses you said Go or Don't to, in your Chrome or through a connector: what, where, when, which agent, what came of it
+function pressesHtml(ps){if(!ps||!ps.length)return '';return "<div class='ownpress'><b>After your Go</b>"+goesHtml(ps)+"</div>";}
+function ownHtml(d){return ownSetHtml(d)+pressesHtml(d&&d.presses);}
+function ownSetHtml(d){if(!d||!d.setUp)return '';var h='';
 if(d.connected){var on=(d.origins||[]).map(function(o){return o.replace(/^https?:[/][/]/,'');});
 h+="<div class='note "+(d.stopped?'err':'ok')+"'>"+(d.stopped?"Stopped from Symbiot's button in Chrome's toolbar: press Start there to let it work again.":"Connected to your Chrome (extension "+esc(d.version||'')+"). "+(on.length?"It may work on "+esc(on.join(', '))+'.':"No site is allowed there yet."))+"</div>";
 if((d.asks||[]).length)h+="<div class='note muted'>Waiting for your Allow in Chrome: "+esc(d.asks.map(function(o){return o.replace(/^https?:[/][/]/,'');}).join(', '))+". Click Symbiot's button in Chrome's toolbar and press Allow.</div>";
