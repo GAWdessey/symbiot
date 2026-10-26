@@ -31,7 +31,7 @@ import { denyList } from "./outward.mjs";
 import { listSecrets, getSecret, saveSecret, markUsed, deleteSecret, scrubStored, repairFalseSaves } from "./vault.mjs";
 import { vaultList, vaultValue, vaultLog, setPin, unlock as vaultUnlock, lock as vaultLock, addEntry as vaultAdd, renameEntry as vaultRename, removeEntry as vaultRemove } from "./vaultview.mjs";
 import { SCREENS_SOCK, sockGate, loadScreens, screenImage, captureScreen, splitScreen, listMonitors, allowScreenshots, importScreen, setRegions, renameScreen, removeScreen, blueprint, clickRegion } from "./screens.mjs";
-import { setupOwnChrome, refreshOwnChrome, startBroker, ownChromeStatus, mapInOwnChrome, ownChromeFor, OWN_SOCK, ownScreen, pressInOwnChrome, typeInOwnChrome, chooseInOwnChrome, fillInOwnChrome, scrollInOwnChrome, wholeInOwnChrome, uploadInOwnChrome } from "./ownchrome.mjs";
+import { setupOwnChrome, refreshOwnChrome, startBroker, ownChromeStatus, mapInOwnChrome, ownChromeFor, OWN_SOCK, ownScreen, pressInOwnChrome, typeInOwnChrome, chooseInOwnChrome, fillInOwnChrome, scrollInOwnChrome, wholeInOwnChrome, uploadInOwnChrome, secretInOwnChrome } from "./ownchrome.mjs";
 import { sessionCookie, mapPage, wholePage, pressRegion, typeRegion, chooseRegion, fillForm, verifyPage, uploadRegion, scrollPage, signIn, keepBrowserOpen, isTrusted, trustedSites, trustSite, untrustSite, openSymbiotBrowser, closeSymbiotBrowser, onBrowserClosed, setBrowserHub, siteUrl, browserHub, windowOpen } from "./headless.mjs";
 import { weeklyState, setWeekly, runWeekly, startWeekly, autostartState, setAutostart, installLauncher, iconSvg, setLauncherLook, desktopNotify } from "./desktop.mjs";
 import { markNews, newsSince, watchState, addWatch, setEvery, removeWatch, clearNews, seenWatch, checkWatch, startWatches, setBrief, draftReply, openChat, watchBoard, boardChat, clearBoardChat } from "./watch.mjs";
@@ -635,6 +635,8 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       if (u.pathname === "/api/own-chrome/setup" && req.method === "POST") return json(res, setupOwnChrome());
       // press / type: refused unless confirmed, or the page's site is one you trust
       // a screen mapped in the user's own Chrome is acted on there, never in the hidden browser (ownchrome.mjs)
+      // a saved sign-in from the vault into a field: only in the user's own Chrome, never given back (ownchrome.mjs secretInOwnChrome)
+      if (u.pathname === "/api/screens/secret" && req.method === "POST") { const b = await readBody(req), own = ownScreen(String(b.id || "")); return json(res, own ? screenOut(await secretInOwnChrome(own.id, String(b.region || ""), String(b.name || ""), { confirmed: b.confirmed === true })) : { error: "A saved sign-in is filled only in your own Chrome: map the page there (symbiot screens map <site> --own-chrome), then fill it on that screen." }); }
       if (/^\/api\/screens\/(press|type|replace|choose|fill|upload|scroll|whole)$/.test(u.pathname) && req.method === "POST") {
         const b = await readBody(req), own = ownScreen(String(b.id || ""));
         if (own) {
@@ -667,7 +669,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       if (u.pathname === "/api/screens/trusted/remove" && req.method === "POST") { const b = await readBody(req); return json(res, untrustSite(b.site)); }
       // Saved secrets (vault.mjs): names and counts for Settings; an agent reads one by name, never a list of values.
       if (u.pathname === "/api/secrets" || u.pathname === "/api/secrets/list") return json(res, { secrets: listSecrets() });
-      if (u.pathname === "/api/secrets/add" && req.method === "POST") { const b = await readBody(req); return json(res, saveSecret(String(b.name || ""), Array.isArray(b.values) ? b.values.slice(0, 50) : [])); }
+      if (u.pathname === "/api/secrets/add" && req.method === "POST") { const b = await readBody(req); return json(res, saveSecret(String(b.name || ""), Array.isArray(b.values) ? b.values.slice(0, 50) : [], { site: String(b.site || "") })); }
       if (u.pathname === "/api/secrets/get" && req.method === "POST") { const b = await readBody(req); return json(res, getSecret(String(b.name || ""), { use: !!b.use })); }
       if (u.pathname === "/api/secrets/used" && req.method === "POST") { const b = await readBody(req); return json(res, markUsed(String(b.name || ""), String(b.value || ""))); }
       if (u.pathname === "/api/secrets/delete" && req.method === "POST") { const b = await readBody(req); return json(res, deleteSecret(String(b.name || ""))); }

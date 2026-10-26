@@ -93,8 +93,8 @@ function holdOrGo(host, summary, kind, { tagged = "", session = "", home = homed
   if (mine) { mine.used = now; writeJson(HOLDS(home), holds); return null; }
   let h = holds.find((x) => x.host === host && key(x.summary) === key(summary) && !x.go && now - x.at < 86400000);
   if (!h) { h = { id: randomBytes(4).toString("hex"), host, summary: summary.slice(0, 200), kind, at: now, session }; holds.push(h); writeJson(HOLDS(home), holds.slice(-200)); }
-  const word = { send: "sends", pay: "pays", delete: "deletes" }[kind];
-  return { why: `this ${word} as the user, on ${host} ("${h.summary}"), so it waits for their Go. Ask in .symbiot/QUESTIONS.md: a ### heading saying plainly what it ${word}, ending {#chrome-go-${h.id}}, ${kind === "pay" && addsPayment(h.summary) ? "a context line saying first that the site may hold or charge money on the card once it's added, with roughly how much if known, " : ""}and one option, "🤖 Agent: go ahead: ${h.summary}". Stop there; once they say Go, ${retry || `the same action goes through, once: when you retry it, start its action_summary with [go:${h.id}]`}`, held: h.id };
+  const word = { send: "sends", pay: "pays", delete: "deletes", fill: "fills a saved sign-in" }[kind];
+  return { why: `this ${word} as the user, on ${host} ("${h.summary}"), so it waits for their Go. Ask in .symbiot/QUESTIONS.md: a ### heading saying plainly ${kind === "fill" ? "which saved sign-in it fills, and on which site" : `what it ${word}`}, ending {#chrome-go-${h.id}}, ${kind === "pay" && addsPayment(h.summary) ? "a context line saying first that the site may hold or charge money on the card once it's added, with roughly how much if known, " : ""}and one option, "🤖 Agent: go ahead: ${h.summary}". Stop there; once they say Go, ${retry || `the same action goes through, once: when you retry it, start its action_summary with [go:${h.id}]`}`, held: h.id };
 }
 // A connector that sends as the user (mail's send, reply and forward, a calendar invite or reply, a
 // shared file): held for their Go like a send in their Chrome, on the same kind of card. The guard
