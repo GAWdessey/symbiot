@@ -2,6 +2,10 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one), for anyone who installs the app: what changed in it, never whose work it was (no projects, people, accounts, services, run ids or task wording of the person who made it). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.94.1 — 2026-10-26
+
+- **A goal stops asking for a step that's already done.** When a later run on the same work finishes, the earlier runs that were waiting on you, or stopped with work left, are closed with it. Your goal no longer brings back a question you've answered, or one another run has already taken care of, and it can close once its work is done.
+
 ## 0.94.0 — 2026-10-26
 
 - **A Go card names what it will press, and lets you say no.** A card for a send, payment, delete or saved-password fill in your Chrome has two buttons: one named for the press (Send, Post, Pay R 289, Delete, Fill password) and its no (Don't send, Don't pay). Don't closes the hold, nothing is pressed, and the agent is told.

@@ -46,7 +46,7 @@ try {
   // the card as the page draws it (ui.mjs blobBody)
   const js = [...EMBEDDED_UI.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]).join("\n");
   const grab = (name) => { const i = js.indexOf("function " + name + "("); let depth = 0, j = js.indexOf("{", i); for (; j < js.length; j++) { if (js[j] === "{") depth++; else if (js[j] === "}" && --depth === 0) break; } return js.slice(i, j + 1); };
-  const draw = new Function(["esc", "escQ", "projChip", "lqShort", "blobOpt", "whoHtml", "bdKey", "blobTalk", "draftHtml"].map(grab).join("\n") + "\nfunction codeText(t){return esc(t);}\nvar BLOBTALK={};\n" + grab("blobBody") + "\nreturn blobBody;")();
+  const draw = new Function(["esc", "escQ", "projChip", "lqShort", "blobOpt", "whoHtml", "bdKey", "blobTalk", "draftHtml", "goLines"].map(grab).join("\n") + "\nfunction codeText(t){return esc(t);}\nvar BLOBTALK={};\n" + grab("blobBody") + "\nreturn blobBody;")();
   const gHtml = draw({ ...goal, name: "app" }, true), sHtml = draw({ ...stale, name: "app" }, true);
   ok("drawn: a goal's card says what its run has done, and nowhere 'undefined'", !/undefined/.test(gHtml) && !/bdone/.test(gHtml) && /So far: I built the Vault page/.test(gHtml), gHtml.slice(0, 600));
   ok("drawn: a done-already line names who did it and what they did", /<div class='bdone'[^>]*>Already done by ops&#39;s agent: merged PR 251 and published 0\.81\.0<\/div>/.test(sHtml) && !/undefined/.test(sHtml), sHtml.slice(0, 900));

@@ -30,6 +30,16 @@ function saveJobs(jobs, now = Date.now()) {
 // A new state, the old one kept in its history with when it began.
 function shift(j, state, now) { if (state === j.state) return; j.history = [...(j.history || []), { state: j.state, at: j.changed }].slice(-8); j.state = state; j.changed = now; }
 
+// A folder's older run records left waiting or paused are over once a later run there finishes: it
+// worked from the same TASKS.md, and its end is the folder's state now (runRecord reads only the
+// newest). Left as they were, the goal over them (goals.mjs) asked the user for a step the later run
+// had done: "Can I redeploy sts-prod now…" five times on 26 Oct 2026, with three paused records
+// beside it that would have held the goal open for good.
+const FINISHED = new Set(["done", "review"]);
+function supersede(jobs, j, now) {
+  for (const x of jobs) if (x !== j && x.outcome && String(x.key).startsWith("run:") && x.path === j.path && (x.at || 0) < (j.at || 0) && (x.state === "waiting" || x.state === "paused")) { shift(x, "done", now); x.waitingOn = ""; x.note = `superseded: ${j.key}, a later run here, finished`; }
+}
+
 // Record a job's state: one row per key, its first words kept, every change dated.
 // patch: { state, waitingOn?, text?, lane?, path?, kind?, pr?, note? }. Never throws: a job that can't
 // be recorded must not stop the run or the merge it describes.
@@ -56,6 +66,7 @@ function track(key, patch = {}, { now = Date.now() } = {}) {
     if (patch.waitingOn !== undefined) j.waitingOn = WAITING.includes(patch.waitingOn) ? patch.waitingOn : "";
     if (ENDED.has(j.state) && patch.waitingOn === undefined && j.state !== "sent") j.waitingOn = "";
     if (j.state === "sent" && patch.waitingOn === undefined) j.waitingOn = "third party";
+    if (patch.outcome && FINISHED.has(j.state) && j.path && key.startsWith("run:")) supersede(jobs, j, now);
     saveJobs(jobs, typeof now === "number" ? now : Date.now()); return j;
   } catch { return null; }
 }
@@ -191,4 +202,4 @@ const goalRows = ({ jobs = loadJobs() } = {}) => jobs.filter((j) => j.kind === "
 function putGoal(g, { now = Date.now() } = {}) {
   try { const jobs = loadJobs(), i = jobs.findIndex((j) => j.key === g.key); if (i < 0) jobs.push(g); else jobs[i] = g; return saveJobs(jobs, now); } catch { return false; }
 }
-export { parkedJobs, goalRows, putGoal, goalLine, saveJobs, shift, ENDED, runRecord, recordOf, track, loadJobs, jobsNow, jobsLines, jobsText, jobLine, waitingOnUser, syncOnUser, syncTasks, onUser, landed, prKey, isCard, STATES, FILE };
+export { parkedJobs, goalRows, putGoal, FINISHED, goalLine, saveJobs, shift, ENDED, runRecord, recordOf, track, loadJobs, jobsNow, jobsLines, jobsText, jobLine, waitingOnUser, syncOnUser, syncTasks, onUser, landed, prKey, isCard, STATES, FILE };
