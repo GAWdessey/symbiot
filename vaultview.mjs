@@ -37,7 +37,8 @@ const accountOf = (name) => ((String(name).match(EMAIL) || [])[0] || "").toLower
 
 // The name as people read it: "twilio_auth_token" → "Twilio auth token", "parcel-tracker
 // account sid" → "Parcel tracker account SID". The email it's for goes (it shows beside it),
-// short forms are in capitals, a word already cased its own way stays so, and a name that's
+// short forms are in capitals, a word already cased its own way stays so ("Wi-Fi" keeps its
+// hyphen), a brand's site reads as the brand ("github.com" → "GitHub.com"), and a name that's
 // lower case by design (npm) stays lower case. The raw name stays the key.
 const UPPER = new Set(["sid", "api", "id", "pin", "url", "sms", "otp", "totp", "2fa", "mfa", "ssh", "aws", "s3", "smtp", "imap", "jwt", "dns", "ip", "ftp", "sftp", "db", "vpn", "crm", "gpg", "pgp", "ai", "cli", "ui", "uri", "sdp", "wa"]);
 const LOWER = new Set(["npm", "pnpm", "npx"]);
@@ -48,8 +49,9 @@ function labelOf(name) {
   const acct = String(name).match(EMAIL);
   let s = String(name);
   if (acct) s = s.replace(acct[0], "").replace(/\(\s*\)/g, "");
-  s = s.replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim() || String(name);
-  const words = s.split(" ").map((w) => CASED[w.toLowerCase()] || (shortForm(w) && !LOWER.has(w) ? w.toUpperCase() : w));
+  s = s.replace(/\bwi[ _-]?fi\b/gi, "Wi-Fi").replace(/_+/g, " ").split(" ").map((w) => (/[A-Z]/.test(w) ? w : w.replace(/-+/g, " "))).join(" ").replace(/\s+/g, " ").trim() || String(name);
+  const site = (w) => { const m = w.match(/^([a-z0-9]+)(\.[a-z.]{2,})$/i); return m && CASED[m[1].toLowerCase()] ? CASED[m[1].toLowerCase()] + m[2].toLowerCase() : ""; };
+  const words = s.split(" ").map((w) => CASED[w.toLowerCase()] || site(w) || (shortForm(w) && !LOWER.has(w) ? w.toUpperCase() : w));
   words[0] = capital(words[0]);
   return words.join(" ");
 }
@@ -70,7 +72,7 @@ function groupOf(name) {
 function shortOf(label, group) {
   if (group === "Other") return label;
   const words = group.toLowerCase().replace(/\s*\(.*\)$/, "").split(/\s+/), l = label.split(" ");
-  let i = 0; while (i < words.length && i < l.length && l[i].toLowerCase() === words[i]) i++;
+  let i = 0; while (i < words.length && i < l.length && l[i].toLowerCase().replace(/\.[a-z.]{2,}$/, "") === words[i]) i++;
   const rest = l.slice(i).join(" ").trim();
   return rest ? capital(rest.split(" ")[0]) + rest.slice(rest.split(" ")[0].length) : label;
 }
