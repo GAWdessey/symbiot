@@ -9,12 +9,12 @@ import { CONFIG_DIR, readState, writeJsonAtomic } from "./core.mjs";
 const FILE = join(CONFIG_DIR, "jobs.json");
 const MAX_KEEP = 300, DAY = 86400e3;
 // asked → queued (its turn is coming) → running → done, or review (done, waits on Approve) → approved
-// (merge queued) → merged → live; email jobs end at sent. failed is a run or step that stopped.
+// (merge queued) → blocked (GitHub won't merge it: conflicts or a failed check, probes.mjs actOn; back to approved when it clears) → merged → live; email jobs end at sent. failed is a run or step that stopped.
 // An agent run ends (agents.mjs runOutcome) as one of: waiting (on the user, a lane, a third party
 // or a time, with what), paused (open work left, nothing waiting), review, done or failed.
-const STATES = ["asked", "queued", "running", "done", "review", "approved", "merged", "live", "sent", "failed", "waiting", "paused"];
+const STATES = ["asked", "queued", "running", "done", "review", "approved", "blocked", "merged", "live", "sent", "failed", "waiting", "paused"];
 const WAITING = ["user", "lane", "third party", "time", ""];
-const SAYS = { asked: "asked, not started", queued: "queued, not started yet", running: "running now", done: "finished, nothing to approve", review: "done, waiting for Approve", approved: "approved, merge queued (not merged yet)", merged: "merged, not live", live: "live and checked", sent: "sent", failed: "failed", waiting: "stopped, waiting", paused: "stopped with work left, nothing waiting"};
+const SAYS = { asked: "asked, not started", queued: "queued, not started yet", running: "running now", done: "finished, nothing to approve", review: "done, waiting for Approve", approved: "approved, merge queued (not merged yet)", blocked: "approved, but GitHub is blocking the merge", merged: "merged, not live", live: "live and checked", sent: "sent", failed: "failed", waiting: "stopped, waiting", paused: "stopped with work left, nothing waiting"};
 const ENDED = new Set(["done", "live", "sent", "failed"]);
 
 const clip = (s, n) => String(s || "").replace(/\s+/g, " ").trim().slice(0, n);

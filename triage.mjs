@@ -15,6 +15,11 @@
 //             a setting it names doesn't exist, a permission only Symbiot's code can give). It's
 //             recorded as a Symbiot fault (faults.json) for fixing, never the user's chore, and
 //             the run is told to mark the item [~] and carry on.
+// - redo:     it is the user's, but it can't be decided as written: it asks them to pay without
+//             saying why (a card offered $16.40 for "replacement" domains while moving the ones
+//             they had was the plan, 23 Oct 2026), has them add a card or claim a credit as if it
+//             cost nothing (a site reserved some R425 on the card that same day), or to make an account
+//             Symbiot already knows of. The run is told what's missing and asks again; the user wasn't asked yet.
 //
 // agents.mjs agentQuestions asks verdictOf for each open question: only "user" ones (or ones the
 // AI can't judge) are shown; a fresh one waits up to HOLD_MS for its verdict rather than flash up
@@ -23,9 +28,10 @@ import { join } from "node:path";
 import { readFileSync, statSync } from "node:fs";
 import { CONFIG_DIR, readState, writeJsonAtomic } from "./core.mjs";
 import { promptFor } from "./overrides.mjs";
+import { addsPayment, warnsHold } from "./sends.mjs";
 
 const FILE = "triage.json", FAULTS = join(CONFIG_DIR, "faults.json");
-const VERDICTS = ["user", "answered", "agent", "symbiot"];
+const VERDICTS = ["user", "answered", "agent", "symbiot", "redo"];
 const HOLD_MS = 3 * 60000; // a question waits this long for its verdict; then it shows, judged or not
 const key = (q) => String(q || "").trim().toLowerCase().replace(/\s+/g, " ");
 
@@ -51,6 +57,7 @@ function answerFor(v) {
   const why = String(v.why || "").trim().replace(/\.$/, "");
   if (v.verdict === "answered") return `${String(v.answer || "").trim() || why}\n(Symbiot answered this from the user's earlier answers and rules; they weren't asked again.)`;
   if (v.verdict === "agent") return `This isn't the user's to do${why ? `: ${why}` : ""}. Do it yourself, or hand it to ops in .symbiot/HANDOFF.md (ops isn't sandboxed: it has Symbiot's browser, the network and the servers), and carry on. Don't ask the user for it.\n(Symbiot's triage; the user wasn't asked.)`;
+  if (v.verdict === "redo") return `Not shown to the user yet: ${why || "as written it can't be decided"}. Fix that and ask again in .symbiot/QUESTIONS.md, under a new heading.\n(Symbiot's triage; the user wasn't asked yet.)`;
   if (v.verdict === "symbiot") return `This is Symbiot's fault, not the user's${why ? `: ${why}` : ""}. It's recorded for fixing in Symbiot. Hand the step to ops in .symbiot/HANDOFF.md if ops can do it; if not, mark the item [~] waiting on that Symbiot fix and carry on with the rest. Don't ask the user for it.\n(Symbiot's triage; the user wasn't asked.)`;
   return "";
 }
@@ -65,19 +72,54 @@ function recordFault({ path, q, why, lane = "" }, now = Date.now()) {
 }
 const faults = () => (readState(FAULTS, (x) => x && Array.isArray(x.faults)) || { faults: [] }).faults;
 
-const SYSTEM = `You decide who a question from an AI agent is for, before it reaches the user. The agents work for one person (the user) on their computer. Symbiot is the app that runs them. The user is fed up with being asked things that weren't theirs. Answer with JSON only: {"verdict":"user"|"answered"|"agent"|"symbiot","why":"one plain sentence","answer":"only for answered: the answer, in the user's own terms"}.
+const SYSTEM = `You decide who a question from an AI agent is for, before it reaches the user. The agents work for one person (the user) on their computer. Symbiot is the app that runs them. The user is fed up with being asked things that weren't theirs. Answer with JSON only: {"verdict":"user"|"answered"|"agent"|"symbiot"|"redo","why":"one plain sentence","answer":"only for answered: the answer, in the user's own terms"}.
 
 user: only the user can settle it. A real choice between their own options (business, wording, which plan), approving something that sends, posts, pays, deletes, merges or deploys in their name, a sign-in, a code or a secret they hold, something physical (their phone, a cable, pressing a button in an app on their phone), or turning on a permission Symbiot really has for them: Settings → Connections (link a site, or let agents act on a site in their own Chrome), or an Allow on a permission card.
-answered: the user's earlier answers, standing rules or what Symbiot remembers below already settle it (their email, phone number, company, which account, a choice they made before). Give the answer.
+answered: the user's earlier answers, standing rules or what Symbiot remembers below already settle it (their email, phone number, company, which account, a choice they made before), or a newer answer has made it pointless (the plan moved to another account, that work was cancelled or is done): give the answer, saying what changed. An answer is never a step for the user to do by hand (open a page, press a button): when they said yes to the agent doing it, the answer is that yes.
 agent: an agent could do it instead: asking the user whether something has happened or what state it is in (is it moved, did it arrive, is it live: the agent checks), reading, checking, finding out, retrying, choosing how to route or send something already approved, drafting, running commands, using Symbiot's browser or the servers (the ops agent isn't sandboxed and has the network, Symbiot's signed-in browser and ssh), or handing a step to another agent. Asking the user "how should it go out" or "which way should I do this" when either way is fine is agent.
+redo: it is the user's, but it can't be decided as written: it asks them to spend money without saying why it's needed and why not a cheaper route already on the table (moving or transferring what they have, an account that exists), or to add a card, billing details, claim a credit or accept paid terms without saying up front that the site may hold or charge money on the card (and roughly how much, if known), or to create an account that what Symbiot remembers says exists already; or a step it hands the user that doesn't say what to do, where (the exact address and button, or the Symbiot page), why only they can, and what the agent does right after. Say in "why" what it must add or check.
 symbiot: it's only there because Symbiot itself is broken or lacks something: its browser or socket won't start, a setting the question names that isn't one of those above, a permission only Symbiot's code could give (write to a folder, run a command), restarting Symbiot, unparking lanes, re-running an item. Those are Symbiot's to fix, never the user's chore.
 
 Always user: anything about the user's business or money (which company, plan, price, verification, whether to drop or delay work, what to tell a customer), anything sent, posted, paid, deleted, merged or deployed in their name that their answers haven't already approved word for word, and a sign-in the agent says it already tried every other way to avoid. Never the user's: housekeeping the agent made itself (its own scratch files, screenshots, folders), and anything Symbiot or an agent could check or do.
 answered needs an answer below that settles this very question, not a similar one; when in doubt between answered and user, say user.
 Hiding a real decision from the user is worse than asking them one question too many: when it's truly theirs, say user.`;
 
+// Before the AI: a spend with no reason, and an account to make that Symbiot knows exists (redo).
+// A spend: buying, paying for or registering something, with an amount on it (a plan's price
+// in a choice between plans is no spend of theirs).
+const AMOUNT = /(?:[$€£]\s?\d|\b(?:R\s?\d{2,}|(?:USD|ZAR|EUR|GBP)\s?\d)|\b\d(?:[\d,.]*\d)?\s?(?:USD|ZAR|EUR|GBP|dollars?|rand|euros?|pounds?)\b)/i;
+const SPEND = /\b(?:buy|buying|bought|purchase|purchasing|pay|paying|spend|spending|charge|register(?:ing)? (?:a |the |two |new )?(?:new )?domains?|upgrade to|subscribe)\b/i;
+const spends = (t) => AMOUNT.test(t) && SPEND.test(t);
+const BECAUSE = /\b(?:because|since|so that|so (?:we|it|you|the|they)|why|instead of|rather than|the reason|needed (?:for|to|because)|otherwise|as (?:the|your) (?:old|current)|in place of|to (?:claim|get|keep|unlock|activate|verify)|can'?t (?:be )?(?:moved|transferred)|no (?:way|longer)|isn'?t (?:possible|available)|unavailable|expired|lost)\b/i;
+const NEW_ACCOUNT = /\b(?:create|make|open|set up|sign up for|register)\s+(?:a |an |your |the )?(?:new )?([A-Z][\w.-]+(?:\s[A-Z][\w.-]+)?)\s+account\b|\bsign up (?:at|for|with)\s+([A-Z][\w.-]+)/;
+const READ_REPORT = /\b(?:read|go through|look over|look through|review|check)\s+(?:the|my|this|that|our)\s+(?:[\w'"“”‘’:-]+\s+){0,8}?(?:report|write-?up|findings)\b/i;
+// A hold Symbiot remembers on a site the card names ("LinkedIn reserved R425.45 on the card when it
+// was added"): the line, so the agent can give the amount. "" when none is.
+function heldBefore(all, known) {
+  const words = new Set(String(all).toLowerCase().match(/[a-z][a-z0-9-]{3,}/g) || []);
+  return String(known || "").split("\n").find((l) => /\b(?:hold|held|reserv\w*|charged|pre-?auth\w*)\b/i.test(l) && /\d/.test(l) && (l.toLowerCase().match(/[a-z][a-z0-9-]{3,}/g) || []).some((w) => words.has(w) && !/^(?:card|hold|held|charged|reserved|account|billing|payment|when|added|with|from|that|this|their|your)$/.test(w))) || "";
+}
+function precheck(q, known = "") {
+  const all = [q.q, q.context, ...(q.options || [])].filter(Boolean).join("\n");
+  // adding a card, billing details or claiming a credit presented as free: it isn't (sends.mjs addsPayment)
+  if (addsPayment(all) && !warnsHold(all)) {
+    const was = heldBefore(all, known).trim().replace(/^[-*]\s*/, "").slice(0, 200);
+    return { verdict: "redo", why: `it has the user add a payment method, billing details or claim a credit as if it cost nothing, and sites often place a hold or a charge on the card the moment it's added. Say so plainly at the top of the context, with roughly how much if it's known${was ? ` (Symbiot remembers: ${was})` : ""}, and make the recommended option their yes to that before they do it` };
+  }
+  if (spends(all) && !BECAUSE.test(all)) return { verdict: "redo", why: "it asks the user to spend money without saying why it's needed, or why not a cheaper route already on the table (moving what they have, an account that exists). Every spend on a card carries its reason" };
+  // "read the report before I carry on": the card is the summary, not a pointer to one (a 7am report
+  // planned under an account the user had since replaced, and they were sent to read it, 23 Oct 2026)
+  if ([q.q, ...(q.options || [])].some((t) => READ_REPORT.test(String(t || "")))) return { verdict: "redo", why: "it sends the user to read a report instead of asking them something. First check the report against newer answers in ANSWERS.md and what Symbiot remembers (a newer decision, an account made since) and update it if it's out of date; then put a 2-3 line summary in the card's context and ask only the one question that's left, linking the report for detail" };
+  const m = all.match(NEW_ACCOUNT), svc = m && (m[1] || m[2]);
+  if (svc && known) {
+    const line = String(known).split("\n").find((l) => new RegExp(`\\b${svc.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i").test(l) && /\baccount\b/i.test(l));
+    if (line) return { verdict: "redo", why: `Symbiot already knows of a ${svc} account (${line.trim().replace(/^[-*]\s*/, "").slice(0, 200)}): check it exists through its API or the user's linked session before asking them to make one` };
+  }
+  return null;
+}
 // One verdict for one question. write: ai.mjs write. ctx: { answers, rules, lane }.
 async function judge(q, { answers = "", rules = [], lane = "", known = "" } = {}, { write }) {
+  const pre = precheck(q, known); if (pre) return pre;
   const opts = (q.options || []).map((o) => `- ${o}`).join("\n");
   const prompt = `Agent's lane: ${lane || "unknown"}\n\nThe question:\n### ${q.q}\n${q.context ? q.context + "\n" : ""}${opts}\n\nThe user's standing rules:\n${rules.map((r) => `- ${r}`).join("\n") || "(none)"}${known ? `\n\nWhat Symbiot remembers that may bear on it:\n${known.slice(0, 3000)}` : ""}\n\nThe user's newest answers in this lane (newest last):\n${String(answers || "").slice(-5000) || "(none)"}`;
   const r = await write(SYSTEM + promptFor("triage") + missesForPrompt(), prompt, { fast: true, kind: "triage" });
@@ -136,4 +178,4 @@ function missesForPrompt(n = 5, log = readLog()) {
   return m.length ? `\n\nQuestions the user was asked lately and said weren't theirs to answer (judge ones like these "agent" or "answered", not "user"):\n${m.map((x) => `- "${x.q}" (they said: "${x.said}")`).join("\n")}` : "";
 }
 
-export { noteTriage, noteCardWords, needless, sweepGone, triageStats, missesForPrompt, LOG as TRIAGE_LOG, judge, verdictOf, saveVerdict, loadVerdicts, shows, answerFor, recordFault, faults, askedAt, HOLD_MS, VERDICTS, FAULTS };
+export { noteTriage, noteCardWords, needless, sweepGone, triageStats, missesForPrompt, LOG as TRIAGE_LOG, judge, precheck, verdictOf, saveVerdict, loadVerdicts, shows, answerFor, recordFault, faults, askedAt, HOLD_MS, VERDICTS, FAULTS };

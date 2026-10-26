@@ -99,6 +99,9 @@ const hsDeps = { repos: () => ({ symbiot: lane }), board: () => ({ cards: [] }),
   agents: () => [{ path: copy, name: "symbiot (beside): Make the Workdesk's question cards…", status: "done", ask: { questions: [{ ...aq.questions[0] }] } }] };
 const card = homeState({ fresh: true, deps: hsDeps }).you.find((y) => y.kind === "ask");
 ok("Home's card for it carries the task's line", card && card.task === "Make the Workdesk's question cards say which task they're about.", card);
+// 23 Oct 2026: a card whose question was "this card" sat on the board, with nothing behind it
+{ const hb = homeState({ fresh: true, deps: { ...hsDeps, agents: () => [{ path: copy, name: "symbiot (beside): x", status: "done", ask: { questions: [{ q: "this card", options: ["Go ahead", "Skip"] }] } }] } });
+  ok("a question that's only \"this card\" makes no card on Home", !hb.you.some((y) => y.kind === "ask"), hb.you); }
 // 20 Oct 2026 review, Q4: an ops run's card said only its first sentence; it says the project it's for, from the record
 { const opsA = join(C, "drafts", "act-card0001"), opsB = join(C, "drafts", "act-card0002"); for (const p of [opsA, opsB]) mkdirSync(join(p, ".symbiot"), { recursive: true });
   const q0 = { q: "Can I give my user the rights to change Tailscale settings?", options: ["👤 You (only you: your password): run that one line"] };

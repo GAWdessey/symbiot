@@ -17,6 +17,7 @@ import { join } from "node:path";
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { execFile } from "node:child_process";
 import { loadTasks } from "./core.mjs";
+import { track, prKey, loadJobs } from "./jobs.mjs";
 
 const STATUS_URL = "symbiot://status";
 const PR_DAYS = 30, TIMEOUT = 20000;
@@ -126,6 +127,12 @@ function actOn(items, { map = {}, add, run, merged, now = Date.now() } = {}) {
   const did = [];
   for (const it of items || []) {
     if (it.kind === "pr" && it.state === "merged" && it.lane && map[it.lane] && merged) { try { Promise.resolve(merged(map[it.lane], it.lane, it.href)).catch(() => {}); did.push({ merged: it.lane, pr: it.href }); } catch {} }
+    // the job record follows GitHub: a queued merge that is blocked says so (PR #258 read "merge queued" while it had conflicts, 23 Oct 2026), and says approved again once it clears
+    if (it.kind === "pr" && it.open && it.lane && it.href) {
+      const key = prKey(it.lane, it.href), j = loadJobs().find((x) => x.key === key), bad = /conflicts|check failed/.test(it.state);
+      if (bad) track(key, { kind: "pr", lane: it.lane, text: `PR ${it.href.replace(/^.*\/pull\//, "")}`, pr: it.href, state: "blocked", note: `blocked: ${/conflicts/.test(it.state) ? "conflicts with main" : "a check failed"}; a fix run is queued` }, { now });
+      else if (j && j.state === "blocked") track(key, { state: "approved", note: "" }, { now });
+    }
     if (it.kind === "pr" && it.open && it.lane && /conflicts|check failed/.test(it.state) && add) {
       const t = add(`PR ${it.subject} (${it.href}) ${it.state === "has conflicts" ? "has conflicts with main: rebase its branch on main, fix them, run the tests, and push to the same branch" : "has a failed check: read why (gh pr checks), fix it on its branch, run the tests, and push"}. Don't open a new PR.`, it.lane);
       if (t && !t.error) did.push({ task: t.id, lane: it.lane });

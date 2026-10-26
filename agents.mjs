@@ -29,7 +29,8 @@ import { runbookOf, onDeployAnswer } from "./deploy.mjs";
 import { claudeState, resolveProvider, write as aiWrite } from "./ai.mjs";
 import { settleDone, ticked as tickedItems } from "./done.mjs";
 import { toReview, criticBrief, CRITIC_PROMPT, settleVerdict, reviewOf, saveReview, startDesign, settleDesign, dropDesign, specsFor, DESIGNER_PROMPT } from "./design.mjs";
-import { judge as triageJudge, verdictOf, saveVerdict, shows as triageShows, answerFor as triageAnswer, recordFault, HOLD_MS as TRIAGE_HOLD, noteCardWords, sweepGone } from "./triage.mjs";
+import { moneyNote } from "./needs.mjs";
+import { judge as triageJudge, precheck as triagePrecheck, verdictOf, saveVerdict, shows as triageShows, answerFor as triageAnswer, recordFault, HOLD_MS as TRIAGE_HOLD, noteCardWords, sweepGone } from "./triage.mjs";
 import { stalledFor, onStall, loadStall, saveStall, clearStall, STALL_MIN, STALL_PROMPT_TAIL } from "./stall.mjs";
 
 const HANDOFFS = []; // live registry of agents Symbiot has handed work to
@@ -197,7 +198,7 @@ function guardSettings() {
   // Symbiot's own settings and keys denied here too (GUARD, as Claude Code reads a rule): a deny
   // holds in every mode, bypassPermissions included, and a run gets it whether or not its folder
   // has a settings.local.json
-  const s = { permissions: { deny: GUARD() }, hooks: { PreToolUse: [{ matcher: "Bash|Read|Edit|Write|MultiEdit|NotebookEdit|Grep|Glob|mcp__claude-in-chrome__.*", hooks: [{ type: "command", command: `node ${JSON.stringify(GUARD_HOOK)}` }] }],
+  const s = { permissions: { deny: GUARD() }, hooks: { PreToolUse: [{ matcher: "Bash|Read|Edit|Write|MultiEdit|NotebookEdit|Grep|Glob|mcp__claude-in-chrome__.*|mcp__.+__(send_message|send_email|send_draft|reply|reply_all|forward|share_file|respond_to_event|create_event|update_event)", hooks: [{ type: "command", command: `node ${JSON.stringify(GUARD_HOOK)}` }] }],
     PostToolUse: [{ matcher: "mcp__claude-in-chrome__.*", hooks: [{ type: "command", command: `node ${JSON.stringify(GUARD_HOOK)}` }] }], // after a Chrome tool: which site each tab is on now (chromegate.mjs seen)
     Stop: [{ hooks: [{ type: "command", command: `node ${JSON.stringify(GUARD_HOOK)}` }] }] } }; // before a run ends: the tabs it left open in the user's Chrome are closed (chromegate.mjs openTabs)
   try { mkdirSync(CONFIG_DIR, { recursive: true }); writeFileSync(GUARD_SETTINGS, JSON.stringify(s, null, 2) + "\n", { mode: 0o600 }); } catch {}
@@ -2143,10 +2144,11 @@ function skipIdea(path, text) {
 }
 // A question as every screen shows it (plain.mjs): `shown`, its words with no file in them,
 // and `labels`, its choices the same way ("Allow" for an allow list it proposed). q and
-// options stay as the agent wrote them: an answer is saved under the agent's own words.
+// options stay as the agent wrote them: an answer is saved under the agent's own words. One that
+// has the user add a card or claim a credit says money first (needs.mjs moneyNote).
 function plainly(path, x) {
   let p = {}; try { p = plainAsk(path, x, { max: x.options.length }); } catch {}
-  return { ...x, ...(p.raw ? { shown: p.q } : {}), ...(p.labels ? { labels: p.labels } : {}), ...(p.context != null ? { context: p.context } : {}) };
+  return moneyNote({ ...x, ...(p.raw ? { shown: p.q } : {}), ...(p.labels ? { labels: p.labels } : {}), ...(p.context != null ? { context: p.context } : {}) });
 }
 // A question that names a report of its run ("the full report is on Reports as LOVELINK-FULL-EMAIL-REPORT"):
 // its card links it (Read the report), so it isn't a file name to go and find.
@@ -2445,7 +2447,7 @@ async function triageSweep({ write = aiWrite, runs = loadRuns, rules = () => { t
   if (triaging) return []; triaging = true; const out = [];
   try {
     let judging = false; try { judging = !!resolveProvider(); } catch {}
-    if (!judging && write === aiWrite) return out;
+    const precheckOnly = !judging && write === aiWrite; // no AI to judge: the checks that need none still run (triage.mjs precheck)
     const map = (() => { try { return laneMap(); } catch { return {}; } })();
     for (const path of [...new Set(runs().map((r) => r.path).filter(Boolean))]) {
       let qs = []; try { qs = agentQuestions(path, "", { raw: true }).questions; } catch { continue; }
@@ -2454,7 +2456,7 @@ async function triageSweep({ write = aiWrite, runs = loadRuns, rules = () => { t
         if (verdictOf(path, q.q) || GO_ID.test(q.id || "")) continue; // a Go on a held action needs no judging: it's the user's
         const lane = Object.keys(map).find((k) => map[k] === path) || (path.includes("/drafts/act-") ? "ops" : basename(path));
         let known = ""; try { const M = await import("./mind.mjs"); known = M.recallText(M.recall(`${q.q} ${q.context || ""}`)); } catch {} // what Symbiot remembers: the user's email, number, accounts…
-        let v = null; try { v = await triageJudge(q, { answers: readSymbiot(path, "ANSWERS.md"), rules: rules(), lane, known }, { write }); } catch {}
+        let v = null; try { v = precheckOnly ? triagePrecheck(q, known) : await triageJudge(q, { answers: readSymbiot(path, "ANSWERS.md"), rules: rules(), lane, known }, { write }); } catch {}
         if (!v) continue;
         saveVerdict(path, q.q, v); out.push({ path, q: q.q, verdict: v.verdict });
         if (v.verdict === "symbiot") recordFault({ path, q: q.q, why: v.why, lane });

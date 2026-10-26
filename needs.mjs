@@ -17,10 +17,15 @@
 //   user reports back on ("Tell the agent what you found", the card's talk box). With no AI, or
 //   before it has run, a card reads as it did.
 import { readOnly } from "./proof.mjs";
+// - Money up front (moneyNote): a card that has the user add a card, billing details or claim a credit
+//   says first that the site may hold or charge money on it. One said nothing, and the site reserved
+//   some R425 on the user's card minutes later (23 Oct 2026). The writer keeps that warning or isn't
+//   used, and a card that still lacks one gets it in its context line.
 import { join } from "node:path";
 import { createHash } from "node:crypto";
 import { CONFIG_DIR, readState, writeJsonAtomic } from "./core.mjs";
 import { promptFor } from "./overrides.mjs";
+import { addsPayment, warnsHold, HOLD_WARNING } from "./sends.mjs";
 
 const CARDTEXT = () => join(CONFIG_DIR, "cardtext.json");
 const MAX_KEEP = 300, CARD_V = 3; // CARD_V: a card written before its agent's own line (doing), or before its check (proof, run), is written again
@@ -37,6 +42,12 @@ function isUpdate(y) {
   if (opts.length && opts.every((o) => ACK.test(o))) return true; // its only answer is "Got it": nothing to decide
   return /^\s*done:/i.test(String(y.raw || y.q || ""));
 }
+// A card with nothing to ask: its words blank, a placeholder ("undefined", "n/a"), or only about
+// itself ("this card"). On 23 Oct 2026 a card's talk went to its agent as "this card", and the AI
+// told the user the card was empty and had nothing behind it. Such a card is never shown or asked about.
+const PLACEHOLDER = /^(?:(?:this|the|that|a)\s+)?(?:card|question|ask|step|item|task|one)$|^(?:this|that|it|here|undefined|null|nan|none|n a|na|tbd|todo|placeholder|untitled|object object|lorem ipsum.*)$/i;
+const blankText = (s) => { const t = String(s || "").replace(/[^\p{L}\p{N}]+/gu, " ").trim(); return !t || PLACEHOLDER.test(t); };
+const blankAsk = (y) => !!y && y.kind === "ask" && blankText(y.raw) && blankText(y.q) && blankText(y.sub);
 // { you, updates }: updates as the list shows them, newest first.
 // A card the writer found isn't theirs ("Is the domain moved yet?", "Have you scheduled the 29 Oct
 // post?": status the agent can check) never reaches Needs you. Symbiot built those from what a goal or
@@ -88,7 +99,8 @@ const SYSTEM = `You rewrite one card on a person's "Needs you" list so they can 
 - run: when their step is to run commands in a terminal on their own computer (or over ssh), each command as one item: "what" is at most 8 words on what it does, "cmd" is the exact command copied from the card, one command or one short pipeline that runs as a unit. In the order to run them. At most 5. Never invent or change a command, and leave it out ([]) when the card holds no exact command.
 - proof: when their step changes something a command can read afterwards (a service running, a file there, a version installed), one read-only command that shows it's done, and "expect": a short regular expression its output matches only once it is ("^active$"). Only reading commands (systemctl is-active, test -f, ls, cat, grep, git status, md5sum), over ssh if the step is on a server (same ssh options as the card's), never one that changes anything. For a script (a deploy), what it changes: a file's checksum the same in both places (md5sum a b | cut -d" " -f1 | uniq | wc -l, expect "^1$"), a version string, how long a service has run. Leave it out ({}) when nothing can be read.
 - judgement: true when their step is to look, listen or try something and report what they found (which voice sounds better, whether it works), so they need to tell the agent the result, not just "done".
-- notTheirs: true when the card asks them whether something has happened or what state something is in (is it moved, have you scheduled it, did it arrive), or asks for something an agent could check or do itself: a login, key, document or detail the saved keys or the linked sites and mailboxes listed hold, or a file on their computer. Those are the agent's to find out, never a card for them. Only a password nobody saved, a code sent to them, a payment, or a yes to something hard to undo is theirs. Then the other fields don't matter.`;
+- notTheirs: true when the card asks them whether something has happened or what state something is in (is it moved, have you scheduled it, did it arrive), or asks for something an agent could check or do itself: a login, key, document or detail the saved keys or the linked sites and mailboxes listed hold, or a file on their computer. Those are the agent's to find out, never a card for them. Only a password nobody saved, a code sent to them, a payment, or a yes to something hard to undo is theirs. Then the other fields don't matter.
+- money: when the card has them add a card, a payment method or billing details, claim a credit or accept paid terms, why says first, plainly, that the site may hold or charge money on the card, with the amount if the card gives one. Never call it free.`;
 
 // The writer's proof, kept only when it only reads (proof.mjs readOnly) and its expectation is a pattern that compiles.
 function proofOf(p) {
@@ -98,11 +110,14 @@ function proofOf(p) {
   try { new RegExp(expect); } catch { return null; }
   return { cmd, expect };
 }
-function check(o, n) {
+// src: the card as its agent wrote it. One that adds a payment method and warns of a hold keeps that
+// warning in what's written, or the writer's words aren't used.
+function check(o, n, src = "") {
   if (!o || typeof o !== "object") return null;
   if (o.notTheirs === true) return { v: CARD_V, notTheirs: true, question: "" }; // "Is it moved yet?": the agent checks, it's no card
   const question = clip(o.question, 140), why = clip(o.why, 140), doing = words(o.doing) <= 30 && !/…$/.test(String(o.doing || "").trim()) ? clip(o.doing, 200) : "";
   if (!question || words(question) > 18 || /…$/.test(question)) return null;
+  if (addsPayment(src) && !warnsHold(`${question} ${why}`)) return null; // the money warning was cut: the agent's own words, with it
   const labels = Array.isArray(o.labels) ? o.labels.map((l) => clip(l, 40)) : [], tips = Array.isArray(o.tips) ? o.tips.map((t) => clip(t, 160)) : [];
   const run = commandList(o.run), proof = proofOf(o.proof);
   return { v: CARD_V, question, ...(proof ? { proof } : {}), ...(run.length ? { run } : {}), ...(doing ? { doing } : {}), ...(why ? { why } : {}), ...(labels.length === n && labels.every(Boolean) ? { labels } : {}), ...(tips.length === n ? { tips } : {}), rec: Number.isInteger(o.recommended) ? o.recommended : -1, ...(o.judgement === true ? { tell: true } : {}) };
@@ -123,11 +138,21 @@ async function writeCards(cards, { write, now = Date.now(), known = {} } = {}) {
     const prompt = `The card, from ${y.name || y.repo || "an agent"}${y.title ? ` (${y.title})` : ""}:\n${y.raw || y.q || y.sub}\n${y.task ? `The agent's job: ${y.task}\n` : ""}${y.done ? `What the agent says it has done: ${y.done}\n` : ""}${y.why ? `Its context: ${y.why}\n` : ""}${y.report && y.report.title ? `It links a report: "${y.report.title}"\n` : ""}${holds}Its options, in order:\n${opts.map((o, i) => `${i}. ${o}`).join("\n") || "(none: they answer in their own words)"}`;
     let r = null; try { r = await write(SYSTEM + promptFor("card"), prompt, { fast: true, kind: "triage" }); } catch {}
     const m = r && typeof r.text === "string" ? r.text.match(/\{[\s\S]*\}/) : null; let o = null; try { o = m ? JSON.parse(m[0]) : null; } catch {}
-    const t = check(o, opts.length); if (!t) continue;
+    const t = check(o, opts.length, [y.raw || y.q || y.sub, y.why, ...opts].filter(Boolean).join("\n")); if (!t) continue;
     all[keyOf(y)] = { ...t, at: now }; n++;
   }
   if (n) { const keys = Object.keys(all).sort((a, b) => (all[b].at || 0) - (all[a].at || 0)).slice(0, MAX_KEEP), kept = Object.fromEntries(keys.map((k) => [k, all[k]])); try { writeJsonAtomic(CARDTEXT(), kept, { indent: 1, mode: 0o600 }); } catch {} }
   return n;
 }
 
-export { codeIn, commandList, isUpdate, splitNeeds, applyText, textFor, writeCards, keyOf, loadText as loadCardText, check as checkCardText, CARDTEXT };
+// A card (Home's, or a question as the Workdesk shows it) that has the user add a card, billing details or
+// claim a credit without a word on money: the warning goes first in its context line (why, or context).
+function moneyNote(y) {
+  if (!y || typeof y !== "object") return y;
+  const text = [y.q, y.raw, y.sub, y.why, y.context, y.doing, ...(y.options || []), ...(y.labels || []), ...(y.tips || [])].filter(Boolean).join("\n");
+  if (!addsPayment(text) || warnsHold(text)) return y;
+  const at = "context" in y && !("why" in y) ? "context" : "why";
+  return { ...y, [at]: y[at] ? `${HOLD_WARNING} ${y[at]}` : HOLD_WARNING, money: true };
+}
+
+export { moneyNote, blankText, blankAsk, codeIn, commandList, isUpdate, splitNeeds, applyText, textFor, writeCards, keyOf, loadText as loadCardText, check as checkCardText, CARDTEXT };

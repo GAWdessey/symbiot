@@ -25,7 +25,7 @@ import { computeDrift } from "./drift.mjs";
 import { afterShip, markLive, deployTick } from "./deploy.mjs";
 import { quotaState } from "./quota.mjs";
 import { laneCap, mergeEnded, DEFAULT_CAP } from "./parallel.mjs";
-import { noteLaneIds, addTask, setTaskModel, refileTask, laneNames, toggleTask, removeTask, cancelTask, restoreTask, syncTasks, taskType, pushTasks, pendingReview, workingDiff, learnNpm, withReleases, releaseInput, approveRepo, approveChanges, sendBack, setAutoMerge, mergeWhenGreen, shipJob, shipJobOf, sendAgain, forgetUnsent, shippingPaths } from "./tasks.mjs";
+import { noteLaneIds, closeUnchanged, addTask, setTaskModel, refileTask, laneNames, toggleTask, removeTask, cancelTask, restoreTask, syncTasks, taskType, pushTasks, pendingReview, workingDiff, learnNpm, withReleases, releaseInput, approveRepo, approveChanges, sendBack, setAutoMerge, mergeWhenGreen, shipJob, shipJobOf, sendAgain, forgetUnsent, shippingPaths } from "./tasks.mjs";
 import { repoReview, repoSuggest, folderSuggest, taskChat, clearTaskChat, mailState, setMail, sentMail, produce, releaseNotes } from "./writeups.mjs";
 import { denyList } from "./outward.mjs";
 import { listSecrets, getSecret, saveSecret, markUsed, deleteSecret, scrubStored, repairFalseSaves } from "./vault.mjs";
@@ -51,7 +51,7 @@ import { adaptState, noteUse } from "./adapt.mjs";
 import { settleDone } from "./proof.mjs";
 import { writeCards, loadCardText, keyOf as cardKeyOf } from "./needs.mjs";
 import { shoot } from "./design.mjs";
-import { updateAsk, cardTalk, dismissCard, reportIdeasAdd, reportIdeasDismiss, reportAsk, reportDraftAnswer, homeState, homeTick, homeAsk, homeAnswer, homeNext, workScene, forgetWork, workGo, workTick, firstSteps, marketingState, marketingGo, marketingDraftAnswer, marketingTask, moveToMarketing, onboarding, setOnboarding, startOnboarding, phoneSetupFirst, loadDismissed } from "./home.mjs";
+import { updateAsk, cardTalk, cardFor, dismissCard, reportIdeasAdd, reportIdeasDismiss, reportAsk, reportDraftAnswer, homeState, homeTick, homeAsk, homeAnswer, homeNext, workScene, forgetWork, workGo, workTick, firstSteps, marketingState, marketingGo, marketingDraftAnswer, marketingTask, moveToMarketing, onboarding, setOnboarding, startOnboarding, phoneSetupFirst, loadDismissed } from "./home.mjs";
 import { marketingOverview } from "./mkoverview.mjs";
 import { MARKETING_DIR, MARKETING, productNames, draftPreview, laneMedia, displayName, setDraftMedia } from "./marketing.mjs";
 import { trays, trayMedia, setBlur, addBlur, removeBlur, setReviewed, renderCapture } from "./tray.mjs";
@@ -756,8 +756,9 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
         const b = await readBody(req), r = homeAnswer(b.id, { pick: b.pick, text: b.text });
         if (!r || !r.talk) return json(res, r);
         // neither yes nor no: it's said to the card's agent, and the card stays (home.mjs cardTalk)
-        const card = ((homeState() || {}).you || []).find((y) => y.id === b.id) || {}, path = card.path || String(b.id || "").replace(/^\w+:/, "");
-        const t = await cardTalk(path, [{ q: card.q || card.sub || card.title || "this card", a: r.text }], { force: true }).catch(() => null);
+        const card = cardFor(b.id, { q: b.q });
+        if (!card) { console.log(`card talk: no card or question behind ${String(b.id || "").slice(0, 80)}, so "${String(r.text).slice(0, 60)}" went to no agent`); return json(res, { ok: true, keep: true, said: "I can't find what this card asks any more: it was answered or changed a moment ago. Ask on Home, and I'll answer from there." }); }
+        const t = await cardTalk(card.path, [{ q: card.q, a: r.text }], { force: true }).catch(() => null);
         return json(res, t || { ok: true, keep: true, said: "Noted on the card for its agent. A question doesn't settle it: press one of its buttons, or say in your own words what you did, when you're ready." });
       }
       if (u.pathname === "/api/away" && req.method === "POST") { const b = await readBody(req); return json(res, toggleAway(() => winUrl(server.address().port), b.open)); } // a pass per window
@@ -804,7 +805,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       if (u.pathname === "/api/phone/link" && req.method === "POST") { const b = await readBody(req); return json(res, await setPhoneLink(b.on === true)); }
       if (u.pathname === "/api/phone/free" && req.method === "POST") return json(res, await freePhonePort());
       if (u.pathname === "/api/phone/port" && req.method === "POST") { const b = await readBody(req); return json(res, await usePhonePort(b.port)); }
-      if (u.pathname === "/api/phone/code" && req.method === "POST") { await startPhoneLink(); return json(res, newCode()); } // a port that was taken may be free now
+      if (u.pathname === "/api/phone/code" && req.method === "POST") { await startPhoneLink(); return json(res, newCode({ usb: true })); } // a port that was taken may be free now; the user pressed it, so a cable's phone gets it too
       if (u.pathname === "/api/phone/unpair" && req.method === "POST") { const b = await readBody(req); return json(res, unpairPhone(String(b.id || ""))); }
       if (u.pathname === "/api/phone/relay" && req.method === "POST") { const b = await readBody(req); return json(res, setRelay(b.on === true)); }
       if (u.pathname === "/api/phone/pair" && req.method === "POST") { const b = await readBody(req); return json(res, await pairComputer(b.address, b.code, { link: String(b.link || "") })); }
@@ -989,6 +990,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
   // an agent's allow list that stays inside your work is turned on by itself, and the agent carries on
   every("allow lists", 20000, () => autoAllowSweep(), { first: 4000 });
   every("triage", 15000, () => triageSweep()); // every question an agent writes is judged before it can be a card (triage.mjs)
+  every("unchanged runs", 60000, () => closeUnchanged()); // a run that changed nothing waits on no Approve (tasks.mjs)
   // what the user asked for, followed through to done or "not finished", never dropped (goals.mjs)
   const goalDeps = () => {
     let cardPaths = new Set(); try { cardPaths = new Set(onUser().map((c) => c.path).filter(Boolean)); } catch {}
