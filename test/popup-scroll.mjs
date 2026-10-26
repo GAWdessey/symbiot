@@ -33,8 +33,8 @@ else {
   try {
     const s1 = await h.mapPage("127.0.0.1:" + srv.address().port + "/", "Scheduled");
     if (s1 && /browser didn.t start/.test(s1.error || "")) { console.log("  - the browser can't start here: skipped"); throw new Error("skip"); }
-    const sc = await h.scrollPage(s1.id, "down");
-    ok("Scroll moves the pop-up's list", sc && !sc.error && sc.scroll && /list/.test(sc.scroll.selector || ""), sc && { error: sc.error, scroll: sc.scroll });
+    const sc = await h.scrollPage(s1.id, "down"), at = ((sc || {}).page || {}).scroll || {};
+    ok("Scroll moves the pop-up's list", sc && !sc.error && /list/.test(at.selector || "") && at.y > 0, sc && { error: sc.error, scroll: at });
     const w = await h.wholePage(s1.id);
     const labels = ((w && w.regions) || []).map((r) => r.label);
     ok("Whole page reaches the last slot, not just the first few", labels.includes("Slot 30"), labels.slice(-5));
