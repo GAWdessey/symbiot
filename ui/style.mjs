@@ -129,8 +129,8 @@ body.lq-liquid.lq-pooled main{display:block;position:fixed;top:64px;left:max(12p
 body.lq-liquid.lq-pooled #lqwhy.on{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:0 0 12px;color:#8A919B;font-size:13px;line-height:1.5}
 #lqwhy .lqmb{min-height:34px;padding:5px 13px;font-size:13px}
 body.lq-light #lqwhy{color:#5A6470}
-body.lq-liquid.lq-pooled #lqsinkrow{display:flex;justify-content:space-between;align-items:center;gap:12px;position:sticky;top:0;z-index:2;margin:-8px -6px 10px;padding:6px 6px 10px;border-bottom:1px solid rgba(220,228,240,.12);background:rgba(6,8,11,.9);backdrop-filter:blur(14px)}
-body.lq-liquid.lq-light.lq-pooled #lqsinkrow{background:rgba(246,248,251,.94);border-bottom-color:rgba(20,30,45,.1)}
+body.lq-liquid.lq-pooled #lqsinkrow{display:flex;justify-content:space-between;align-items:center;gap:12px;position:sticky;top:0;z-index:2;margin:-8px -6px 10px;padding:6px 6px 10px;border-bottom:1px solid rgba(220,228,240,.12);background:#06080B}
+body.lq-liquid.lq-light.lq-pooled #lqsinkrow{background:#F6F8FB;border-bottom-color:rgba(20,30,45,.1)}
 /* where you are: the section (or the project) you opened, named large at the top of its panel */
 .lqwhere{display:flex;align-items:baseline;flex-wrap:wrap;gap:4px 12px;min-width:0}
 .lqcrumb{font:500 12.5px var(--sans);color:var(--faint);letter-spacing:.02em}
@@ -683,7 +683,6 @@ body.lq-solid .mkbig,body.lq-solid .mkbigin{backdrop-filter:none}
 .rbackbar button{flex:none}.rbackbar .rbpath{flex:1;min-width:0;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;direction:rtl;text-align:left}
 body.lq-light .rbackbar{background:rgba(246,248,251,.95);box-shadow:0 1px 0 rgba(20,30,45,.1)}body.lq-solid .rbackbar{backdrop-filter:none;background:var(--ink)}
 @media(max-width:520px){.rbackbar .rbpath{display:none}}
-body.lq-liquid.lq-pooled:has(#panel-reports:not(.hidden) #rbackbar) #lqsinkrow{background:rgba(6,8,11,.97)}body.lq-liquid.lq-light.lq-pooled:has(#panel-reports:not(.hidden) #rbackbar) #lqsinkrow{background:rgba(246,248,251,.98)}
 .rzoom{position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,.82);display:flex;align-items:center;justify-content:center;cursor:zoom-out;padding:24px}.rzoom img{max-width:100%;max-height:100%;border-radius:8px}
 .rdoc blockquote{margin:8px 0;padding:2px 12px;border-left:3px solid var(--line);color:var(--faint)}.rdoc a{color:var(--green)}
 .rdoc .rtable{overflow-x:auto;margin:10px 0}.rdoc table{border-collapse:collapse;font-size:13px;min-width:100%}.rdoc th,.rdoc td{border:1px solid var(--line);padding:6px 8px;text-align:left;vertical-align:top}.rdoc th{background:var(--ink3);color:var(--bone);font-weight:600}
@@ -986,7 +985,7 @@ body.lq-light #quota .qpill,body.lq-light #quota .qpop{background:rgba(255,255,2
 .ssh .muted{font-weight:400;font-size:12.5px}
 /* the Vault page (vaultview.mjs): grouped by service, one picked in a detail pane, what needs a look; no value until it's unlocked */
 #panel-vault,#vaultmsg{--vred:#F07B7F;--vdig:#8CC2FF;--vsym:#F2B766}#panel-vault{max-width:1080px;margin:0 auto;--vred:#F07B7F;--vdig:#8CC2FF;--vsym:#F2B766;--vsoft:rgba(255,255,255,.045);--vsel:rgba(255,255,255,.085)}
-body.lq-light #vaultmsg{--vred:#B42318}body.lq-light #panel-vault{--vred:#B42318;--vdig:#1D5FC4;--vsym:#9A5200;--vsoft:rgba(21,26,33,.045);--vsel:rgba(21,26,33,.075)}
+body.lq-light #vaultmsg{--vred:#B42318}body.lq-light #vaultmsg.err,body.lq-light #panel-vault button.vdanger{color:#fff}body.lq-light #panel-vault{--vred:#B42318;--vdig:#1D5FC4;--vsym:#9A5200;--vsoft:rgba(21,26,33,.045);--vsel:rgba(21,26,33,.075)}
 .vsl{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
 .vbar{display:flex;align-items:center;gap:10px;margin:2px 0 12px}
 .vsearch{position:relative;flex:1;min-width:0}
@@ -1031,7 +1030,7 @@ body.lq-light .vmono{color:hsl(var(--h) 55% 28%);background:hsl(var(--h) 60% 90%
 #panel-vault .vdact button,#panel-vault .vbtn{min-height:38px;padding:0 13px;font-size:13.5px}
 #panel-vault button.vdel{background:transparent;border:1px solid var(--line);color:var(--vred)}
 #panel-vault button.vdel:hover{border-color:var(--vred)}
-#panel-vault button.vdanger{background:var(--vred);color:#fff;border:0;border-radius:10px;font:inherit;font-weight:600;cursor:pointer}
+#panel-vault button.vdanger{background:var(--vred);color:#1A0A0B;border:0;border-radius:10px;font:inherit;font-weight:600;cursor:pointer}
 .vissue{display:flex;gap:10px 14px;align-items:center;flex-wrap:wrap;margin:18px 0 0;padding:12px 14px;border-radius:12px;border:1px solid color-mix(in srgb,var(--amber) 40%,transparent);background:color-mix(in srgb,var(--amber) 9%,transparent);font-size:13.5px;line-height:1.45;color:var(--text)}
 .vissue p{flex:1 1 240px;margin:0;display:flex;gap:9px;align-items:baseline}.vissue p .vdot{position:relative;top:-1px}
 .vissue .vib{display:flex;gap:6px}
@@ -1041,14 +1040,16 @@ body.lq-light .vmono{color:hsl(var(--h) 55% 28%);background:hsl(var(--h) 60% 90%
 .vval code{flex:1;min-width:0;font:500 15.5px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--bone);overflow-wrap:anywhere;user-select:all}
 .vval code.vhid{letter-spacing:.16em;color:var(--faint);user-select:none;white-space:nowrap;overflow:hidden}
 .vval code .vd{color:var(--vdig)}.vval code .vs{color:var(--vsym)}
-#panel-vault .vval button,#panel-vault .vcode button{min-height:38px;min-width:70px;padding:0 12px;font-size:13.5px;display:flex;align-items:center;justify-content:center;gap:6px}
+#panel-vault .vval button,#panel-vault .vcode button{min-height:38px;min-width:70px;padding:0 12px;font:600 13.5px var(--sans);display:flex;align-items:center;justify-content:center;gap:6px}
 .vval button svg,.vcode button svg{width:15px;height:15px}
-.vcodes{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:6px;padding:6px 10px 10px}
+#panel-vault .vval button[data-va='copy'],#panel-vault .vcode button{min-width:124px;padding:0 10px}
+.vcodes{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,300px),1fr));gap:6px;padding:6px 10px 10px}
 .vcode{display:flex;align-items:center;gap:6px;padding:4px 4px 4px 10px;border-radius:9px;background:var(--ink);font:500 14px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--bone);min-height:46px}
 .vcode span{flex:1;min-width:0;overflow-wrap:anywhere}
 .vcode.used span{text-decoration:line-through;color:var(--faint)}.vcode.used em{font:400 12.5px var(--sans);color:var(--faint);padding-right:8px}
 .vok{min-height:20px;padding:0 14px 10px;font-size:12.5px;color:var(--green)}
-.vok:empty{display:none}
+.vok:empty{display:none}.vok.vbad{color:var(--vred)}
+.vbadn{display:block;margin-top:4px;font-size:12.5px;color:var(--vred)}
 .vmeta{margin:20px 0 0;display:grid;grid-template-columns:max-content minmax(0,1fr);gap:9px 18px;font-size:13.5px;line-height:1.45}
 .vmeta dt{color:var(--faint)}.vmeta dd{margin:0;color:var(--text);min-width:0;overflow-wrap:anywhere}
 .vmeta code{font:500 13px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:var(--ink);color:var(--bone);padding:2px 7px;border-radius:6px}
@@ -1072,7 +1073,7 @@ body.lq-light .vmono{color:hsl(var(--h) 55% 28%);background:hsl(var(--h) 60% 90%
 .vlog .vlr{display:flex;gap:10px;padding:6px 0;border-top:1px solid var(--line)}.vlog .vlr b{color:var(--text);font-weight:500;flex:1;min-width:0;overflow-wrap:anywhere}
 #panel-vault .vback{display:none}
 #vaultmsg{position:fixed;left:16px;right:16px;bottom:104px;margin:0 auto;width:fit-content;max-width:560px;box-sizing:border-box;z-index:85;display:flex;align-items:center;gap:12px;padding:10px 10px 10px 16px;border-radius:12px;background:var(--bone);color:var(--ink);font-size:14px;line-height:1.4;box-shadow:0 10px 30px rgba(0,0,0,.35)}
-#vaultmsg:empty{display:none}#vaultmsg.err{background:var(--vred);color:#fff}
+#vaultmsg:empty{display:none}#vaultmsg.err{background:var(--vred);color:#1A0A0B}
 #vaultmsg button{min-height:32px;padding:0 12px;border-radius:8px;border:0;background:rgba(0,0,0,.12);color:inherit;font:600 13.5px var(--sans);cursor:pointer}
 #vaultsheet{position:fixed;inset:0;z-index:90;display:grid;place-items:center;padding:16px;background:rgba(4,6,8,.55)}
 #vaultsheet.hidden{display:none}
@@ -1105,7 +1106,7 @@ body.lq-liquid .vsheet{background:#16181C}body.lq-liquid.lq-light .vsheet{backgr
 .vdh{flex-wrap:wrap}.vdact{width:100%}.vdact button{flex:1}
 .vchip .vcl{display:none}
 #panel-vault .vadd span{display:none}#panel-vault .vadd{padding:0 13px}
-.vcodes{grid-template-columns:minmax(0,1fr)}
+.vcodes{grid-template-columns:minmax(0,1fr)}#panel-vault .vcode button{min-width:44px;min-height:40px}#panel-vault .vcode button .vbl{display:none}
 #vaultmsg{bottom:96px}
 .vbar{flex-wrap:wrap}.vsearch{flex:1 1 100%}.vchip{flex:1}
 .vfilt{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;margin-left:-2px;padding:0 2px 2px}.vfilt::-webkit-scrollbar{display:none}#panel-vault .vfilt button{flex:none}
@@ -1119,8 +1120,8 @@ body.lq-liquid .sset .note{font-size:12.5px;max-width:70ch}
 body.lq-liquid .sset .cxh{margin-top:0}
 /* the Close bar carries the panel's own ground, so what scrolls under it stays clean */
 /* top: the panel's padding (main's 16px), so it sticks at the very top edge: scrolled content no longer shows in a strip above it */
-body.lq-liquid.lq-pooled #lqsinkrow{top:-16px;margin:-14px -14px 10px;padding:10px 10px 8px;background:linear-gradient(180deg,rgba(6,8,11,.97) 70%,rgba(6,8,11,0));border-radius:22px 22px 0 0}
-body.lq-liquid.lq-light.lq-pooled #lqsinkrow{background:linear-gradient(180deg,rgba(246,248,251,.98) 70%,rgba(246,248,251,0))}
+body.lq-liquid.lq-pooled #lqsinkrow{top:-16px;margin:-14px -14px 10px;padding:10px 10px 8px;background:#06080B;border-radius:22px 22px 0 0}
+body.lq-liquid.lq-light.lq-pooled #lqsinkrow{background:#F6F8FB}
 
 /* Agents: needs you, at work, finished (folded) */
 .agdone{margin-top:6px}

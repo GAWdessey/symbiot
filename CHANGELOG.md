@@ -2,6 +2,16 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one), for anyone who installs the app: what changed in it, never whose work it was (no projects, people, accounts, services, run ids or task wording of the person who made it). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.90.16 — 2026-10-26
+
+- **A copy that fails says so where you pressed.** When this window can't use the clipboard, the Copy button reads Not copied and the line under it says why, in red, instead of a note at the foot of the screen that covered other buttons on a phone. Copy name does the same, beside the name.
+- **The Vault says when your copy leaves the clipboard.** The line under a copied value counts down the seconds until it's wiped, then says it was cleared.
+- **The keyboard stays where you were.** After Copy, Show or Hide, focus returns to the button you pressed, so Tab carries on from there.
+- **Recovery codes stay on one line.** Shown codes sit in two wide columns on a computer, and a code's Copy button no longer changes width when it says Copied, so nothing beside it moves. On a phone, a code's Copy shows its icon alone.
+- **Easier to read in the dark look.** Error notes and the red Delete button use dark text on their light red.
+- **Page headers are solid.** Nothing shows through the top bar when you scroll a page.
+- **Vault names read right.** "Wi-Fi" keeps its hyphen, and "github.com" shows as GitHub.com.
+
 ## 0.90.15 — 2026-10-26
 
 - **Your own steps on a site happen in your own Chrome.** When only you can do something on a site (a password or a code), the card now tells you to do it in your everyday Chrome, with the exact address and what to enter, instead of signing in through the Symbiot Browser. Cards that still asked for the Symbiot Browser are reworded, and they no longer carry a button that opens it.

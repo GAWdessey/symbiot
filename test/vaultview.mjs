@@ -72,6 +72,7 @@ try {
 
   console.log("READABLE — names people read, each under its service, and what needs a look");
   ok("names read as words: short forms in capitals, a brand cased its own way, the email left out", V.labelOf("twilio-account-sid") === "Twilio account SID" && V.labelOf("github token") === "GitHub token" && V.labelOf("acme.io password (jane@example.com)") === "Acme.io password" && V.labelOf("npm recovery codes") === "npm recovery codes");
+  ok("…Wi-Fi keeps its hyphen, and a brand's site reads as the brand", V.labelOf("Office Wi-Fi (Harbourline 5G)") === "Office Wi-Fi (Harbourline 5G)" && V.labelOf("office wifi password") === "Office Wi-Fi password" && V.labelOf("github.com password (maya@example.com)") === "GitHub.com password" && V.shortOf("GitHub.com password", "GitHub") === "Password");
   ok("each under its service: a service it names, else its first word, else Other", V.groupOf("twilio-auth-token") === "Twilio" && V.groupOf("my lemon squeezy key") === "Lemon Squeezy" && V.groupOf("acme-portal password") === "Acme" && V.groupOf("token") === "Other" && V.groupOf("password (jane@example.com)") === "Other");
   ok("…and named under it without the service's name", V.shortOf("Twilio account SID", "Twilio") === "Account SID" && V.shortOf("Token", "Other") === "Token");
   const iss = V.issuesOf([{ name: "token", count: 1, used: 0 }, { name: "github token", count: 1, used: 0 }, { name: "plan.md password", count: 1, used: 0 }, { name: "old codes", count: 2, used: 2 }], { peek: (n) => ({ values: [{ v: n === "token" || n === "github token" ? "same-value" : "v-" + n }] }) });
@@ -105,7 +106,7 @@ try {
   const uiJs = [...EMBEDDED_UI.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]).join("\n");
   const grab = (name) => { const i = uiJs.indexOf("function " + name + "("); let depth = 0, j = uiJs.indexOf("{", i); for (; j < uiJs.length; j++) { if (uiJs[j] === "{") depth++; else if (uiJs[j] === "}" && --depth === 0) break; } return uiJs.slice(i, j + 1); };
   const grabVar = (name) => (uiJs.match(new RegExp("var " + name + "=[\\s\\S]*?;\\n")) || [""])[0];
-  const fns = ["esc", "escQ", "vaultDate", "vaultHue", "vaultMono", "vaultSub", "vaultFmt", "vaultFind", "vaultField", "vaultListHtml", "vaultIssue", "vaultLast", "vaultDetailHtml", "vaultClip", "vaultUnclip"];
+  const fns = ["esc", "escQ", "vaultDate", "vaultHue", "vaultMono", "vaultSub", "vaultFmt", "vaultFind", "vaultField", "vaultListHtml", "vaultIssue", "vaultLast", "vaultDetailHtml", "vaultCopyLabel", "vaultLine", "vaultClipLeft", "vaultClip", "vaultUnclip"];
   const page = new Function("var agoTxt=function(){return 'just now';};" + uiJs.match(/var VLT=\{.*\n/)[0] + grabVar("VIC") + fns.map(grab).join("\n") + "\nreturn {VLT:VLT,VCLIP:VCLIP,VCLIP_MS:VCLIP_MS,vaultField:vaultField,vaultListHtml:vaultListHtml,vaultDetailHtml:vaultDetailHtml,vaultClip:vaultClip,vaultUnclip:vaultUnclip};")();
   const e = { name: "npm recovery codes", label: "npm recovery codes", group: "npm", short: "Recovery codes", kind: "Recovery codes", account: "", saved: Date.now(), count: 2, left: 1, issues: [] };
   const tw = { name: "token", label: "Token", group: "Other", short: "Token", kind: "API key or token", account: "", saved: Date.now(), count: 1, left: 1, issues: [{ kind: "vague", text: "Its name doesn't say what it's for." }, { kind: "same", other: "npm recovery codes", text: "Same value as “npm recovery codes”." }] };
@@ -122,8 +123,27 @@ try {
   if (!/Agents ask for/.test(det) || !/data-va=.pick./.test(det)) console.log(det.slice(0, 1500));
   page.VLT.mode = "delete"; const del = page.vaultDetailHtml(tw); page.VLT.mode = "";
   ok("Delete asks first, in the page, and says it can be undone", /Delete “Token”\?/.test(del) && /data-va='delyes'/.test(del) && /undo/.test(del));
-  page.VLT.ok[tw.name] = "c"; page.VLT.okn = tw.name; const cop = page.vaultDetailHtml(tw); page.VLT.ok = {}; page.VLT.okn = "";
-  ok("Copy answers where you pressed: Copied on its button, the 30 s note in its row, and Copy name the same", /data-va='copy'[^>]*><svg[^]*?<\/svg>Copied<\/button>/.test(cop) && /class='vok' role='status'>Copied\. It leaves the clipboard in 30 seconds/.test(cop) && /data-va='copyname'[^>]*><svg[^]*?<\/svg>Copied<\/button>/.test(cop));
+  page.VLT.ok[tw.name] = "c"; page.VLT.okn = tw.name; Object.assign(page.VCLIP, { v: "x", who: { name: tw.name, key: "c" }, until: Date.now() + 24000 });
+  const cop = page.vaultDetailHtml(tw); page.VLT.ok = {}; page.VLT.okn = "";
+  ok("Copy answers where you pressed: Copied on its button, the 30 s note in its row, and Copy name the same", /data-va='copy'[^>]*><svg[^]*?<\/svg><span class='vbl'>Copied<\/span><\/button>/.test(cop) && /class='vok' role='status'>Copied\. <span class='vsl'>It leaves the clipboard in 30 seconds\.<\/span>/.test(cop) && /data-va='copyname'[^>]*><svg[^]*?<\/svg>Copied<\/button>/.test(cop));
+  const later2 = page.vaultDetailHtml(tw);
+  ok("…the row's line stays after the button goes back to Copy, counting down to the wipe", /<\/svg><span class='vbl'>Copy<\/span><\/button>/.test(later2) && /id='vclipleft' aria-hidden='true'>It leaves the clipboard in 24 s\.</.test(later2));
+  page.VCLIP.pend = true; const pend = page.vaultDetailHtml(tw); page.VCLIP.pend = false;
+  ok("…and if the window has lost focus when time's up, it says it goes when you're back", /when you're back in this window/.test(pend));
+  page.VCLIP.v = ""; page.VLT.gone = tw.name; const gone = page.vaultDetailHtml(tw); page.VLT.gone = "";
+  ok("…then that it was cleared", /role='status'>Cleared from the clipboard\.</.test(gone) && !/vclipleft/.test(gone));
+  ok("…counted each second, without redrawing the page", /function vaultClipWatch\(\)\{[^\n]*setInterval\([^\n]*s\.textContent=vaultClipLeft\(\)/.test(uiJs));
+  page.VCLIP.who = { name: tw.name, key: "n" }; page.VCLIP.v = "token"; const nm = page.vaultDetailHtml(tw); page.VCLIP.v = ""; page.VCLIP.who = null;
+  ok("…a copied name replaces the value on the clipboard, so the value's countdown goes", !/vclipleft/.test(nm));
+  page.VLT.bad = { name: tw.name, key: "c", text: "Couldn't copy: this window can't use the clipboard. Press Show and select it." }; const bad = page.vaultDetailHtml(tw);
+  ok("the clipboard refuses: the button says Not copied, and why goes in its row, in red", /data-va='copy'[^>]*><svg[^]*?<\/svg><span class='vbl'>Not copied<\/span><\/button>/.test(bad) && /class='vok vbad' role='alert'>Couldn&#39;t copy|class='vok vbad' role='alert'>Couldn.t copy/.test(bad));
+  ok("…never in the note at the foot of the screen", !/vaultSay\([^)]*clipboard/.test(uiJs) && /function vaultCopied[^\n]*vaultBad\(/.test(uiJs) && /vaultGet[^]*?if\(!r\|\|!r\.ok\)\{vaultBad\(/.test(uiJs));
+  page.VLT.bad = { name: tw.name, key: "n", text: "Couldn't copy: this window can't use the clipboard. Select the name and copy it." }; const badn = page.vaultDetailHtml(tw); page.VLT.bad = null;
+  ok("…and Copy name the same, beside the name", /data-va='copyname'[^>]*><svg[^]*?<\/svg>Not copied<\/button><span class='vbadn' role='alert'>/.test(badn) && !/vok vbad/.test(badn));
+  ok("after a redraw, keyboard focus goes back to the button you pressed", /if\(fk&&!fa\.isConnected\)\{var fb=[^\n]*vaultKey\(x\)===fk[^\n]*fb\.focus\(/.test(uiJs));
+  ok("copy buttons are wide enough for every label, so pressing one moves nothing", /#panel-vault \.vval button\[data-va='copy'\],#panel-vault \.vcode button\{min-width:124px;padding:0 10px\}/.test(EMBEDDED_UI) && /#panel-vault \.vcode button \.vbl\{display:none\}/.test(EMBEDDED_UI));
+  ok("shown codes get a column wide enough to keep each one on a line", /\.vcodes\{display:grid;grid-template-columns:repeat\(auto-fill,minmax\(min\(100%,300px\),1fr\)\)/.test(EMBEDDED_UI));
+  ok("the light red of the dark looks carries dark text (white on it fails contrast)", /#vaultmsg\.err\{background:var\(--vred\);color:#1A0A0B\}/.test(EMBEDDED_UI) && /button\.vdanger\{background:var\(--vred\);color:#1A0A0B/.test(EMBEDDED_UI) && /body\.lq-light #vaultmsg\.err,body\.lq-light #panel-vault button\.vdanger\{color:#fff\}/.test(EMBEDDED_UI));
   ok("…and the unlock clears a note left from before it", /vaultClose\(\);vaultSay\(was\?/.test(uiJs));
   ok("the page waits 30 seconds", page.VCLIP_MS === 30000);
   const board = { text: "", focused: true, writeText(t) { if (!this.focused) return Promise.reject(new Error("Document is not focused")); this.text = t; return Promise.resolve(); } };
