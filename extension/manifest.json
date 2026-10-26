@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "Symbiot",
+  "description": "Lets Symbiot work in your own Chrome, on the sites you allow one by one, in a window and tab group of its own.",
+  "version": "0.1.0",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA02A018E/eWJohCiPltTJHiDBc4vFM64auuAtbu8xQxK5tn48p5ZUFPe8VFrHNbYL3jRWYlapgtiAOF18Thc/xN4tO1kVAip8sMNSeSeL9YVXrTl+RmVWlr/mb9J/N33LonJleAh2itP+PeORfzEWAvXfvdPmwUQSJavUFIKjfu4d4SAUZVoVxtHNqB5Eeg6EQMIHsWCr0djeMAPjQrto4DY8lJSSpY1wzGX3C5R7FptX+bC9me7iniz/Jw9E+7W63y8MCLTkMfhijyCjAM1ePl5gq6UJp1jGzqn49VrgDza428oHP4jUwU3p/YxRc5jixXxrI+RX0lG/33Dl5UAjUQIDAQAB",
+  "minimum_chrome_version": "116",
+  "permissions": ["nativeMessaging", "tabs", "tabGroups", "scripting", "alarms", "storage"],
+  "optional_host_permissions": ["https://*/*", "http://*/*"],
+  "background": { "service_worker": "background.js" },
+  "action": { "default_title": "Symbiot", "default_popup": "popup.html" },
+  "icons": { "128": "icon.png" }
+}

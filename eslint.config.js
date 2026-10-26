@@ -78,6 +78,8 @@ export default [
     rules: RULES,
   },
   { files: ["ui.mjs"], processor: pageScripts },
+  // Symbiot's extension in the user's own Chrome (ownchrome.mjs): classic scripts with Chrome's extension APIs
+  { files: ["extension/*.js"], languageOptions: { sourceType: "script", globals: { ...globals.browser, chrome: "readonly" } } },
   // the relay on Cloudflare: a Worker's own globals
   { files: ["relay/worker.mjs"], languageOptions: { globals: { WebSocketPair: "readonly", WebSocketRequestResponsePair: "readonly" } } },
   {

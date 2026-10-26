@@ -31,10 +31,12 @@ import { denyList } from "./outward.mjs";
 import { listSecrets, getSecret, saveSecret, markUsed, deleteSecret, scrubStored, repairFalseSaves } from "./vault.mjs";
 import { vaultList, vaultValue, vaultLog, setPin, unlock as vaultUnlock, lock as vaultLock, addEntry as vaultAdd, renameEntry as vaultRename, removeEntry as vaultRemove } from "./vaultview.mjs";
 import { SCREENS_SOCK, sockGate, loadScreens, screenImage, captureScreen, splitScreen, listMonitors, allowScreenshots, importScreen, setRegions, renameScreen, removeScreen, blueprint, clickRegion } from "./screens.mjs";
+import { setupOwnChrome, refreshOwnChrome, startBroker, ownChromeStatus, mapInOwnChrome, ownChromeFor, OWN_SOCK, ownScreen, pressInOwnChrome, typeInOwnChrome, chooseInOwnChrome, fillInOwnChrome, scrollInOwnChrome, wholeInOwnChrome, uploadInOwnChrome } from "./ownchrome.mjs";
 import { sessionCookie, mapPage, wholePage, pressRegion, typeRegion, chooseRegion, fillForm, verifyPage, uploadRegion, scrollPage, signIn, keepBrowserOpen, isTrusted, trustedSites, trustSite, untrustSite, openSymbiotBrowser, closeSymbiotBrowser, onBrowserClosed, setBrowserHub, siteUrl, browserHub, windowOpen } from "./headless.mjs";
 import { weeklyState, setWeekly, runWeekly, startWeekly, autostartState, setAutostart, installLauncher, iconSvg, setLauncherLook, desktopNotify } from "./desktop.mjs";
 import { markNews, newsSince, watchState, addWatch, setEvery, removeWatch, clearNews, seenWatch, checkWatch, startWatches, setBrief, draftReply, openChat, watchBoard, boardChat, clearBoardChat } from "./watch.mjs";
 import { setLinkAct, setLinksActAll, linksState, linkSite, checkLink, unlinkSite, addSite, signInAsked, sitesCheck } from "./links.mjs";
+import { lineState, checkLine, forgetBlocked } from "./lineblocks.mjs";
 import { testWeeks, testInstalls, postsState, draftPosts, approvePost, editPost, skipPost, voiceFromLinkedIn, addMedia, removeMedia, mediaFile, mediaDir, pictureOfPage, clipOfPage, openUrl } from "./post.mjs";
 import { mindState, forget, actNow, actIn, loadMind } from "./mind.mjs";
 import { goalsTick, goalAnswer, goalFor } from "./goals.mjs";
@@ -224,6 +226,8 @@ function saveShots(list) {
   return out;
 }
 function readBody(req) {
+  // read once already, by a route that looked before handing it on (a screen in the user's own Chrome)
+  if (req.symbiotBody) return Promise.resolve(req.symbiotBody);
   return new Promise((resolve) => {
     let d = ""; req.on("data", (ch) => (d += ch));
     req.on("end", () => { try { resolve(d ? JSON.parse(d) : {}); } catch { resolve({}); } });
@@ -625,8 +629,26 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
         if (!b.out || !out.startsWith(home + "/") || (out.startsWith(CONFIG_DIR + "/") && !out.startsWith(join(CONFIG_DIR, "drafts") + "/"))) return json(res, { error: "Screenshots go in the run's own folder." });
         return json(res, await shoot(String(b.url || ""), { out, sizes: String(b.sizes || "1440x900,390x844"), full: b.full === true, bin: chromeBinary() }));
       }
-      if (u.pathname === "/api/screens/map" && req.method === "POST") { const b = await readBody(req); return json(res, screenOut(await mapPage(b.site, b.name, { whole: b.whole === true, who: String(b.who || "") }))); }
+      if (u.pathname === "/api/screens/map" && req.method === "POST") { const b = await readBody(req); if (b.chrome === "own" || (b.chrome !== "hidden" && !b.whole && ownChromeFor(b.site))) return json(res, screenOut(await mapInOwnChrome(b.site, b.name))); return json(res, screenOut(await mapPage(b.site, b.name, { whole: b.whole === true, who: String(b.who || "") }))); }
+      // Symbiot's extension in the user's own Chrome: whether it's set up and connected, and setting it up (ownchrome.mjs)
+      if (u.pathname === "/api/own-chrome") return json(res, ownChromeStatus());
+      if (u.pathname === "/api/own-chrome/setup" && req.method === "POST") return json(res, setupOwnChrome());
       // press / type: refused unless confirmed, or the page's site is one you trust
+      // a screen mapped in the user's own Chrome is acted on there, never in the hidden browser (ownchrome.mjs)
+      if (/^\/api\/screens\/(press|type|replace|choose|fill|upload|scroll|whole)$/.test(u.pathname) && req.method === "POST") {
+        const b = await readBody(req), own = ownScreen(String(b.id || ""));
+        if (own) {
+          const verb = u.pathname.split("/").pop(), opts = { confirmed: b.confirmed === true, noSend: b.noSend === true };
+          if (verb === "press") return json(res, screenOut(await pressInOwnChrome(own.id, String(b.region || ""), opts)));
+          if (verb === "type" || verb === "replace") return json(res, screenOut(await typeInOwnChrome(own.id, String(b.region || ""), b.text, { ...opts, enter: b.enter === true, ...(verb === "replace" ? { replace: String(b.replace == null ? "" : b.replace) } : {}) })));
+          if (verb === "scroll") return json(res, screenOut(await scrollInOwnChrome(own.id, String(b.to || "down"))));
+          if (verb === "choose") return json(res, screenOut(await chooseInOwnChrome(own.id, String(b.region || ""), b.option, opts)));
+          if (verb === "fill") return json(res, screenOut(await fillInOwnChrome(own.id, Array.isArray(b.fields) ? b.fields.map((f) => ({ region: String(f.region || ""), text: f.text })) : [], { ...opts, press: String(b.press || "") })));
+          if (verb === "whole") return json(res, screenOut(await wholeInOwnChrome(own.id)));
+          return json(res, screenOut(await uploadInOwnChrome(own.id, String(b.region || ""), Array.isArray(b.files) ? b.files.map(String) : String(b.files || ""), opts)));
+        }
+        req.symbiotBody = b;
+      }
       if (u.pathname === "/api/screens/press" && req.method === "POST") { const b = await readBody(req); return json(res, screenOut(await pressRegion(String(b.id || ""), String(b.region || ""), { confirmed: b.confirmed === true, noSend: b.noSend === true, who: String(b.who || "") }))); }
       // scroll and whole page: they only look, so they never ask
       if (u.pathname === "/api/screens/whole" && req.method === "POST") { const b = await readBody(req); return json(res, screenOut(await wholePage(String(b.id || ""), { who: String(b.who || "") }))); }
@@ -680,6 +702,10 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       if (u.pathname === "/api/links/check" && req.method === "POST") { const b = await readBody(req); return json(res, await checkLink(String(b.id || ""))); }
       if (u.pathname === "/api/links/actall" && req.method === "POST") { const b = await readBody(req); return json(res, setLinksActAll(b.on === true)); } // agents may act on every site in your own Chrome (chromegate.mjs "*")
       if (u.pathname === "/api/links/act" && req.method === "POST") { const b = await readBody(req); return json(res, setLinkAct(String(b.id || ""), b.on === true)); } // agents may act on it in your own Chrome (chromegate.mjs)
+      // This computer's connection (lineblocks.mjs): sites that refuse it, and Check, which asks two reputation lists about its address
+      if (u.pathname === "/api/line") return json(res, lineState());
+      if (u.pathname === "/api/line/check" && req.method === "POST") return json(res, await checkLine());
+      if (u.pathname === "/api/line/forget" && req.method === "POST") { const b = await readBody(req); return json(res, forgetBlocked(String(b.host || ""))); }
       if (u.pathname === "/api/links/unlink" && req.method === "POST") { const b = await readBody(req); return json(res, unlinkSite(String(b.id || ""))); }
       // Posts (post.mjs): the week's drafts, waiting on you. Approve is your yes: Marketing's
       // agent posts it through Symbiot's signed-in browser.
@@ -963,6 +989,9 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
     // something removed the file (an older Symbiot's exit, a cleanup): open it again
     every("screens socket", 30000, () => { if (!existsSync(SCREENS_SOCK)) bind(); });
     process.on("exit", () => { try { rmSync(SCREENS_SOCK, { force: true }); } catch {} });
+    // the door of Symbiot's extension in the user's own Chrome (ownchrome.mjs), with its folder brought up to this version
+    refreshOwnChrome(); startBroker();
+    process.on("exit", () => { try { if (!OWN_SOCK.startsWith("\\\\")) rmSync(OWN_SOCK, { force: true }); } catch {} });
   }
   server.listen(PORT, "127.0.0.1");
   // secrets kept on disk beside their key go into the keyring once there is one, and the key file with them (vault.mjs)

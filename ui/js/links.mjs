@@ -37,6 +37,34 @@ el.innerHTML=ns.length?ns.slice(0,60).map(function(n){return "<div class='task' 
 el.querySelectorAll('.forgetone').forEach(function(b){b.addEventListener('click',function(){api('/api/mind/forget',{id:b.closest('.task').getAttribute('data-id')}).then(loadMind);});});
 var fa=document.getElementById('forgetall');if(fa)fa.addEventListener('click',function(){api('/api/mind/forget',{id:'all'}).then(loadMind);});});}
 function loadLinks(){api('/api/links').then(function(d){if(d&&d.items){LINKS=d;renderLinks();}});}
+// This computer's connection (lineblocks.mjs): the last check of its address against two proxy
+// lists, and the sites that refused it, each with Forget for when it's been sorted out.
+function lineHtml(d){var l=d&&d.line,h='';
+if(l&&l.ip){var said=l.lists.map(function(x){return x.error?x.name+" didn't answer":x.name+(x.proxy?' lists it as ':' calls it ')+x.kind;}).join('; ');
+h+="<div class='note "+(l.listed?'err':'ok')+"'>Your address "+esc(l.ip)+": "+esc(said)+'. '+(l.listed?"A site that uses a list like that may refuse this computer, your own Chrome included: do steps on such a site on your phone, on mobile data.":"No proxy list here calls it a proxy.")+" <span class='muted'>Checked "+esc(agoTxt(l.at))+".</span></div>";}
+var s=(d&&d.sites)||[];
+if(s.length)h+="<div class='note muted'>Refused this computer's connection, so their steps go to your phone on mobile data:</div>"+s.map(function(x){return "<div class='task' data-h='"+escQ(x.host)+"'><span class='t'><b>"+esc(x.host)+"</b><br><span class='muted'>"+esc(String(x.why||'').replace(/^it ([a-z])/,function(m,c){return c.toUpperCase();}))+", since "+esc(vaultDate(x.at)||x.at)+"</span>"+(x.review?" &middot; <a href='"+escQ(x.review)+"' target='_blank' rel='noopener'>its review form</a>":'')+"</span><button type='button' class='ghost lineforget' aria-label='Forget "+escQ(x.host)+"'>Forget</button></div>";}).join('');
+return h;}
+var LINE=null;
+function loadLine(){var b=document.getElementById('linebox');if(!b)return;api('/api/line').then(function(d){LINE=d;b.innerHTML=lineHtml(d);lineWire(b);}).catch(function(){});}
+function lineWire(b){b.querySelectorAll('.lineforget').forEach(function(x){x.addEventListener('click',function(){x.disabled=true;api('/api/line/forget',{host:x.closest('.task').getAttribute('data-h')}).then(loadLine);});});}
+function lineCheck(){var b=document.getElementById('linebox'),k=document.getElementById('linecheck');if(!b||!k)return;k.disabled=true;k.textContent='Checking…';
+api('/api/line/check',{}).then(function(r){k.disabled=false;k.textContent=r&&r.error?'Check':'Check again';if(r&&r.error){b.innerHTML="<div class='note err'>"+esc(r.error)+"</div>"+lineHtml(LINE);lineWire(b);return;}loadLine();}).catch(function(){k.disabled=false;k.textContent='Check';b.innerHTML="<div class='note err'>Couldn't reach Symbiot to check.</div>"+lineHtml(LINE);lineWire(b);});}
+// Your own Chrome (ownchrome.mjs): Set up writes the extension's folder and registers its host
+// with each Chromium browser here; then the steps to load it in Chrome once, or, once it's
+// connected, the sites Chrome allowed it and those waiting for an Allow on its toolbar button.
+function ownHtml(d){if(!d||!d.setUp)return '';var h='';
+if(d.connected){var on=(d.origins||[]).map(function(o){return o.replace(/^https?:[/][/]/,'');});
+h+="<div class='note "+(d.stopped?'err':'ok')+"'>"+(d.stopped?"Stopped from Symbiot's button in Chrome's toolbar: press Start there to let it work again.":"Connected to your Chrome (extension "+esc(d.version||'')+"). "+(on.length?"It may work on "+esc(on.join(', '))+'.':"No site is allowed there yet."))+"</div>";
+if((d.asks||[]).length)h+="<div class='note muted'>Waiting for your Allow in Chrome: "+esc(d.asks.map(function(o){return o.replace(/^https?:[/][/]/,'');}).join(', '))+". Click Symbiot's button in Chrome's toolbar and press Allow.</div>";
+return h;}
+h+="<div class='note muted'>Load it in Chrome once:</div><ol class='ownsteps'><li>In Chrome, go to <b>chrome://extensions</b> and turn on <b>Developer mode</b> (top right).</li><li>Press <b>Load unpacked</b> and choose this folder:<div class='ownpathrow'><code class='ownpath'>"+esc(d.folder)+"</code><button type='button' class='ghost owncopy' aria-label='Copy the folder'>Copy</button></div></li><li>Keep Chrome open: it connects by itself, and this says so.</li></ol>";
+if((d.hosts||[]).length)h+="<div class='note muted'>Ready on this computer for "+esc(d.hosts.join(', '))+".</div>";
+return h;}
+function loadOwn(){var b=document.getElementById('ownbox'),k=document.getElementById('ownset');if(!b)return;api('/api/own-chrome').then(function(d){b.innerHTML=ownHtml(d);if(k)k.textContent=d&&d.setUp?'Set up again':'Set up';ownWire(b,d);}).catch(function(){});}
+function ownWire(b,d){var c=b.querySelector('.owncopy');if(c)c.addEventListener('click',function(){var done=function(){c.textContent='Copied';setTimeout(function(){c.textContent='Copy';},1500);};try{navigator.clipboard.writeText(d.folder).then(done,function(){fallbackCopy(d.folder);done();});}catch(e){fallbackCopy(d.folder);done();}});}
+function ownSetUp(){var b=document.getElementById('ownbox'),k=document.getElementById('ownset');if(!b||!k)return;k.disabled=true;
+api('/api/own-chrome/setup',{}).then(function(d){k.disabled=false;if(d&&d.error){b.innerHTML="<div class='note err'>"+esc(d.error)+"</div>";return;}if(d&&!(d.browsers||[]).length&&!d.connected){b.innerHTML="<div class='note err'>No Chrome, Chromium, Brave or Edge was found on this computer.</div>";return;}loadOwn();}).catch(function(){k.disabled=false;b.innerHTML="<div class='note err'>Couldn't reach Symbiot to set it up.</div>";});}
 // Sign in to a site for agents: the Symbiot Browser opens on it (links.mjs addSite:
 // added under Connections → Your sites, trusted, checked once you click Done there).
 // From Settings, a trusted site, a card or a reply that asks you to sign in. s: { site } or { id }.
