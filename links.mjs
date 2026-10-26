@@ -297,6 +297,7 @@ const ASKS_SIGNIN = /\b(?:sign(?:ed)?[ -]?in|log[ -]?in)(?:\s+again)?(?:\s+(?:to
 function signInAsked(text) {
   const t = String(text || "");
   if (blockedSignIn(t)) return null; // a site the Symbiot Browser can't hold a sign-in for gets no Sign in button (browserfails.mjs)
+  if (/\b(?:your|their)\s+own\s+(?:everyday\s+)?(?:chrome|browser)\b/i.test(t)) return null; // nor a step that's theirs in their own Chrome (browserfails.mjs ownChromeStep)
   try { if (signInNotNeeded(t)) return null; } catch {} // nor one where signing in isn't what's in the way: acting there is switched off, or it's signed in (chromegate.mjs)
   for (const m of t.matchAll(ASKS_SIGNIN)) {
     const rest = t.slice(m.index + m[0].length, m.index + m[0].length + 80);

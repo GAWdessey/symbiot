@@ -16,6 +16,7 @@ import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { CONFIG_DIR, readState, writeJsonAtomic, loadConfig } from "./core.mjs";
 import { actSites } from "./chromegate.mjs";
+import { sources, profilesOf, profileAccounts } from "./chromeimport.mjs";
 
 const KNOWN = [
   { host: "twilio.com", name: "Twilio", names: /^twilio/i, why: "its login fails Cloudflare's human check there",
@@ -71,12 +72,39 @@ function signInDone(text, at = Date.now()) {
   const o = load(); o.done = [...o.done.filter((x) => x.host !== s.host), { host: s.host, at }]; save(o);
   return s;
 }
+// The user's own steps on a site are theirs in their everyday Chrome, never the Symbiot Browser.
+// On 19 Oct 2026 the user said never to send them to sign in through the Symbiot Browser; on 26 Oct
+// a run still carded "sign in at <a registrar> in the Symbiot Browser" to switch a domain's
+// nameservers (the brief's own example said so), and the registrar refused it. That refusal was
+// this computer's address, which an IP-reputation list calls a proxy, not the browser: plain curl
+// got the same 403. So the step is the user's, in their own Chrome, with the address and the values.
+// ownChrome: how a brief or a card names that Chrome, its profile and account when they can be read.
+function ownChrome({ home = homedir(), platform = process.platform } = {}) {
+  for (const src of sources(home, platform)) {
+    if (!existsSync(join(src.dir, "Local State"))) continue;
+    const p = profilesOf(src.dir, "Default")[0]; if (!p) continue;
+    const who = (profileAccounts(src.dir)[p.dir] || [])[0];
+    return `your own Chrome (its "${p.name}" profile${who ? ", " + who : ""})`;
+  }
+  return "your own Chrome";
+}
+// An ask that sends the user to the Symbiot Browser to sign in or take a step there, said for their
+// own Chrome instead: "sign in at x.com in the Symbiot Browser (Settings → Connections → Add a site),
+// then click Done" → "sign in at x.com in your own Chrome". Anything else comes back as it was.
+const IN_SB = /\s+(?:in|through|using|with)\s+(?:the\s+)?Symbiot(?:'s)?\s+Browser(?:\s*\(Settings\s*→\s*Connections(?:\s*→\s*Add a site)?\))?/gi;
+const DONE_SB = /,?\s*(?:and|then)\s+(?:click|press|tap)\s+Done(?:\s+(?:in|on)\s+(?:the\s+)?Symbiot(?:'s)?\s+Browser)?/gi;
+function ownChromeStep(text, where = "your own Chrome") {
+  const t = String(text || "");
+  if (!/Symbiot(?:'s)?\s+Browser/i.test(t) || !(signInSite(t) || /^\W*👤/u.test(t))) return t;
+  return t.replace(DONE_SB, "").replace(IN_SB, " in " + where);
+}
 // A question's options (QUESTIONS.md): one that has the user sign in to such a site is the
-// agent's, through the site's API, with nothing for the user to do. A skip stays as it is.
+// agent's, through the site's API, with nothing for the user to do; any other step or sign-in
+// it sends them to the Symbiot Browser for is theirs in their own Chrome. A skip stays as it is.
 function apiOptions(options) {
   const out = (options || []).map(String).map((o) => {
     if (/^\W*skip\b/i.test(o)) return o;
-    const e = blockedSignIn(o); if (!e) return o;
+    const e = blockedSignIn(o); if (!e) return ownChromeStep(o);
     return `🤖 Agent: reach ${e.name} through ${e.route}, not a sign-in in the Symbiot Browser, which can't hold it${/\(recommended\)\s*$/i.test(o) ? " (recommended)" : ""}`;
   });
   return out.filter((o, i) => out.indexOf(o) === i);
@@ -109,8 +137,10 @@ function realChrome({ cfg = loadConfig(), home, platform } = {}) {
 const CHROME_BRIEF = "- The user's own Chrome is yours to READ, through the Claude in Chrome tools (mcp__claude-in-chrome__*): it's signed in as them, and sites see a person's browser there, so a site that blocks the Symbiot Browser or isn't signed in there (Cloudflare's dashboard, a cloud console) reads fine. The order: the site's API, CLI or a connector first; then their Chrome; then `symbiot screens`. Work only in your own tab group (tabs_context_mcp with createIfEmpty, then tabs_create_mcp), never in their tabs, and close yours when done. There you can only open, read and close: a click, a typed word, a send or a payment goes through `symbiot screens`, which asks the user first, or a question. If it says Claude needs permission for a site, ask the user to allow that one site in the Claude extension (give its address), not to sign in.";
 // The sites the user lets agents act on in their Chrome, said in the brief beside the reading rule.
 const chromeActLine = (sites) => `- On ${sites.includes("*") ? "any site" : sites.map((h) => "`" + h + "`").join(", ")} the user also lets you ACT in their Chrome (mcp__claude-in-chrome__computer to click, type and press keys, form_input to fill): open the page with navigate first, in your own tab, and give every click, key, type and fill an action_summary saying truthfully what it does ("Sends the reply to pat@example.com"). Symbiot's membrane holds whatever sends, posts, pays or deletes until the user says Go: when it does, ask exactly as it tells you (one question, its id, one option) and stop; once they say Go, do that same action again and it goes through, once. Pressing Enter or Return (or typing a line break) counts as a send. After a click or an Enter the tab may be on another site, so if the membrane says it doesn't know where the tab is, check with tabs_context_mcp, then go on. Anywhere else, their Chrome stays read-only.`;
+// The user's own step on a site, for every brief: in their Chrome, with the address and the values.
+const ownStepLine = (where = ownChrome()) => `- A step on a site that only the user can take (their password or an SMS code: a domain's nameservers at its registrar, DNS, billing or a contact at a provider) is theirs to do in ${where}, never in the Symbiot Browser: never ask them to sign in there for it. Its option gives the exact address, where on the page, and the exact values to enter, then what you check after, e.g. \`👤 You (only you: your registrar password): in your own Chrome, at www.domains.co.za/client/dashboard → the domain → Nameservers, set ns1.example.com and ns2.example.com; I check the switch took within the hour\`. If the site refuses this computer's connection itself (a 403 that names this computer's IP address, or calls it a proxy or VPN), their Chrome here is refused too: say so, and make the step their phone on mobile data, not Wi-Fi.`;
 function browserBrief(ready = realChrome(), sites = (() => { try { return actSites(); } catch { return []; } })()) {
-  return [...(ready ? [CHROME_BRIEF] : []), ...(ready && sites.length ? [chromeActLine(sites)] : []), ...(ready ? [walkthroughBrief(sites)] : []), `- Never ask the user to sign in to a site in the Symbiot Browser to read or check something there: first try the site's API, its CLI or a connector, with keys from the project's env, the vault or (through \`ops\`) the server's secrets, and ask only for a key you can't find anywhere. The Symbiot Browser can't hold a sign-in to ${failingSites().map((e) => `${e.host} (use ${e.route})`).join("; ")}: an ask to sign in to one of them there never reaches the user.`];
+  return [...(ready ? [CHROME_BRIEF] : []), ...(ready && sites.length ? [chromeActLine(sites)] : []), ...(ready ? [walkthroughBrief(sites)] : []), ownStepLine(), `- Never ask the user to sign in to a site in the Symbiot Browser to read or check something there: first try the site's API, its CLI or a connector, with keys from the project's env, the vault or (through \`ops\`) the server's secrets, and ask only for a key you can't find anywhere. The Symbiot Browser can't hold a sign-in to ${failingSites().map((e) => `${e.host} (use ${e.route})`).join("; ")}: an ask to sign in to one of them there never reaches the user.`];
 }
 
-export { CHROME_ACT, KNOWN, failingSites, signInSite, blockedSignIn, signInDone, apiOptions, apiRoute, browserBrief, realChrome, chromeHostDirs, CHROME_READ, CHROME_BRIEF };
+export { CHROME_ACT, KNOWN, failingSites, signInSite, blockedSignIn, signInDone, apiOptions, ownChrome, ownChromeStep, ownStepLine, apiRoute, browserBrief, realChrome, chromeHostDirs, CHROME_READ, CHROME_BRIEF };
