@@ -2,6 +2,10 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one), for anyone who installs the app: what changed in it, never whose work it was (no projects, people, accounts, services, run ids or task wording of the person who made it). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.90.16 — 2026-10-26
+
+- **The Vault's error note is easy to read in Ferrofluid.** Notes like "This window can't use the clipboard" now use dark text on the red in the dark look, where the white text was faint. Glass and Pearl are unchanged.
+
 ## 0.90.15 — 2026-10-26
 
 - **Your own steps on a site happen in your own Chrome.** When only you can do something on a site (a password or a code), the card now tells you to do it in your everyday Chrome, with the exact address and what to enter, instead of signing in through the Symbiot Browser. Cards that still asked for the Symbiot Browser are reworded, and they no longer carry a button that opens it.

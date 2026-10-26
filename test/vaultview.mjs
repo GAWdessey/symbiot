@@ -154,6 +154,13 @@ try {
   ok("…the old lockout box is closed and the old note is gone", dom.vaultsheet.classes.has("hidden") && dom.vaultsheet.innerHTML === "" && draw.VLT.sheet === "" && draw.VLT.then === null && dom.vaultmsg.innerHTML === "");
   ok("…and Try again shows it loading", /else if\(a==='retry'\)\{VLT\.state='load';vaultDraw\(\);loadVault\(\);\}/.test(uiJs));
   ok("…the page lays it out alone, on a phone too", /#panel-vault\.vsolo \.vlist\{display:none\}/.test(EMBEDDED_UI) && /#panel-vault\.vsolo \.vdetail\{display:block\}/.test(EMBEDDED_UI));
+  // the error note's text against its danger colour, dark looks and the light one: AA (4.5:1)
+  const lum = (h) => { const c = [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16) / 255).map((x) => (x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4)); return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]; };
+  const ratio = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p); return (x + 0.05) / (y + 0.05); };
+  const hex = (re) => ((EMBEDDED_UI.match(re) || [])[1] || "").replace(/^#fff$/i, "#FFFFFF");
+  const darkBg = hex(/#panel-vault,#vaultmsg\{--vred:(#[0-9A-Fa-f]{6})/), lightBg = hex(/body\.lq-light #vaultmsg\{--vred:(#[0-9A-Fa-f]{6})/);
+  const darkFg = hex(/#vaultmsg\.err\{background:var\(--vred\);color:(#[0-9A-Fa-f]{3,6})\}/), lightFg = hex(/body\.lq-light #vaultmsg\.err\{color:(#[0-9A-Fa-f]{3,6})\}/);
+  ok("the error note's text is readable on its red, in the dark looks and the light one", darkFg && lightFg && ratio(darkFg, darkBg) >= 4.5 && ratio(lightFg, lightBg) >= 4.5, { darkFg, darkBg, lightFg, lightBg });
   ok("Settings links to it, and it's a page by name", /id="openvault"/.test(EMBEDDED_UI) && /vault:'Vault'/.test(uiJs) && (await import("../adapt.mjs")).SHAPES.includes("vault"));
 } finally {
   rmSync(HOME, { recursive: true, force: true });

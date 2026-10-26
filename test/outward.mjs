@@ -97,7 +97,8 @@ try {
   {
     const { execSync, spawnSync } = await import("node:child_process"), os = await import("node:os"), root = new URL("..", import.meta.url).pathname;
     const realHome = os.userInfo().homedir, kh = join(realHome, ".ssh", "known_hosts");
-    const mine = new Set(Object.values(os.networkInterfaces()).flat().filter((a) => a && a.family === "IPv4" && !a.internal).map((a) => a.address));
+    // Docker's bridges (docker0's 172.17.0.1, br-…) get the same addresses on every machine: they don't say whose it is
+    const mine = new Set(Object.entries(os.networkInterfaces()).filter(([n]) => !/^(docker\d|br-)/.test(n)).flatMap(([, a]) => a).filter((a) => a && a.family === "IPv4" && !a.internal).map((a) => a.address));
     const files = execSync("git ls-files", { cwd: root, encoding: "utf8" }).split("\n").filter((f) => f && !/\.(png|ico|jpg|jpeg|gif|webp|woff2?|ttf|apk|jar|keystore)$|package-lock\.json$/.test(f));
     const DOC = /^(127\.|0\.|255\.|192\.0\.2\.|198\.51\.100\.|203\.0\.113\.|224\.)/, seen = new Map();
     for (const f of files) { let t = ""; try { t = readFileSync(join(root, f), "utf8"); } catch { continue; } for (const m of t.matchAll(/(?<![\d.])(\d{1,3}(?:\.\d{1,3}){3})(?![\d])/g)) if (!DOC.test(m[1]) && m[1].split(".").every((x) => +x < 256) && !seen.has(m[1])) seen.set(m[1], f); }
