@@ -30,7 +30,7 @@ import { join } from "node:path";
 import { mkdirSync, writeFileSync, readFileSync, existsSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { CONFIG_DIR, loadTasks, clipWords, jobWords, readState, writeJsonAtomic, sameTask } from "./core.mjs";
-import { goalRows, putGoal, loadJobs, ENDED } from "./jobs.mjs";
+import { goalRows, putGoal, loadJobs, ENDED, FINISHED } from "./jobs.mjs";
 import { sentAt } from "./handback.mjs";
 
 const DAY = 86400e3, H = 3600e3, DEAD_RUN = 3 * H; // runs that hang are stopped after 45 minutes (agents.mjs runsTick)
@@ -132,6 +132,22 @@ async function doneWhenFor(g, { write } = {}) {
 }
 
 // ---- where each child stands ---------------------------------------------------------
+// A run left waiting or paused is over once a later run in its folder finished, or once the folder's
+// TASKS.md has nothing open left: runs end that way from 0.94.1 (jobs.mjs supersede), and these read
+// the records from before it the same. Goal 440329bc asked "Can I redeploy the server now…" five times
+// on 26 Oct 2026 from a run whose next run had done the redeploy and ticked the item.
+const laterFinished = (j, ctx) => ctx.jobs.find((x) => x.outcome && String(x.key).startsWith("run:") && x.path === j.path && (x.at || 0) > (j.at || 0) && FINISHED.has(x.state));
+function openItemsIn(path) { // the [ ] and [~] items in its folder's TASKS.md, or null with none to read
+  let md; try { md = readFileSync(join(path, ".symbiot", "TASKS.md"), "utf8"); } catch { return null; }
+  return md.trim() ? md.split("\n").filter((l) => /^\s*-\s*\[[ ~]\]/.test(l)).length : null;
+}
+function superseded(j, ctx) {
+  if (!j.path || (j.state !== "waiting" && j.state !== "paused")) return null;
+  const later = laterFinished(j, ctx); if (later) return { state: "ended", ok: true, path: j.path, at: later.changed, what: "a later run in the same folder finished it", superseded: later.key };
+  // only a wait its [~] item made (task, bare): one on a question or a need isn't in TASKS.md
+  if ((j.state === "paused" || j.task || j.bare) && (ctx.openItems || openItemsIn)(j.path) === 0) return { state: "ended", ok: true, path: j.path, at: j.changed, what: "its folder has no open items left" };
+  return null;
+}
 // { at, state: active | waiting | ended, waitingOn, what, path, ok (ended done, not failed or stopped), summary }
 function childState(key, ctx) {
   const [kind, id] = [key.slice(0, key.indexOf(":")), key.slice(key.indexOf(":") + 1)];
@@ -145,6 +161,7 @@ function childState(key, ctx) {
   if (kind === "run") {
     const j = ctx.jobs.find((x) => x.key === key); if (!j) return { state: "active" };
     if (ctx.running(j.path)) return { state: "active", path: j.path };
+    const over = superseded(j, ctx); if (over) return over; // never its summary: that asked for what's done now
     if (j.state === "running" && (ctx.now || Date.now()) - (j.changed || j.at || 0) > DEAD_RUN) return { state: "ended", path: j.path, at: j.changed, summary: "its end wasn't recorded: nothing has run there since" }; // a record still "running" with nothing running there held its goal open for good
     if (j.state === "waiting") { // the job it's on (its [~] item, or an ops run's own request), for the card's "I'm on it: …"
       const job = jobWords(j.task || (j.lane === "agent" || /^act-/.test(String(j.lane || "")) ? j.text : ""));
@@ -292,7 +309,7 @@ function askIn(said) {
 //   notTheirs(card), unclear(card) (the card writer's verdicts, needs.mjs),
 //   tasks, ledger, waits, jobs, map }. Returns what it did, for the log and the tests.
 async function goalsTick(deps = {}, { now = Date.now() } = {}) {
-  const ctx = { tasks: deps.tasks || loadTasks(), ledger: deps.ledger || { handoffs: [] }, waits: deps.waits || [], jobs: deps.jobs || loadJobs(), map: deps.map || {}, running: deps.running || (() => false), now };
+  const ctx = { tasks: deps.tasks || loadTasks(), ledger: deps.ledger || { handoffs: [] }, waits: deps.waits || [], jobs: deps.jobs || loadJobs(), map: deps.map || {}, running: deps.running || (() => false), openItems: deps.openItems, now };
   const did = [];
   if (!deps.jobs) { try { tidyGoals({ now }); ctx.jobs = loadJobs(); } catch {} }
   for (const g0 of goalRows({ jobs: ctx.jobs })) {
@@ -400,7 +417,7 @@ function goalAnswer(path, answers = [], deps = {}, { now = Date.now() } = {}) {
     return { ok: true, said: "Kept waiting; it'll come up again in a week." };
   }
   const g = goalById(path); if (!g) return { error: "That goal isn't on record any more." };
-  const ctx = { tasks: deps.tasks || loadTasks(), ledger: deps.ledger || { handoffs: [] }, waits: deps.waits || [], jobs: deps.jobs || loadJobs(), map: deps.map || {}, running: deps.running || (() => false), now };
+  const ctx = { tasks: deps.tasks || loadTasks(), ledger: deps.ledger || { handoffs: [] }, waits: deps.waits || [], jobs: deps.jobs || loadJobs(), map: deps.map || {}, running: deps.running || (() => false), openItems: deps.openItems, now };
   const kind = g.card && g.card.kind; let said = "Noted.";
   if (is("Drop it")) { close(g, "dropped", { left: "Dropped by the user." }, ctx, deps, now); g.dropped = true; said = "Dropped. Its breakdown is under Reports."; }
   else if (kind === "done" || is("Got it")) { if (g.card) g.card = { ...g.card, seen: now }; said = "Done and closed."; }
