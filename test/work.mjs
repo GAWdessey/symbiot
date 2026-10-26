@@ -216,6 +216,12 @@ try {
   ok("…while git is asked in the background: the new commit and the edit show up", b.commits.length === 2 && b.commits[0].msg === "second" && b.dirty === 1 && /1 file changed/.test(b.stat), b);
   ok("a different run in the same folder isn't given the last one's answer", agentChanges(repo, Date.now() + 3600000).commits.length === 0);
   ok("…and the first run's answer is still kept, not asked of git again (they replaced each other: 2s a poll, 15 Oct)", CHANGES.get(repo).length === 2 && agentChanges(repo, start) === CHANGES.get(repo)[0].v);
+  // a run's folder inside a repo (an ops drafts folder): only what changed in that folder is its work
+  const sub = join(repo, "drafts", "act-1"); mkdirSync(join(sub, ".symbiot"), { recursive: true });
+  writeFileSync(join(repo, "c.txt"), "c\n"); writeFileSync(join(sub, ".symbiot", "agent.log"), "x\n");
+  ok("a folder inside a repo isn't credited with the repo's changes, nor its own .symbiot", agentChanges(sub, start).dirty === 0 && agentChanges(sub, start).commits.length === 0, agentChanges(sub, start));
+  writeFileSync(join(sub, "reply.md"), "r\n");
+  ok("…but a file it wrote in its own folder counts", agentChanges(sub, Date.now() + 7200000).dirty === 1);
 }
 
   console.log("MEMORY — what's kept from a log doesn't keep the log");

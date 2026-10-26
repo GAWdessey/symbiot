@@ -2036,11 +2036,13 @@ function changesOf(path, startedAt, git) {
   const since = new Date(startedAt || Date.now()).toISOString();
   const read = ([porcelain, stat, cached, raw]) => {
     porcelain = porcelain.trim(); raw = raw.trim();
-    const dirty = porcelain ? porcelain.split("\n").filter((l) => { const p = l.slice(3); return p !== ".symbiot" && p !== ".symbiot/" && p.indexOf(".symbiot/") !== 0; }).length : 0;
+    const dirty = porcelain ? porcelain.split("\n").filter((l) => !/(^|\/)\.symbiot(\/|$)/.test(l.slice(3))).length : 0;
     const commits = raw ? raw.split("\n").slice(0, 8).map((l) => { const i = l.indexOf("\u0001"); return { hash: l.slice(0, i), msg: l.slice(i + 1) }; }) : [];
     return { dirty, stat: (stat.trim() || cached.trim()).replace(/^\s+/, ""), commits };
   };
-  const asks = [["status", "--porcelain"], ["diff", "--shortstat"], ["diff", "--cached", "--shortstat"], ["log", `--since=${since}`, "--pretty=%h\u0001%s"]];
+  // Only the run's own folder (`-- .`), untracked files one by one: an ops run's drafts folder inside a repo
+  // was credited with that repo's 12 changed files, heading a run that only sent an email.
+  const asks = [["status", "--porcelain", "--untracked-files=all"], ["diff", "--shortstat"], ["diff", "--cached", "--shortstat"], ["log", `--since=${since}`, "--pretty=%h\u0001%s"]].map((a) => [...a, "--", "."]);
   const outs = asks.map((a) => git(["-C", path, ...a]));
   return outs.some((o) => o && typeof o.then === "function") ? Promise.all(outs).then(read) : read(outs);
 }

@@ -2,6 +2,12 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one), for anyone who installs the app: what changed in it, never whose work it was (no projects, people, accounts, services, run ids or task wording of the person who made it). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.93.2 — 2026-10-26
+
+- **One press answers a question on the Workdesk.** Its choices are buttons now, not round ticks: when an agent asks one thing, pressing Go (or any other choice) sends it and the agent carries on, instead of a pick and then "Send answers & continue". When it asks several, your presses pick an answer for each, and Send answers sends them together. Your own words go with Send answer beside the box, or Enter.
+- **The question card has room to breathe.** Its text no longer sits against the card's left edge, and on a phone each choice is a full-width button.
+- **"Files changed" counts only the agent's own work.** A run kept in a folder inside a project no longer shows that project's changed files as its own, so a run that only sent an email says "No files changed."
+
 ## 0.93.0 — 2026-10-26
 
 - **Agents can sign in with a password from your vault, without seeing it.** On a page in your own Chrome, an agent can put a password or code you saved in the Vault into its box with `symbiot screens secret`. Symbiot reads it and the extension fills it in, so the agent never sees it, and it never shows up in a map of the page, an answer or a log. This works even for agents that can't read the vault.
