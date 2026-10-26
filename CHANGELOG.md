@@ -2,6 +2,12 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one), for anyone who installs the app: what changed in it, never whose work it was (no projects, people, accounts, services, run ids or task wording of the person who made it). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.93.0 — 2026-10-26
+
+- **Agents can sign in with a password from your vault, without seeing it.** On a page in your own Chrome, an agent can put a password or code you saved in the Vault into its box with `symbiot screens secret`. Symbiot reads it and the extension fills it in, so the agent never sees it, and it never shows up in a map of the page, an answer or a log. This works even for agents that can't read the vault.
+- **Each saved password fills only on its own site.** As in a password manager, a password fills only on the site it was saved for, or a part of that site: a password saved for example.com fills on accounts.example.com too, and nowhere else. The page checks this again before anything goes in, and it fills only a password box or a box for a code. A password saved without a site asks for your Go on a card the first time it's filled, and the site you allow then stays its own. Saving it again can't move it to another site. To move it, delete it and save it again.
+- **The Vault shows where each one fills.** An entry with a site says "Fills only on" with that site. Its "Last used" line and Recent activity show when it was filled in your Chrome, and where. A set of recovery codes, or a code a site sent you, is spent once it's filled. A password stays.
+
 ## 0.92.1 — 2026-10-26
 
 - **The keyboard stays put after you unlock the Vault.** When Copy, Show or Add asks for your PIN, focus goes back to that button once the vault unlocks or you press Escape, instead of falling to the top of the page.

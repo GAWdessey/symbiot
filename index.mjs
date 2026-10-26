@@ -493,11 +493,11 @@ async function cmdDeploy() {
   for (const x of rows) console.log(`${x.lane}: on ${x.runbook.where}, \`${x.runbook.how}\` · live ${x.runbook.url || "(no address)"} · check ${x.runbook.check || "(none)"}${x.runbook.expect ? ` for "${x.runbook.expect}"` : ""} · ${x.runbook.policy === "always" ? "deploys after every merge" : x.runbook.policy === "never" ? "never deploys" : "asks before each deploy"}`);
 }
 async function cmdSecret() {
-  const [sub = "list", name, value] = argv.slice(1).filter((x, i, all) => !x.startsWith("--") && all[i - 1] !== "--from");
+  const [sub = "list", name, value] = argv.slice(1).filter((x, i, all) => !x.startsWith("--") && all[i - 1] !== "--from" && all[i - 1] !== "--site");
   const v = await import("./vault.mjs"), via = async (p, b) => (await viaApp(p, b)) || null;
   // a sandboxed run can't read vault.json: say so, never "No secrets saved" (an agent took that as "never handed over")
   const SEALED = "This run is in Symbiot's sandbox, which can't read the vault. Hand the step that needs the secret to ops (.symbiot/HANDOFF.md, a ### ops section naming the secret): ops reads it with symbiot secret get.";
-  if (sub === "list") { const r = await via("/api/secrets/list", {}), l = r?.secrets || v.listSecrets(); if (!r && v.vaultSealed()) { console.log(c.y(SEALED)); return; } if (!l.length) console.log(c.d("No secrets saved.")); for (const s of l) console.log(`${s.name}  ${c.d(`${s.left} of ${s.count} unused · ${s.where}`)}`); return; }
+  if (sub === "list") { const r = await via("/api/secrets/list", {}), l = r?.secrets || v.listSecrets(); if (!r && v.vaultSealed()) { console.log(c.y(SEALED)); return; } if (!l.length) console.log(c.d("No secrets saved.")); for (const s of l) console.log(`${s.name}  ${c.d(`${s.left} of ${s.count} unused · ${s.where}${s.site ? ` · fills on ${s.site}` : ""}`)}`); return; }
   // add: an agent saves a secret it was handed (a token in an answer, a file a user pointed to), from stdin or --from <file>,
   // never as an argument (that lands in the run's log). It goes through the app when one runs: the only way in from the sandbox.
   if (sub === "add") {
@@ -510,9 +510,11 @@ async function cmdSecret() {
     } else if (process.stdin.isTTY) { console.error('Pipe the value in: … | symbiot secret add "<name>"'); process.exitCode = 1; return; }
     else { const t = readFileSync(0, "utf8").trim(); vals = t ? [t] : []; }
     if (!vals.length) { console.error("Nothing to save."); process.exitCode = 1; return; }
-    const r = (await via("/api/secrets/add", { name, values: vals })) || (v.vaultSealed() ? { error: SEALED.replace("Hand the step that needs the secret to ops", "Open Symbiot's app (its socket lets a run add one), or hand it to ops") } : v.saveSecret(name, vals));
+    // --site: the site it fills on in your own Chrome (symbiot screens secret); one already saved for a site keeps it
+    const site = flag("site", "");
+    const r = (await via("/api/secrets/add", { name, values: vals, site })) || (v.vaultSealed() ? { error: SEALED.replace("Hand the step that needs the secret to ops", "Open Symbiot's app (its socket lets a run add one), or hand it to ops") } : v.saveSecret(name, vals, { site }));
     if (r.error) { console.error(r.error); process.exitCode = 1; return; }
-    console.log(`Saved as "${r.name}" (${r.count} value${r.count === 1 ? "" : "s"}).`); return;
+    console.log(`Saved as "${r.name}" (${r.count} value${r.count === 1 ? "" : "s"})${r.site ? `, filled only on ${r.site}` : ""}.`); return;
   }
   // scrub: read the chat history again for secrets stored before they were caught, vault them and blank every copy (names and files only, never a value)
   if (sub === "scrub") { const r = (await via("/api/secrets/scrub", {})) || v.scrubStored({ force: true }); if (r.error) { console.error(r.error); process.exitCode = 1; return; } console.log(r.found && r.found.length ? `Saved ${r.found.join(", ")}; blanked in ${r.files.length} file${r.files.length === 1 ? "" : "s"}.` : "Nothing found."); return; }
@@ -527,7 +529,7 @@ async function cmdSecret() {
   if (sub === "get" && v.vaultSealed() && !(await via("/api/ping", {}))) { console.error(SEALED); process.exitCode = 1; return; }
   const r = sub === "get" ? ((await via("/api/secrets/get", { name, use: has("use") })) || v.getSecret(name, { use: has("use") }))
     : sub === "used" ? ((await via("/api/secrets/used", { name, value })) || v.markUsed(name, String(value || "")))
-    : sub === "delete" ? ((await via("/api/secrets/delete", { name })) || v.deleteSecret(name)) : { error: "symbiot secret list | add <name> (value on stdin, or --from <file>) | get <name> [--use] | used <name> <value> | delete <name> | scrub | pin-reset" };
+    : sub === "delete" ? ((await via("/api/secrets/delete", { name })) || v.deleteSecret(name)) : { error: "symbiot secret list | add <name> (value on stdin, or --from <file>; --site <host>: the site it fills on) | get <name> [--use] | used <name> <value> | delete <name> | scrub | pin-reset" };
   if (r.error) { console.error(r.error); process.exitCode = 1; return; }
   console.log(sub === "get" ? r.value : "ok");
 }
@@ -624,6 +626,19 @@ async function cmdScreens() {
     if (done && done.confirm) return out({ error: `${done.error} Add --yes to go ahead, or list ${done.host} under Trusted sites in Symbiot's Settings.` });
     return out(screenJson(done));
   }
+  // secret: a saved sign-in from the vault into a field, in your own Chrome, on the site it's saved for; its value is never printed
+  if (sub === "secret") {
+    const s = find(a1); if (!s) return out({ error: "No screen " + (a1 || "") + ". symbiot screens lists them." });
+    const want = String(a2 || "").toLowerCase(), rs = s.regions || [];
+    const r = rs.find((x) => x.id === a2) || rs.find((x) => x.label.toLowerCase() === want) || (rs.filter((x) => x.label.toLowerCase().includes(want)).length === 1 && rs.find((x) => x.label.toLowerCase().includes(want)));
+    if (!want || !r) return out({ error: `No region "${a2 || ""}" on that screen (give its id, or a label that matches one region).` });
+    if (!a3) return out({ error: 'Give the saved sign-in\'s name: symbiot screens secret <id> <field> "<name>" (symbiot secret list shows them).' });
+    const done = await viaAppKept("/api/screens/secret", { id: s.id, region: r.id, name: a3, confirmed: has("yes"), who });
+    if (!done) return out({ error: "A saved sign-in is filled through the Symbiot app: start it (symbiot open), then try again." });
+    if (/answered 404/.test(done.error || "")) return out({ error: "The Symbiot app that's running is older than this command and can't fill a saved sign-in: restart it (symbiot app), then try again." });
+    if (done.confirm) return out({ error: `${done.error} Add --yes to go ahead, or list ${done.host} under Trusted sites in Symbiot's Settings.` });
+    return out(screenJson(done));
+  }
   if (sub === "press" || sub === "type" || sub === "choose" || sub === "upload") {
     const s = find(a1); if (!s) return out({ error: "No screen " + (a1 || "") + ". symbiot screens lists them." });
     const want = String(a2 || "").toLowerCase(), rs = s.regions || [];
@@ -675,6 +690,11 @@ async function cmdScreens() {
                                                video for a post): <field> is the box, or the
                                                button it hides behind ("Add media"); says which
                                                box it used, maps the result
+  symbiot screens secret <id> <field> "<saved name>" [--yes]
+                                               on a screen of your own Chrome: fill a password
+                                               or code saved in the vault into that box, without
+                                               seeing it; only on the site it's saved for (its
+                                               first fill waits for your Go, and binds that site)
   symbiot screens scroll <id> [down|up|top|bottom]
                                                scroll the page, map what's in the window then
                                                (a map's "more" says there's more below or above)

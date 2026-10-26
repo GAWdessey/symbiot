@@ -3,7 +3,8 @@
 // browser's page code with no code sent at run time, setting up the host for the browsers on
 // this computer, the native host passing messages both ways, the broker, the service worker's
 // rules (a site only once Chrome allowed it, its own window and tab group, Stop), and mapping,
-// pressing and typing through it, with sends, payments and deletes never pressed by an agent.
+// pressing and typing through it, with sends, payments and deletes never pressed by an agent, and
+// a saved sign-in from the vault filled only on the site it's saved for, its value never given back.
 //
 //   node test/ownchrome.mjs
 //
@@ -16,7 +17,7 @@ import { fileURLToPath } from "node:url";
 import vm from "node:vm";
 import { deflateSync } from "node:zlib";
 const HOME = mkdtempSync(join(tmpdir(), "symbiot-ownchrome-"));
-process.env.HOME = HOME; process.env.USERPROFILE = HOME; mkdirSync(join(HOME, ".config", "symbiot"), { recursive: true });
+process.env.HOME = HOME; process.env.USERPROFILE = HOME; process.env.SYMBIOT_VAULT = "file"; mkdirSync(join(HOME, ".config", "symbiot"), { recursive: true });
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 let pass = 0, fail = 0;
 const ok = (n, c, got) => { if (c) { pass++; console.log("  ✓ " + n); } else { fail++; console.log("  ✗ " + n + (got !== undefined ? "  got: " + JSON.stringify(got).slice(0, 400) : "")); } };
@@ -188,6 +189,41 @@ try {
   r = await O.fillInOwnChrome(s.id, [{ region: subj.id, text: "Hi" }], { press: save.id });
   ok("…and a button that isn't on the page now: nothing typed or pressed", /isn't on the page now/.test(r.error || "") && !fakeExt.got.some((m) => m.fn === "type"), r);
   fakeExt.on.run = run0;
+
+  console.log("A SAVED SIGN-IN — filled on its own site only, never seen");
+  const V = await import("../vault.mjs"), VV = await import("../vaultview.mjs");
+  V.saveSecret("example password (pat@example.com)", ["S3cret-pw!"], { site: "https://accounts.example.com/login" });
+  V.saveSecret("other password", ["0ther-pw!"], { site: "other.example" });
+  V.saveSecret("loose password", ["L00se-pw!"]);
+  V.saveSecret("example recovery codes", ["11111111", "22222222"], { site: "example.com" });
+  ok("a site is kept as its domain, beside the name (never the value)", (V.listSecrets().find((x) => x.name === "example password (pat@example.com)") || {}).site === "example.com" && !readFileSync(join(HOME, ".config/symbiot/vault.json"), "utf8").includes("S3cret"));
+  const pw = s.regions.find((x) => x.label === "Subject");
+  fakeExt.got.length = 0;
+  r = await O.secretInOwnChrome(s.id, pw.id, "example password (pat@example.com)");
+  const sent = fakeExt.got.find((m) => m.fn === "secret");
+  ok("on its site: the extension's page code is given it, the site and where the box is", r.filled === "Subject" && r.site === "example.com" && sent && sent.args[2] === "S3cret-pw!" && sent.args[3] === "example.com" && sent.args[0] === 210, { r, sent });
+  ok("…and the answer, the screen after and the log never carry it", !JSON.stringify(r).includes("S3cret") && !JSON.stringify(loadScreens()).includes("S3cret") && VV.vaultLog().some((x) => x.act === "fill" && x.site === "example.com") && !JSON.stringify(VV.vaultLog()).includes("S3cret"), VV.vaultLog());
+  ok("…a password isn't spent by filling it", (V.listSecrets().find((x) => x.name === "example password (pat@example.com)") || {}).left === 1);
+  fakeExt.got.length = 0;
+  r = await O.secretInOwnChrome(s.id, pw.id, "other password");
+  ok("saved for another site: not filled here, and nothing reaches Chrome", /saved for other\.example, and this page is on example\.com/.test(r.error || "") && !fakeExt.got.length, r);
+  r = await O.secretInOwnChrome(s.id, pw.id, "loose password");
+  ok("saved with no site: its first fill waits for the user's Go on a card, nothing filled", r.held === "fill" && /fills a saved sign-in as the user, on example\.com/.test(r.error) && /which saved sign-in it fills, and on which site/.test(r.error) && new RegExp("\\{#chrome-go-" + r.hold + "\\}").test(r.error) && !fakeExt.got.length, r);
+  goAhead(r.hold);
+  r = await O.secretInOwnChrome(s.id, pw.id, "loose password");
+  ok("…after the Go: filled, and that site is now its own", r.filled === "Subject" && (V.listSecrets().find((x) => x.name === "loose password") || {}).site === "example.com", r);
+  ok("…so a save naming another site can't move it", V.saveSecret("loose password", ["junk"], { site: "evil.example" }).site === "example.com" && V.bindSite("loose password", "evil.example").error && (V.listSecrets().find((x) => x.name === "loose password") || {}).site === "example.com");
+  fakeExt.got.length = 0;
+  r = await O.secretInOwnChrome(s.id, pw.id, "loose password");
+  ok("…and the next fill there goes straight through", r.filled === "Subject" && fakeExt.got.some((m) => m.fn === "secret"), r);
+  r = await O.secretInOwnChrome(s.id, pw.id, "example recovery codes");
+  ok("a set of codes: the next one filled, then spent", r.filled === "Subject" && (V.listSecrets().find((x) => x.name === "example recovery codes") || {}).left === 1, r);
+  fakeExt.on.run = (m) => m.fn === "secret" ? { result: { error: "A saved sign-in goes only into a password box or a box for a code, and this one is neither, so nothing was filled." } } : run0(m);
+  r = await O.secretInOwnChrome(s.id, pw.id, "example recovery codes");
+  ok("the page refuses a box that isn't for a password or code: said, and the code isn't spent", /neither/.test(r.error || "") && (V.listSecrets().find((x) => x.name === "example recovery codes") || {}).left === 1, r);
+  fakeExt.on.run = run0;
+  ok("only into a field", /isn't a field/.test((await O.secretInOwnChrome(s.id, send.id, "loose password")).error || ""));
+  ok("a name the vault doesn't have: says where the names are", /symbiot secret list/.test((await O.secretInOwnChrome(s.id, pw.id, "nope")).error || ""));
   const file = join(HOME, "invoice.pdf"); writeFileSync(file, Buffer.alloc(900 * 1024, 7));
   const putN = { n: 0 }; let joined = "";
   fakeExt.on.put = (m) => { putN.n++; joined += m.data; return { ok: true }; };

@@ -23,6 +23,8 @@ import { FILE_BOX, uploadFiles, siteUrl, saveScreen, blockOf, collectJs, scrollJ
 import { loadScreens, center, wirePng } from "./screens.mjs";
 import { heldFor } from "./sends.mjs";
 import { holdOrGo } from "./chromegate.mjs";
+import { listSecrets, getSecret, onSite, fillSite, bindSite } from "./vault.mjs";
+import { noteUse } from "./vaultview.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SRC = join(HERE, "extension");
@@ -94,6 +96,23 @@ const ATTACH_JS = `(files) => {
   box.dispatchEvent(new Event('input', { bubbles: true })); box.dispatchEvent(new Event('change', { bubbles: true }));
   return { ok: true, n: box.files.length };
 }`;
+// A saved sign-in into the box at x, y, here in the extension's own world on the page: only when
+// the page is on the site it was saved for (its domain or one under it, over https) and the box is
+// a password box or one for a code, as a password manager fills. The value is never given back.
+const SECRET_JS = `(x, y, value, site) => { ${DEEP}
+  const host = location.hostname.replace(/^www\\./, '').toLowerCase();
+  if (!site || (host !== site && !host.endsWith('.' + site))) return { error: 'This page is on ' + host + ', not ' + site + ', so nothing was filled.' };
+  if (location.protocol !== 'https:' && !/^(localhost|127\\.0\\.0\\.1)$/.test(location.hostname)) return { error: "This page isn't on a secure (https) connection, so nothing was filled." };
+  const t = deepAt(x, y), e = t && deepClosest(t, 'input');
+  if (!e) return { error: "There's no box there to fill, so nothing was filled." };
+  const ty = String(e.type || 'text').toLowerCase(), said = [e.autocomplete, e.name, e.id, e.getAttribute('aria-label'), e.placeholder, e.labels && e.labels[0] ? e.labels[0].textContent : ''].join(' ');
+  const fits = ty === 'password' || (/^(text|tel|number)$/.test(ty) && (/one-time-code/i.test(e.autocomplete || '') || /(^|[^a-z])(code|otp|pin|passcode|token|verification|verify|2fa|mfa|one[ -]?time|recovery|backup)([^a-z]|$)/i.test(said)));
+  if (!fits) return { error: "A saved sign-in goes only into a password box or a box for a code, and this one is neither, so nothing was filled." };
+  e.focus();
+  Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(e, value);
+  e.dispatchEvent(new InputEvent('input', { bubbles: true, composed: true, inputType: 'insertText' })); e.dispatchEvent(new Event('change', { bubbles: true }));
+  return { ok: true, held: e.value === value };
+}`;
 function pageJs() {
   const fns = {
     collect: `() => ${collectJs(false)}`,
@@ -113,6 +132,7 @@ function pageJs() {
     attach: ATTACH_JS,
     click: CLICK_JS,
     type: TYPE_JS,
+    secret: SECRET_JS,
   };
   return "// Built by Symbiot (ownchrome.mjs pageJs) from the code its hidden browser runs in a page. Don't edit.\n" +
     "self.__symbiot = {\n" + Object.entries(fns).map(([k, v]) => `  ${k}: ${v},`).join("\n") + "\n};\n";
@@ -297,7 +317,7 @@ async function actInOwnChrome(id, regionId, verb, { confirmed = false, noSend = 
   const r = (s.regions || []).find((x) => x.id === regionId); if (!r) return { error: "That region is gone. Reload the screen." };
   const host = hostOf(s.page.url);
   if (noSend && verb === "Press" && heldFor("Clicks " + r.label, host) === "send") return { error: `"${r.label}" sends or posts. This run only drafts: it never presses Send, Post, Comment or Reply. The draft stays for the user to send or post.` };
-  if (!confirmed && !isTrusted(s.page.url)) return { error: `${{ Type: "Typing into", Upload: "Attaching a file with", Choose: "Choosing in" }[verb] || "Pressing"} "${r.label}" acts on the real site in your own Chrome, signed in as you, and ${host} isn't one of your trusted sites.`, confirm: true, host };
+  if (!confirmed && !isTrusted(s.page.url)) return { error: `${{ Type: "Typing into", Upload: "Attaching a file with", Choose: "Choosing in", Secret: "Filling a saved sign-in into" }[verb] || "Pressing"} "${r.label}" acts on the real site in your own Chrome, signed in as you, and ${host} isn't one of your trusted sites.`, confirm: true, host };
   const held = before ? before(r, host) : null; if (held) return held;
   const t = await tabOf(s); if (t.error) return t;
   const run = (fn, args = []) => askChrome("run", { tab: t.tab, fn, args }).then((x) => x.error ? { error: refusedBy(x) } : x.result);
@@ -359,6 +379,33 @@ function chooseInOwnChrome(id, regionId, option, opts = {}) {
     const k = await run("click", [o.at.x, o.at.y]); if (k && k.error) return k;
     return { chose: o.chose };
   });
+}
+// A saved sign-in from the vault (a password, a key, a code) into a field, in the user's own Chrome
+// only: the app reads it and the extension puts it in the box, so the agent never sees it, and
+// nothing gives it back (the map after never reads a box's value). It fills only on the site it
+// was saved for (vault.mjs fillSite: that domain or one under it), checked here and again on the
+// page itself; one with no site yet waits for the user's Go on its first fill, and that site is
+// then its own. A set of codes, or a code a site sent, is spent once filled.
+async function secretInOwnChrome(id, regionId, name, opts = {}) {
+  name = String(name || "").trim();
+  const s = ownScreen(id); if (!s) return { error: "not found" };
+  const r = (s.regions || []).find((x) => x.id === regionId); if (!r) return { error: "That region is gone. Reload the screen." };
+  if (r.kind !== "field") return { error: `"${r.label}" isn't a field (it's a ${r.kind || "region"}). A saved sign-in goes into its password box.` };
+  const m = listSecrets().find((x) => x.name === name);
+  if (!m) return { error: `No saved sign-in called "${name}". symbiot secret list shows the names.` };
+  if (m.left < 1) return { error: `Every value in "${name}" has been used.` };
+  const host = hostOf(s.page.url), site = m.site || fillSite(host);
+  if (!site) return { error: "This page isn't on a site a saved sign-in can be filled on." };
+  if (m.site && !onSite(m.site, host)) return { error: `"${name}" is saved for ${m.site}, and this page is on ${host}, so it isn't filled here. A saved sign-in fills only on its own site.` };
+  return actInOwnChrome(id, regionId, "Secret", opts, async (run, at) => {
+    const v = getSecret(name); if (v.error) return v;
+    const x = await run("secret", [at.x, at.y, v.value, site]);
+    if (!x || x.error) return { error: (x && x.error) || "Your Chrome didn't fill it." };
+    if (!m.site) bindSite(name, host);
+    if (m.count > 1 || v.once) getSecret(name, { use: true });
+    noteUse(name, "fill", { site });
+    return { filled: r.label, secret: name, site, ...(x.held === false ? { note: "The box doesn't hold all of it: check it on the new screen." } : {}) };
+  }, () => m.site ? null : gate(host, `Fills your saved "${name}" on ${site}`, "fill"));
 }
 // Fill: several fields on the one screen, then one button if asked, in the same tab without
 // opening it again, as the hidden browser's fillForm does. Every field and the button must be
@@ -473,4 +520,4 @@ async function wholeInOwnChrome(id) {
   return { ...saved, drawn: true, note, kept: !!t.same };
 }
 
-export { uploadInOwnChrome, wholeInOwnChrome, setStarter, ownChromeFor, ownScreen, actInOwnChrome, pressInOwnChrome, typeInOwnChrome, chooseInOwnChrome, fillInOwnChrome, scrollInOwnChrome, CLICK_JS, TYPE_JS, HOST_NAME, EXT_ID, OWN_DIR, EXT_DIR, OWN_SOCK, extId, fnOf, pageJs, writeExtension, browsers, hostManifest, writeLauncher, setupOwnChrome, refreshOwnChrome, hostsSetUp, startBroker, stopBroker, askChrome, ownChromeStatus, mapInOwnChrome, saveLook, NOT_CONNECTED };
+export { secretInOwnChrome, SECRET_JS, uploadInOwnChrome, wholeInOwnChrome, setStarter, ownChromeFor, ownScreen, actInOwnChrome, pressInOwnChrome, typeInOwnChrome, chooseInOwnChrome, fillInOwnChrome, scrollInOwnChrome, CLICK_JS, TYPE_JS, HOST_NAME, EXT_ID, OWN_DIR, EXT_DIR, OWN_SOCK, extId, fnOf, pageJs, writeExtension, browsers, hostManifest, writeLauncher, setupOwnChrome, refreshOwnChrome, hostsSetUp, startBroker, stopBroker, askChrome, ownChromeStatus, mapInOwnChrome, saveLook, NOT_CONNECTED };

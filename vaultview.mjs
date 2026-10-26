@@ -107,7 +107,7 @@ function vaultList({ token = "", now = Date.now(), peek = peekSecret } = {}) {
   const list = listSecrets(), issues = issuesOf(list, { peek });
   const entries = list.map((s) => {
     const label = labelOf(s.name), group = groupOf(s.name);
-    return { name: s.name, label, group, short: shortOf(label, group), kind: kindOf(s.name), account: accountOf(s.name), saved: s.ts || 0, count: s.count || 0, left: s.left ?? s.count ?? 0, issues: issues[s.name] || [] };
+    return { name: s.name, label, group, short: shortOf(label, group), kind: kindOf(s.name), account: accountOf(s.name), saved: s.ts || 0, count: s.count || 0, left: s.left ?? s.count ?? 0, site: s.site || "", issues: issues[s.name] || [] };
   }).sort((a, b) => (b.saved || 0) - (a.saved || 0) || a.name.localeCompare(b.name));
   return { entries, ...lockState({ token, now }) };
 }
@@ -197,12 +197,14 @@ function removeEntry(name, { token = "", now = Date.now() } = {}) {
 // ---- the log: who looked at or changed what, on this computer --------------------------------
 function note(name, act, at = Date.now(), extra = {}) {
   const log = readState(LOG_FILE(), Array.isArray) || [];
-  log.push({ at, name: String(name).slice(0, 80), act, ...(extra.from ? { from: String(extra.from).slice(0, 80) } : {}) });
+  log.push({ at, name: String(name).slice(0, 80), act, ...(extra.from ? { from: String(extra.from).slice(0, 80) } : {}), ...(extra.site ? { site: String(extra.site).slice(0, 80) } : {}) });
   try { writeJsonAtomic(LOG_FILE(), log.slice(-LOG_KEEP), { mode: 0o600 }); } catch {}
 }
+// What an agent did with one, without its value (a saved sign-in filled in the user's own Chrome, ownchrome.mjs).
+const noteUse = (name, act, extra = {}) => note(name, act, Date.now(), extra);
 const vaultLog = (n = 30) => (readState(LOG_FILE(), Array.isArray) || []).slice(-n).reverse().map((x) => ({ ...x, label: labelOf(x.name) }));
 
 // Forgot the PIN: `symbiot secret pin-reset` in a terminal (someone at your own terminal can read the vault anyway).
 function resetPin() { const had = !!(readPin() || {}).hash; try { writePin({ v: 1, reset: Date.now() }); } catch { return { error: "Couldn't reset it." }; } SESSIONS.clear(); return { ok: true, had }; }
 
-export { vaultList, vaultValue, vaultLog, setPin, unlock, lock, lockState, resetPin, addEntry, renameEntry, removeEntry, kindOf, accountOf, labelOf, groupOf, shortOf, issuesOf, nameFrom, UNLOCK_MS, TRIES, LOCKOUT_MS, PIN_MIN };
+export { noteUse, vaultList, vaultValue, vaultLog, setPin, unlock, lock, lockState, resetPin, addEntry, renameEntry, removeEntry, kindOf, accountOf, labelOf, groupOf, shortOf, issuesOf, nameFrom, UNLOCK_MS, TRIES, LOCKOUT_MS, PIN_MIN };

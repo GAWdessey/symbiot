@@ -75,7 +75,7 @@ function store(name, entry) {
   let where = "file";
   KR_CACHE.delete(name);
   if (kr && kr.put(name, raw)) { where = "keyring"; delete idx.blobs[name]; } else idx.blobs[name] = seal(raw);
-  idx.names[name] = { ts: entry.ts, count: entry.values.length, used: entry.values.filter((v) => v.used).length, where };
+  idx.names[name] = { ts: entry.ts, count: entry.values.length, used: entry.values.filter((v) => v.used).length, where, ...(entry.site ? { site: entry.site } : {}) };
   writeIndex(idx);
 }
 
@@ -95,14 +95,40 @@ function toKeyring({ kr = keyring() } = {}) {
   if (!left && existsSync(KEYFILE())) { try { unlinkSync(KEYFILE()); keyGone = true; } catch {} }
   return { moved, left, keyGone };
 }
+// The site a saved sign-in fills on, as a password manager matches one: the site's own domain
+// (accounts.example.co.za and example.co.za are both example.co.za), so a page on any other is
+// never given it. Kept with the entry and beside its name in vault.json (a site isn't a secret).
+const SHORT_SLD = /^(?:co|com|net|org|gov|ac|edu|ltd|plc|nic|web)$/;
+function fillSite(host) {
+  let h = String(host || "").trim().toLowerCase();
+  try { if (/^[a-z][a-z0-9+.-]*:\/\//.test(h)) h = new URL(h).hostname; } catch { return ""; }
+  h = h.replace(/[/:?#].*$/, "").replace(/\.$/, "").replace(/^www\./, "");
+  if (h === "localhost" || /^\d+(?:\.\d+){3}$/.test(h)) return h;
+  if (!/^[a-z0-9-]+(?:\.[a-z0-9-]+)+$/.test(h)) return "";
+  const p = h.split("."), n = p.length >= 3 && p[p.length - 1].length === 2 && SHORT_SLD.test(p[p.length - 2]) ? 3 : 2;
+  return p.slice(-n).join(".");
+}
+const onSite = (site, host) => !!site && fillSite(host) === site;
+// The site one fills on, bound once (saved with it, or the user's Go on its first fill) and never
+// moved after: a run can add to the vault through the app's socket, and moving a password's site
+// would hand it to another site. To move it, the user deletes it and saves it again.
+function bindSite(name, host) {
+  const e = load(name); if (!e) return { error: `No secret called "${name}".` };
+  const site = fillSite(host); if (!site) return { error: "That isn't a site." };
+  if (e.site && e.site !== site) return { error: `"${name}" is saved for ${e.site}.`, site: e.site };
+  if (!e.site) store(name, { ...e, site });
+  return { ok: true, name, site };
+}
 // Save secret values under a name. A name that exists gets the new values added to it.
-function saveSecret(name, values) {
+// site: the site it fills on (fillSite), when the one saving it knows; one that has a site keeps it (bindSite).
+function saveSecret(name, values, { site = "" } = {}) {
   name = String(name || "").trim().slice(0, 80); if (!name) return { error: "A secret needs a name." };
   const vals = [].concat(values).map((v) => String(v)).filter(Boolean); if (!vals.length) return { error: "Nothing to save." };
   const cur = load(name) || { name, ts: Date.now(), values: [] };
   for (const v of vals) if (!cur.values.some((x) => x.v === v)) cur.values.push({ v, used: false });
+  const s = fillSite(site); if (s && !cur.site) cur.site = s;
   store(name, cur);
-  return { ok: true, name, count: cur.values.length };
+  return { ok: true, name, count: cur.values.length, ...(cur.site ? { site: cur.site } : {}) };
 }
 // Names and counts only, never a value.
 const listSecrets = () => Object.entries(readIndex().names).map(([name, m]) => ({ name, ...m, left: m.count - m.used }));
@@ -113,8 +139,8 @@ const CODE_TTL = 10 * 60000;
 function saveCode(name, code, { ttl = CODE_TTL, now = Date.now() } = {}) {
   name = String(name || "").trim().slice(0, 80); const v = String(code || "").trim();
   if (!name || !v) return { error: "A code needs a name and a value." };
-  if (load(name)) deleteSecret(name);
-  store(name, { name, ts: now, values: [{ v, used: false }], once: true, expires: now + ttl });
+  const was = load(name); if (was) deleteSecret(name);
+  store(name, { name, ts: now, values: [{ v, used: false }], once: true, expires: now + ttl, ...(was && was.site ? { site: was.site } : {}) });
   return { ok: true, name, expires: now + ttl };
 }
 // A value an agent can use: the next unspent one. use: true marks it spent (a one-use recovery code).
@@ -124,7 +150,7 @@ function getSecret(name, { use = false, now = Date.now() } = {}) {
   const next = e.values.find((x) => !x.used); if (!next) return { error: `Every value in "${name}" has been used.` };
   if (use && e.once) deleteSecret(name);
   else if (use) { next.used = true; store(name, e); }
-  return { ok: true, name, value: next.v, left: use && e.once ? 0 : e.values.filter((x) => !x.used).length, spent: use };
+  return { ok: true, name, value: next.v, left: use && e.once ? 0 : e.values.filter((x) => !x.used).length, spent: use, ...(e.once ? { once: true } : {}) };
 }
 // Every value of one, as it is, for the Vault page (vaultview.mjs): nothing is spent or changed.
 function peekSecret(name) {
@@ -466,4 +492,4 @@ function heldFor(text) {
   return "";
 }
 
-export { toKeyring, heldFor, heldName, vaultSealed, repairFalseSaves, meetsStep, serviceOf, saveSecret, saveCode, CODE_TTL, listSecrets, getSecret, peekSecret, markUsed, deleteSecret, renameSecret, findSecrets, captureSecrets, scrubStored, SCRUB_V };
+export { fillSite, onSite, bindSite, toKeyring, heldFor, heldName, vaultSealed, repairFalseSaves, meetsStep, serviceOf, saveSecret, saveCode, CODE_TTL, listSecrets, getSecret, peekSecret, markUsed, deleteSecret, renameSecret, findSecrets, captureSecrets, scrubStored, SCRUB_V };

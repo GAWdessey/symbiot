@@ -2,7 +2,8 @@
 // in a real (headless) browser, run as Chrome runs an extension's script: in a world of its own,
 // apart from the page's. It maps the page, finds a region, clicks the way a mouse does (the page's
 // own handlers hear it), types into a field and an editable box so the page's input handlers see
-// it, and Enter submits a one-line form. Needs a Chromium-family browser (CI has Chrome);
+// it, and Enter submits a one-line form. A saved sign-in goes only into a password or code box,
+// and only on its own site. Needs a Chromium-family browser (CI has Chrome);
 // without one it says so and passes.
 //
 //   node test/ownchrome-page.mjs
@@ -27,9 +28,11 @@ const html = `<!doctype html><title>Form</title><body style="margin:0;font:16px 
 <div id="note" contenteditable="true" aria-label="Note" style="width:300px;height:40px;border:1px solid #888;margin-top:20px"></div>
 <form id="f" style="margin-top:20px"><input id="q" aria-label="Search" name="q"></form>
 <select id="plan" aria-label="Plan" style="margin-top:20px"><option value="free">Free</option><option value="pro">Pro</option></select>
+<input id="pw" type="password" aria-label="Password"><input id="otp" aria-label="Verification code" autocomplete="one-time-code">
 <script>
   window.heard = { input: [], click: 0, down: 0, submit: 0, note: 0, plan: '' };
   document.getElementById('plan').addEventListener('change', (e) => { heard.plan = e.target.value; });
+  document.getElementById('pw').addEventListener('input', (e) => { heard.pw = e.target.value.length; });
   document.getElementById('name').addEventListener('input', (e) => heard.input.push(e.target.value));
   document.getElementById('go').addEventListener('mousedown', () => heard.down++);
   document.getElementById('go').addEventListener('click', () => heard.click++);
@@ -72,6 +75,16 @@ else {
       const plan = info.items.find((r) => r.label === "Plan");
       const ch = await call("chooseSelect", plan.selector, plan.x + 5, plan.y + 5, "Pro");
       ok("chooseSelect: a native menu set by its option's label, and the page's change handler hears it", ch && ch.native && ch.chose === "Pro" && await main("heard.plan") === "pro", { ch, heard: await main("heard") });
+      const pw = info.items.find((r) => r.label === "Password"), otp = info.items.find((r) => r.label === "Verification code");
+      const f1 = await call("secret", pw.x + 5, pw.y + 5, "S3cret-pw!", "127.0.0.1");
+      ok("secret: a password box on its own site is filled, the page heard it, and the answer doesn't carry it", f1.ok && f1.held && await main("document.getElementById('pw').value") === "S3cret-pw!" && await main("heard.pw") === 10 && !JSON.stringify(f1).includes("S3cret"), { f1, heard: await main("heard") });
+      const f2 = await call("secret", otp.x + 5, otp.y + 5, "123456", "127.0.0.1");
+      ok("…a box for a code is filled too", f2.ok && await main("document.getElementById('otp').value") === "123456", f2);
+      const f3 = await call("secret", name.x + 5, name.y + 5, "S3cret-pw!", "127.0.0.1");
+      ok("…a box that's for neither isn't", /neither/.test(f3.error || "") && await main("document.getElementById('name').value") !== "S3cret-pw!", f3);
+      const f4 = await call("secret", pw.x + 5, pw.y + 5, "0ther", "example.com");
+      ok("…and on a page that isn't on its site, nothing is filled", /not example\.com/.test(f4.error || "") && await main("document.getElementById('pw').value") === "S3cret-pw!", f4);
+      ok("…and a map of the page after never reads what's in a box", !JSON.stringify(await call("collect")).includes("S3cret"));
       ok("nothing it set leaks into the page's world", await main("typeof self.__symbiot") === "undefined");
     });
   } catch (e) {
