@@ -2,6 +2,10 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one), for anyone who installs the app: what changed in it, never whose work it was (no projects, people, accounts, services, run ids or task wording of the person who made it). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.90.13 — 2026-10-26
+
+- **The Vault's error screen stands on its own.** When the list can't load, any open unlock box and old notes close, the error sits alone in the middle with Try again (on a phone too, where it was hidden), and Try again shows the list loading while it retries. An empty vault's message now shows on a phone as well.
+
 ## 0.90.12 — 2026-10-25
 
 - **Handovers under way shows only live work.** Home's list now holds only handovers whose agent is running, waiting to start, or waiting on your answer.
