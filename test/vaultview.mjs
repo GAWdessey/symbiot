@@ -78,8 +78,8 @@ try {
   const iss = V.issuesOf([{ name: "token", count: 1, used: 0 }, { name: "github token", count: 1, used: 0 }, { name: "plan.md password", count: 1, used: 0 }, { name: "old codes", count: 2, used: 2 }], { peek: (n) => ({ values: [{ v: n === "token" || n === "github token" ? "same-value" : "v-" + n }] }) });
   ok("needs a look: a name that says nothing, a file's name, every code used, and a value saved twice (both ways)", iss.token.some((x) => x.kind === "vague") && iss["plan.md password"][0].kind === "file" && iss["old codes"][0].kind === "spent" && iss.token.some((x) => x.kind === "same" && x.other === "github token") && iss["github token"].some((x) => x.kind === "same" && x.other === "token"), iss);
   ok("…which says no value", !JSON.stringify(iss).includes("same-value"));
-  const two = V.issuesOf([{ name: "google-garth-ghost-ai", count: 1, used: 0 }, { name: "cloudflare password (garth@dailify.co.za)", count: 1, used: 0 }], { peek: () => ({ values: [{ v: "one-pw" }] }) });
-  ok("…one password on two services' logins: keep both, never \"delete the other\" (26 Oct 2026)", two["google-garth-ghost-ai"].some((x) => x.kind === "same" && /Keep both/.test(x.text) && !/delete/.test(x.text)) && two["cloudflare password (garth@dailify.co.za)"].some((x) => /Same password as “Google garth ghost AI”/.test(x.text)), two);
+  const two = V.issuesOf([{ name: "google-sam-bookly", count: 1, used: 0 }, { name: "cloudflare password (sam@acme.co.za)", count: 1, used: 0 }], { peek: () => ({ values: [{ v: "one-pw" }] }) });
+  ok("…one password on two services' logins: keep both, never \"delete the other\" (26 Oct 2026)", two["google-sam-bookly"].some((x) => x.kind === "same" && /Keep both/.test(x.text) && !/delete/.test(x.text)) && two["cloudflare password (sam@acme.co.za)"].some((x) => /Same password as “Google sam bookly”/.test(x.text)), two);
 
   console.log("KEEPING IT TIDY — add, rename and delete, unlocked only, logged without the value");
   const t3 = Date.now() + 3600000;

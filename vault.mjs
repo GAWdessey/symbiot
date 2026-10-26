@@ -348,15 +348,15 @@ function heldName(value) {
   for (const name of Object.keys(readIndex().names)) { const e = load(name); if (e && Array.isArray(e.values) && e.values.some((x) => x.v === value)) return name; }
   return "";
 }
-// The words a password's name gives its site and account by ("cloudflare password (garth@dailify.co.za)"
-// -> cloudflare, garth, dailify; "google-garth-ghost-ai" -> google, garth, ghost): no "password", no ".co.za".
+// The words a password's name gives its site and account by ("cloudflare password (sam@acme.co.za)"
+// -> cloudflare, sam, acme; "google-sam-bookly" -> google, sam, bookly): no "password", no ".co.za".
 const NOT_OWNER = new Set(["password", "passwd", "passcode", "pw", "pass", "login", "account", "my", "new", "the", "www", "com", "co", "za", "org", "net", "io", "ai", "dev", "app", "uk", "us"]);
 const ownerWords = (name) => String(name || "").toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 1 && !NOT_OWNER.has(w));
 // Save what was found: under the name it's held by already when every value is, else its own. The name, or "".
 // A password is the user's for one site and account, and people use one on several: one pasted for a site
 // and account the held name doesn't name is a login of its own (26 Oct 2026: a new Cloudflare password,
-// pasted from Cloudflare's page beside garth@dailify.co.za, was the same as a Google login's and was
-// filed as "google-garth-ghost-ai").
+// pasted from Cloudflare's page beside sam@acme.co.za, was the same as a Google login's and was
+// filed as "google-sam-bookly").
 function keep(name, values) {
   const held = values.map(heldName);
   const pw = /\bpass(?:word|code)\b/i.test(name), mine = ownerWords(name);
