@@ -17,6 +17,7 @@ import { homedir } from "node:os";
 import { CONFIG_DIR, readState, writeJsonAtomic, loadConfig } from "./core.mjs";
 import { actSites } from "./chromegate.mjs";
 import { sources, profilesOf, profileAccounts } from "./chromeimport.mjs";
+import { lineStep, lineBrief } from "./lineblocks.mjs";
 
 const KNOWN = [
   { host: "twilio.com", name: "Twilio", names: /^twilio/i, why: "its login fails Cloudflare's human check there",
@@ -90,13 +91,15 @@ function ownChrome({ home = homedir(), platform = process.platform } = {}) {
 }
 // An ask that sends the user to the Symbiot Browser to sign in or take a step there, said for their
 // own Chrome instead: "sign in at x.com in the Symbiot Browser (Settings → Connections → Add a site),
-// then click Done" → "sign in at x.com in your own Chrome". Anything else comes back as it was.
+// then click Done" → "sign in at x.com in your own Chrome". A step on a site that refuses this
+// computer's connection itself is the user's phone on mobile data (lineblocks.mjs lineStep).
+// Anything else comes back as it was.
 const IN_SB = /\s+(?:in|through|using|with)\s+(?:the\s+)?Symbiot(?:'s)?\s+Browser(?:\s*\(Settings\s*→\s*Connections(?:\s*→\s*Add a site)?\))?/gi;
 const DONE_SB = /,?\s*(?:and|then)\s+(?:click|press|tap)\s+Done(?:\s+(?:in|on)\s+(?:the\s+)?Symbiot(?:'s)?\s+Browser)?/gi;
 function ownChromeStep(text, where = "your own Chrome") {
   const t = String(text || "");
-  if (!/Symbiot(?:'s)?\s+Browser/i.test(t) || !(signInSite(t) || /^\W*👤/u.test(t))) return t;
-  return t.replace(DONE_SB, "").replace(IN_SB, " in " + where);
+  if (!/Symbiot(?:'s)?\s+Browser/i.test(t) || !(signInSite(t) || /^\W*👤/u.test(t))) return lineStep(t);
+  return lineStep(t.replace(DONE_SB, "").replace(IN_SB, " in " + where));
 }
 // A question's options (QUESTIONS.md): one that has the user sign in to such a site is the
 // agent's, through the site's API, with nothing for the user to do; any other step or sign-in
@@ -140,7 +143,7 @@ const chromeActLine = (sites) => `- On ${sites.includes("*") ? "any site" : site
 // The user's own step on a site, for every brief: in their Chrome, with the address and the values.
 const ownStepLine = (where = ownChrome()) => `- A step on a site that only the user can take (their password or an SMS code: a domain's nameservers at its registrar, DNS, billing or a contact at a provider) is theirs to do in ${where}, never in the Symbiot Browser: never ask them to sign in there for it. Its option gives the exact address, where on the page, and the exact values to enter, then what you check after, e.g. \`👤 You (only you: your registrar password): in your own Chrome, at www.domains.co.za/client/dashboard → the domain → Nameservers, set ns1.example.com and ns2.example.com; I check the switch took within the hour\`. If the site refuses this computer's connection itself (a 403 that names this computer's IP address, or calls it a proxy or VPN), their Chrome here is refused too: say so, and make the step their phone on mobile data, not Wi-Fi.`;
 function browserBrief(ready = realChrome(), sites = (() => { try { return actSites(); } catch { return []; } })()) {
-  return [...(ready ? [CHROME_BRIEF] : []), ...(ready && sites.length ? [chromeActLine(sites)] : []), ...(ready ? [walkthroughBrief(sites)] : []), ownStepLine(), `- Never ask the user to sign in to a site in the Symbiot Browser to read or check something there: first try the site's API, its CLI or a connector, with keys from the project's env, the vault or (through \`ops\`) the server's secrets, and ask only for a key you can't find anywhere. The Symbiot Browser can't hold a sign-in to ${failingSites().map((e) => `${e.host} (use ${e.route})`).join("; ")}: an ask to sign in to one of them there never reaches the user.`];
+  return [...(ready ? [CHROME_BRIEF] : []), ...(ready && sites.length ? [chromeActLine(sites)] : []), ...(ready ? [walkthroughBrief(sites)] : []), ownStepLine(), ...[lineBrief()].filter(Boolean), `- Never ask the user to sign in to a site in the Symbiot Browser to read or check something there: first try the site's API, its CLI or a connector, with keys from the project's env, the vault or (through \`ops\`) the server's secrets, and ask only for a key you can't find anywhere. The Symbiot Browser can't hold a sign-in to ${failingSites().map((e) => `${e.host} (use ${e.route})`).join("; ")}: an ask to sign in to one of them there never reaches the user.`];
 }
 
 export { CHROME_ACT, KNOWN, failingSites, signInSite, blockedSignIn, signInDone, apiOptions, ownChrome, ownChromeStep, ownStepLine, apiRoute, browserBrief, realChrome, chromeHostDirs, CHROME_READ, CHROME_BRIEF };

@@ -2,6 +2,11 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one), for anyone who installs the app: what changed in it, never whose work it was (no projects, people, accounts, services, run ids or task wording of the person who made it). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.90.18 — 2026-10-26
+
+- **Sites that refuse this computer's connection are remembered.** When a site's page says this computer's internet address is blocked, or calls it a proxy or VPN, Symbiot notes that site. No browser on this computer gets in there, your own Chrome included, so a step there now asks you to use your phone on mobile data, with the site's own review form when it has one. That step no longer offers a Sign in button, and agents stop retrying the site.
+- **Check your connection in Settings → Connections.** Check asks two free lists whether this computer's address is listed as a proxy, and says what each one found. Below it are the sites that refused this computer, each with Forget for when it's sorted out.
+
 ## 0.90.17 — 2026-10-26
 
 - **A copy that fails says so where you pressed.** When this window can't use the clipboard, the Copy button reads Not copied and the line under it says why, in red, instead of a note at the foot of the screen that covered other buttons on a phone. Copy name does the same, beside the name.

@@ -27,6 +27,7 @@ import { CONFIG_DIR, chromeBinary, loadConfig, saveConfig } from "./core.mjs";
 import { chromeSession } from "./chromeimport.mjs";
 import { isSend } from "./sends.mjs";
 import { loadScreens, addPageScreen, center, stitchPng, stitchListPng } from "./screens.mjs";
+import { lineBlock, noteBlocked } from "./lineblocks.mjs";
 
 const PROFILE = join(CONFIG_DIR, "browser");
 // The profile inside it every Symbiot browser opens, named. Chrome opens the one it last
@@ -844,7 +845,20 @@ async function collect(page, expression = COLLECT) {
   await markClicks(page);
   const { result, exceptionDetails } = await page.send("Runtime.evaluate", { expression, returnByValue: true });
   if (exceptionDetails) throw new Error("Couldn't read the page: " + ((exceptionDetails.exception && exceptionDetails.exception.description) || exceptionDetails.text));
-  return (result && result.value) || { url: "", title: "", items: [] };
+  const info = (result && result.value) || { url: "", title: "", items: [] };
+  const block = await lineBlocked(page, info);
+  return block ? { ...info, block } : info;
+}
+// A page that refuses this computer's connection itself (lineblocks.mjs): recorded for its site,
+// with its own review link if it has one, so cards make the step the user's phone on mobile data.
+const BLOCK_TEXT = "(() => ({ text: (document.title + ' ' + ((document.body && document.body.innerText) || '')).slice(0, 3000), review: ([...document.links].find((a) => /review|unblock|appeal|whitelist/i.test(a.href + ' ' + a.innerText)) || {}).href || '' }))()";
+async function lineBlocked(page, info) {
+  try {
+    const { result } = await page.send("Runtime.evaluate", { expression: BLOCK_TEXT, returnByValue: true });
+    const v = (result && result.value) || {}, b = lineBlock(v.text); if (!b) return null;
+    const host = hostOf(info.url), e = noteBlocked(host, b, { review: v.review });
+    return { ...b, host, ...(e && e.review ? { review: e.review } : {}), note: `${host} refuses this computer's internet connection itself (${b.why}${b.ip ? ", " + b.ip : ""}): no browser on this computer gets past it, the user's own Chrome included. Use its API if it has one; otherwise the step is the user's, on their phone on mobile data (not Wi-Fi)${e && e.review ? ", and its review form is " + e.review : ""}.` };
+  } catch { return null; }
 }
 // A sign-in page instead of the site.
 function signInPage(url) {
@@ -858,6 +872,7 @@ function saveScreen(name, data, info, suffix = "") {
   const s = addPageScreen(suffix ? base.slice(0, 80 - suffix.length) + suffix : base, Buffer.isBuffer(data) ? data : Buffer.from(data, "base64"), info, info.items);
   if (s.error) return s;
   // a sign-in page instead of the site: say how to get past it once
+  if (info.block) return { ...s, note: info.block.note, block: info.block };
   return signInPage(info.url) ? { ...s, note: `This looks like a sign-in page (${host}). Click Sign in, sign in once in the window that opens, close it, then map again: the hidden browser keeps that sign-in.` } : s;
 }
 // The page as it is now, saved as a screen with its regions.
