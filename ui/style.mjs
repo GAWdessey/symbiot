@@ -985,7 +985,7 @@ body.lq-light #quota .qpill,body.lq-light #quota .qpop{background:rgba(255,255,2
 .ssh .muted{font-weight:400;font-size:12.5px}
 /* the Vault page (vaultview.mjs): grouped by service, one picked in a detail pane, what needs a look; no value until it's unlocked */
 #panel-vault,#vaultmsg{--vred:#F07B7F;--vdig:#8CC2FF;--vsym:#F2B766}#panel-vault{max-width:1080px;margin:0 auto;--vred:#F07B7F;--vdig:#8CC2FF;--vsym:#F2B766;--vsoft:rgba(255,255,255,.045);--vsel:rgba(255,255,255,.085)}
-body.lq-light #vaultmsg{--vred:#B42318}body.lq-light #vaultmsg.err,body.lq-light #panel-vault button.vdanger{color:#fff}body.lq-light #panel-vault{--vred:#B42318;--vdig:#1D5FC4;--vsym:#9A5200;--vsoft:rgba(21,26,33,.045);--vsel:rgba(21,26,33,.075)}
+body.lq-light #vaultmsg{--vred:#B42318}body.lq-light #panel-vault button.vdanger{color:#fff}body.lq-light #panel-vault{--vred:#B42318;--vdig:#1D5FC4;--vsym:#9A5200;--vsoft:rgba(21,26,33,.045);--vsel:rgba(21,26,33,.075)}
 .vsl{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
 .vbar{display:flex;align-items:center;gap:10px;margin:2px 0 12px}
 .vsearch{position:relative;flex:1;min-width:0}
@@ -1030,7 +1030,7 @@ body.lq-light .vmono{color:hsl(var(--h) 55% 28%);background:hsl(var(--h) 60% 90%
 #panel-vault .vdact button,#panel-vault .vbtn{min-height:38px;padding:0 13px;font-size:13.5px}
 #panel-vault button.vdel{background:transparent;border:1px solid var(--line);color:var(--vred)}
 #panel-vault button.vdel:hover{border-color:var(--vred)}
-#panel-vault button.vdanger{background:var(--vred);color:#1A0A0B;border:0;border-radius:10px;font:inherit;font-weight:600;cursor:pointer}
+#panel-vault button.vdanger{background:var(--vred);color:#1B0B0C;border:0;border-radius:10px;font:inherit;font-weight:600;cursor:pointer}
 .vissue{display:flex;gap:10px 14px;align-items:center;flex-wrap:wrap;margin:18px 0 0;padding:12px 14px;border-radius:12px;border:1px solid color-mix(in srgb,var(--amber) 40%,transparent);background:color-mix(in srgb,var(--amber) 9%,transparent);font-size:13.5px;line-height:1.45;color:var(--text)}
 .vissue p{flex:1 1 240px;margin:0;display:flex;gap:9px;align-items:baseline}.vissue p .vdot{position:relative;top:-1px}
 .vissue .vib{display:flex;gap:6px}
@@ -1073,7 +1073,7 @@ body.lq-light .vmono{color:hsl(var(--h) 55% 28%);background:hsl(var(--h) 60% 90%
 .vlog .vlr{display:flex;gap:10px;padding:6px 0;border-top:1px solid var(--line)}.vlog .vlr b{color:var(--text);font-weight:500;flex:1;min-width:0;overflow-wrap:anywhere}
 #panel-vault .vback{display:none}
 #vaultmsg{position:fixed;left:16px;right:16px;bottom:104px;margin:0 auto;width:fit-content;max-width:560px;box-sizing:border-box;z-index:85;display:flex;align-items:center;gap:12px;padding:10px 10px 10px 16px;border-radius:12px;background:var(--bone);color:var(--ink);font-size:14px;line-height:1.4;box-shadow:0 10px 30px rgba(0,0,0,.35)}
-#vaultmsg:empty{display:none}#vaultmsg.err{background:var(--vred);color:#1A0A0B}
+#vaultmsg:empty{display:none}#vaultmsg.err{background:var(--vred);color:#1B0B0C}body.lq-light #vaultmsg.err{color:#fff}
 #vaultmsg button{min-height:32px;padding:0 12px;border-radius:8px;border:0;background:rgba(0,0,0,.12);color:inherit;font:600 13.5px var(--sans);cursor:pointer}
 #vaultsheet{position:fixed;inset:0;z-index:90;display:grid;place-items:center;padding:16px;background:rgba(4,6,8,.55)}
 #vaultsheet.hidden{display:none}
