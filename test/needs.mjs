@@ -4,7 +4,7 @@
 //
 //   node test/needs.mjs
 //
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -128,6 +128,48 @@ try {
     const hs = homeState({ fresh: true, deps: { repos: () => ({}), board: () => ({ cards: [] }), pending: () => [], lanes: () => ({ handoffs: [] }), reports: () => ({ count: 0 }), connected: () => true, waits: () => [], clashes: () => [], agentGone: () => "", signedOut: () => [], stuck: () => [], drafts: () => [], agentCmd: () => "claude", marketing: () => false, agents: () => [], goalCards: () => [{ ...add, id: "goal:mk", path: "goal:mk" }], troubles: () => [] } });
     const shown = (hs.you || []).find((y) => y.id === "goal:mk");
     ok("…on Home too", /^Adding a card can cost money/.test(shown.why || ""), shown); }
+
+  console.log("A STEP SAYS WHAT, WHERE AND AS WHOM — \"what does it want from me????\" (26 Oct 2026)");
+  { const note = "read-only part done: MOVE-PLAN.md in Reports; waits on the user's answer on the Workdesk and Chrome access to the Google consoles";
+    const gc = { kind: "ask", id: "goal:gm01:user", path: "goal:gm01", goal: "gm01", q: note, options: ["I've done it", "Drop it"] };
+    let sys = "";
+    await N.writeCards([gc], { write: async (s) => { sys = s; return { text: JSON.stringify({ question: "Can I use Workdesk and Chrome to open console.cloud.google.com?", labels: ["Access is set up", "Drop the move"], tips: ["", ""], recommended: 0 }) }; } });
+    ok("the writer is told a sign-in step names the site, the account and what the agent does next, and its button what it confirms", /the account to be signed in as/.test(sys) && /what the agent does there once it is/.test(sys) && /I'm signed in/.test(sys) && /never something to grant, allow or use/.test(sys) && /unclear:/.test(sys));
+    ok("the card that offered Workdesk as something to grant is unclear: its words aren't used, and it's off Needs you", N.textFor(gc).unclear === true && N.applyText(gc) === gc && !N.splitNeeds([gc, choose]).you.some((y) => y.id === gc.id));
+    ok("…a Symbiot page to grant is caught whatever the writer says, everyday words are not", N.checkCardText({ question: "Can I have access to the Workdesk and Chrome?" }, 0).unclear === true && !N.checkCardText({ question: "Turn on WhatsApp in Settings, under Connections?" }, 0).unclear);
+    ok("…the writer's own unclear is kept", N.checkCardText({ unclear: true, question: "Can I go ahead?" }, 2).unclear === true);
+    const src = "Sign in to console.cloud.google.com in your Chrome as garth@example.com (owner of project demo-123), so I can add pat@example.com as an Owner";
+    ok("a rewrite that drops the account its agent named isn't used; one that keeps it is", N.checkCardText({ question: "Can you sign in to the Google Cloud console?" }, 0, src) === null && N.checkCardText({ question: "Sign in to console.cloud.google.com as garth@example.com?", why: "Then I add pat@example.com as an Owner." }, 0, src).question === "Sign in to console.cloud.google.com as garth@example.com?");
+    const oneCard = { kind: "ask", id: "ask:/r/s", path: "/r/s", q: "Can you approve the rename?", options: ["Go ahead", "Skip"] };
+    await N.writeCards([oneCard], { write: async () => ({ text: JSON.stringify({ unclear: true }) }) });
+    ok("…an agent's own question the writer finds unclear still shows, in the agent's words", N.applyText(oneCard) === oneCard && N.splitNeeds([oneCard]).you.some((y) => y.id === oneCard.id));
+
+    const G = await import("../goals.mjs"), J = await import("../jobs.mjs");
+    const run = join(CFG, "drafts", "act-gm01"); mkdirSync(join(run, ".symbiot"), { recursive: true });
+    J.putGoal({ key: "goal:gm01", kind: "goal", text: "move the google setup", asked: "move the google setup", state: "waiting", waitingOn: "user", at: Date.now() - 3600e3, changed: Date.now() - 3600e3, children: ["run:gm01"], paths: [run], card: { kind: "user", q: note, options: gc.options, at: Date.now() - 600e3 } });
+    J.track("run:gm01", { kind: "agent", path: run, state: "waiting", waitingOn: "user", what: note });
+    const started = [], settled = [];
+    const deps = { unclear: (c) => c.q === note, notTheirs: () => false, running: () => false, start: (p) => { started.push(p); return { id: "x" }; }, autoStart: () => true, settle: (p, why) => settled.push(why), cardPaths: new Set(), waits: [], ledger: { handoffs: [] }, map: {} };
+    await G.goalsTick(deps);
+    const told = (() => { try { return readFileSync(join(run, ".symbiot", "ANSWERS.md"), "utf8"); } catch { return ""; } })();
+    ok("…its run is started again and told to ask exactly: the site, the account, what it does next", started.includes(run) && settled.length === 1 && /didn't show the user your step/.test(told) && /the account to sign in as/.test(told) && /I'm signed in/.test(told) && !G.goalById("goal:gm01").card, told);
+
+    J.putGoal({ ...G.goalById("goal:gm01"), card: { kind: "user", q: note, options: gc.options, at: Date.now() - 600e3 } });
+    J.track("run:gm01", { state: "paused", waitingOn: "", note: "answered by Symbiot" });
+    await G.goalsTick({ ...deps, unclear: () => false });
+    ok("a goal's card on the user's step goes once its run carries on: it isn't left on Home from the run's first note", !G.goalById("goal:gm01").card, G.goalById("goal:gm01").card);
+
+    J.track("run:gm01", { state: "waiting", waitingOn: "user", what: note });
+    J.putGoal({ ...G.goalById("goal:gm01"), card: { kind: "user", q: note, options: gc.options, at: Date.now() - 600e3 } });
+    await G.goalsTick({ ...deps, unclear: () => false, cardPaths: new Set([run]) });
+    ok("…and once Home has the run's own card for that step: one card, not two", !G.goalById("goal:gm01").card);
+    J.track("run:gm01", { state: "waiting", waitingOn: "user", what: "waits on the user signing in to console.cloud.google.com as garth@example.com" });
+    J.putGoal({ ...G.goalById("goal:gm01"), card: { kind: "user", q: note, options: gc.options, at: Date.now() - 600e3 } });
+    await G.goalsTick({ ...deps, unclear: () => false });
+    ok("…and when the run now waits on a newer step, the card is that one", (G.goalById("goal:gm01").card || {}).q === "waits on the user signing in to console.cloud.google.com as garth@example.com", G.goalById("goal:gm01").card);
+    const kept = G.goalById("goal:gm01").card;
+    await G.goalsTick({ ...deps, unclear: () => false });
+    ok("…a card still on the step it waits on stays as it is", JSON.stringify(G.goalById("goal:gm01").card) === JSON.stringify(kept)); }
 } catch (e) { ok("ran", false, String((e && e.stack) || e)); }
 finally { rmSync(HOME, { recursive: true, force: true }); }
 console.log(`\n${fail ? "✗" : "✓"} needs: ${pass} passed, ${fail} failed`);

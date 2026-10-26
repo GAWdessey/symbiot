@@ -2,6 +2,12 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one), for anyone who installs the app: what changed in it, never whose work it was (no projects, people, accounts, services, run ids or task wording of the person who made it). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.93.1 — 2026-10-26
+
+- **A step that only you can take now says exactly what to do.** A card asking you to sign in names the site, the account to sign in as and what the agent does there next, and its button says what you're confirming ("I'm signed in") instead of something vague like "Access is set up". A card never asks you to grant access to one of Symbiot's own pages.
+- **Vague cards go back to the agent instead of to you.** If a card can't say which site, which account or what happens next, you don't see it. Its agent is asked to write the step again, exactly.
+- **Old cards clear once the work moves on.** A goal's card asking for your step goes away once its agent carries on, once the agent's own card for that step is showing, or once the agent is waiting on a newer step. It used to stay up after the agent had moved on.
+
 ## 0.93.0 — 2026-10-26
 
 - **Agents can sign in with a password from your vault, without seeing it.** On a page in your own Chrome, an agent can put a password or code you saved in the Vault into its box with `symbiot screens secret`. Symbiot reads it and the extension fills it in, so the agent never sees it, and it never shows up in a map of the page, an answer or a log. This works even for agents that can't read the vault.
