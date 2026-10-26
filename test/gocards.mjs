@@ -32,8 +32,8 @@ try {
   ok("two choices: its Go and a Don't", q1 && q1.options.length === 2 && /^Don't send: the user said no/.test(q1.options[1]), q1);
   ok("…shown as Send and Don't send", q1 && q1.labels && q1.labels[0] === "Send" && q1.labels[1] === "Don't send", q1 && q1.labels);
   ok("…with the hold's line: where, and what's pressed", q1 && q1.go && q1.go.line === "In your Chrome, on mail.google.com: Clicks Send on the reply to Pat Lee", q1 && q1.go);
-  const pay = G.holdOrGo("www.domains.co.za", "Clicks Pay now for the ghost-ai.co.za renewal", "pay", o), f2 = folder("act-go2");
-  ask(f2, "Pay R 289 to renew ghost-ai.co.za for a year on domains.co.za?", pay.held, "🤖 Agent: go ahead: Clicks Pay now for the ghost-ai.co.za renewal", "The site may hold or charge money on the card once it's added: about R 289.");
+  const pay = G.holdOrGo("www.domains.co.za", "Clicks Pay now for the example.co.za renewal", "pay", o), f2 = folder("act-go2");
+  ask(f2, "Pay R 289 to renew example.co.za for a year on domains.co.za?", pay.held, "🤖 Agent: go ahead: Clicks Pay now for the example.co.za renewal", "The site may hold or charge money on the card once it's added: about R 289.");
   const q2 = A.agentQuestions(f2, "").questions[0];
   ok("a payment: Pay R 289 and Don't pay, with its money line", q2.labels[0] === "Pay R 289" && q2.labels[1] === "Don't pay" && /about R 289/.test(q2.go.money || ""), q2);
   const words = (kind, summary, host = "example.com") => G.goWords({ id: "x", host, kind, summary });
