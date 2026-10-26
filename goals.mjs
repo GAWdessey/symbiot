@@ -27,7 +27,7 @@
 // Its cards are questions on Home like any other (path "goal:<id>"), answered through
 // agents.mjs answerQuestions (onGoalAnswer, set by server.mjs).
 import { join } from "node:path";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync, readFileSync, existsSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { CONFIG_DIR, loadTasks, clipWords, jobWords, readState, writeJsonAtomic, sameTask } from "./core.mjs";
 import { goalRows, putGoal, loadJobs, ENDED } from "./jobs.mjs";
@@ -270,6 +270,15 @@ function close(g, kind, v, ctx, deps, now) {
   try { (deps.notify || (() => {}))(kind === "done" ? "Done" : "Not finished", clip(g.text, 120)); } catch {}
 }
 
+// A note for a run, in its ANSWERS.md, read when it starts.
+function tellRun(path, text) {
+  try {
+    const file = join(path, ".symbiot", "ANSWERS.md"), had = existsSync(file) ? readFileSync(file, "utf8") : "# Answers from the user\n";
+    if (had.includes(text)) return;
+    mkdirSync(join(path, ".symbiot"), { recursive: true });
+    writeFileSync(file, `${had.replace(/\s*$/, "")}\n\n### Symbiot: your step for the user\n${text}\n(Symbiot's card check; the user wasn't asked.)\n_${new Date().toISOString().slice(0, 10)}_\n`);
+  } catch {}
+}
 // The sentence of a run's last words that says what it needs from the user ("…creating the account
 // and sending the ticket need your yes."), so a card's one ask isn't lost after "The move isn't done.".
 const NEEDS_USER = /\b(?:you|your|the user|garth(?:'s)?)\b|\byes\b|\bok\b|approv|go-?ahead|sign[- ]?in|password|\bcode\b/i, YES_ASK = /\byes\b|\bok\b|approv|go-?ahead/i;
@@ -280,6 +289,7 @@ function askIn(said) {
 // ---- the tick ----------------------------------------------------------------------
 // deps: { write (ai.mjs), running(path), start(path) → run entry, autoStart(path) → bool,
 //   ops(request, opts) → { job, dir } (mind.mjs actNow), notify(title, body), settle(path, note),
+//   notTheirs(card), unclear(card) (the card writer's verdicts, needs.mjs),
 //   tasks, ledger, waits, jobs, map }. Returns what it did, for the log and the tests.
 async function goalsTick(deps = {}, { now = Date.now() } = {}) {
   const ctx = { tasks: deps.tasks || loadTasks(), ledger: deps.ledger || { handoffs: [] }, waits: deps.waits || [], jobs: deps.jobs || loadJobs(), map: deps.map || {}, running: deps.running || (() => false), now };
@@ -304,7 +314,16 @@ async function goalsTick(deps = {}, { now = Date.now() } = {}) {
         const e = deps.ops(`What's left on this, and do it: ${g.asked}\n\nDone when: ${g.doneWhen || g.asked}\n\nWhat was found missing: ${(v && v.left) || "nothing judged it done"}. Check the earlier runs' reports first and don't redo what they finished. If something only the user can do is all that's left, ask it in QUESTIONS.md.`, { title: `What's left on: ${clip(g.text, 60)}` });
         if (e && (e.job || e.dir)) { if (e.job) g.children.push("run:" + e.job); if (e.dir) g.paths.push(e.dir); did.push({ goal: g.key, whatsLeft: e.job || e.dir }); }
       } else { close(g, "not", v ? { ...v, kids: r.kids } : { left: "every part of it ended, and nothing shows it's done", kids: r.kids }, ctx, deps, now); did.push({ goal: g.key, closed: "not" }); }
-    } else if (r.state === "waiting") {
+    }
+    // A card on the user's step goes once that step isn't what the work waits on: the run carried on, Home
+    // has the run's own card for it, or the run now waits on something else. "Can I use Workdesk and Chrome
+    // to open console.cloud.google.com?" stayed on Home, built from the run's first note, while five later
+    // runs on the same move asked their own, exact steps (26 Oct 2026).
+    if (g.card && g.card.kind === "user") {
+      const c = r.state === "waiting" && r.waitingOn === "user" ? r.kids.find((x) => x.state === "waiting" && x.waitingOn === "user") || {} : null;
+      if (!c || (c.path && (deps.cardPaths || new Set()).has(c.path)) || g.card.q !== clip(c.bare && c.summary ? askIn(c.summary) : r.what, 300)) g.card = null;
+    }
+    if (r.state === "waiting") {
       const c = r.kids.find((x) => x.state === "waiting" && x.waitingOn === r.waitingOn) || {};
       if (r.waitingOn === "user") {
         const carded = (deps.cardPaths || new Set()); // Home has a card for that work already: one card, not two
@@ -323,6 +342,13 @@ async function goalsTick(deps = {}, { now = Date.now() } = {}) {
         if (g.card && g.card.kind === "user" && deps.notTheirs && deps.notTheirs(g.card) && c.path && !ctx.running(c.path)) {
           if (deps.settle) { try { deps.settle(c.path, "not the user's: find it yourself (Symbiot's vault, the linked mailboxes and connectors, the user's files) and carry on"); } catch {} }
           if (start(c.path, "the card for this asked for something you can find or check yourself: look in Symbiot's vault, the linked mailboxes and connectors and the user's files first, carry on, and ask the user only for what none of them has") !== false) { g.card = null; did.push({ goal: g.key, checking: c.path }); }
+        }
+        // a card the writer found too vague to act on (needs.mjs unclear: no site, account or next step, or a
+        // Symbiot page to "grant") goes back to the run with what's missing, and the user never sees it
+        if (g.card && g.card.kind === "user" && deps.unclear && deps.unclear(g.card) && c.path && !ctx.running(c.path)) {
+          tellRun(c.path, `Symbiot didn't show the user your step: "${clip(g.card.q, 200)}" doesn't say what they'd do. If a step is still theirs, ask it in .symbiot/QUESTIONS.md naming the site's exact address, the account to sign in as (its email address) and what you do there once they have, with an option saying what it confirms ("I'm signed in"). A Symbiot page (Workdesk, Home) is never something to grant. If it isn't theirs, carry on.`);
+          if (deps.settle) { try { deps.settle(c.path, "the user's step was too vague to show: ask it again, exactly"); } catch {} }
+          if (start(c.path, "the card for your step didn't say which site, which account or what you do next: ask it again, exactly") !== false) { g.card = null; did.push({ goal: g.key, unclear: c.path }); }
         }
       } else if (r.waitingOn === "lane" && c.handoff && c.path && now - (c.at || now) > H) {
         start(c.path, `${c.handoff.to.lane} hadn't started on it`);
