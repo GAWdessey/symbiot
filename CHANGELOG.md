@@ -9,7 +9,18 @@ What each Symbiot release brought, newest first. When Approve bumps the version,
 - **Only a Go opens the hold.** The button, or a plain yes, lets that one press through. Anything else you type on the card ("not yet", "change the subject first") goes to the agent as words, and the press stays held.
 - **You see what came of each Go.** After a Go, the card says what happens next: the press goes through once, when its agent tries again within 30 minutes. Each agent's block on the Workdesk, and Settings → Connections → Your own Chrome, then list what happened: sent at a time, your Go lapsed, you said Don't, or what went wrong.
 - **The Vault's "Fills only on" can be set and changed.** Add one with its website, or change or clear it later with Edit, as in a password manager. An entry with no website says it asks you before its first fill. Saving the form as it shows no longer renames an entry.
-- **Tidier on the Workdesk and on a phone.** A question's box has room inside its edges, and its choices line up with their labels. A run that isn't in a project no longer reports files changed. In Settings on a phone, the Your own Chrome button sits under its text.
+- **Settings fits a phone.** On a narrow screen, the Your own Chrome button sits under its text, full width.
+## 0.93.2 — 2026-10-26
+
+- **One press answers a question on the Workdesk.** Its choices are buttons now, not round ticks: when an agent asks one thing, pressing Go (or any other choice) sends it and the agent carries on, instead of a pick and then "Send answers & continue". When it asks several, your presses pick an answer for each, and Send answers sends them together. Your own words go with Send answer beside the box, or Enter.
+- **The question card has room to breathe.** Its text no longer sits against the card's left edge, and on a phone each choice is a full-width button.
+- **"Files changed" counts only the agent's own work.** A run kept in a folder inside a project no longer shows that project's changed files as its own, so a run that only sent an email says "No files changed."
+
+## 0.93.1 — 2026-10-26
+
+- **A step that only you can take now says exactly what to do.** A card asking you to sign in names the site, the account to sign in as and what the agent does there next, and its button says what you're confirming ("I'm signed in") instead of something vague like "Access is set up". A card never asks you to grant access to one of Symbiot's own pages.
+- **Vague cards go back to the agent instead of to you.** If a card can't say which site, which account or what happens next, you don't see it. Its agent is asked to write the step again, exactly.
+- **Old cards clear once the work moves on.** A goal's card asking for your step goes away once its agent carries on, once the agent's own card for that step is showing, or once the agent is waiting on a newer step. It used to stay up after the agent had moved on.
 
 ## 0.93.0 — 2026-10-26
 
