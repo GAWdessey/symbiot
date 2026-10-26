@@ -14,13 +14,15 @@ import { createServer } from "node:net";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { homedir, userInfo } from "node:os";
-import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync, chmodSync, readdirSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync, chmodSync, readdirSync, statSync } from "node:fs";
+import { basename } from "node:path";
 import { createHash } from "node:crypto";
-import { spawnSync } from "node:child_process";
-import { CONFIG_DIR } from "./core.mjs";
-import { siteUrl, saveScreen, blockOf, collectJs, scrollJs, findRegion, BLOCK_TEXT, MODAL_OPEN, DEEP, hostOf, linkedSite, isTrusted } from "./headless.mjs";
+import { spawnSync, spawn } from "node:child_process";
+import { CONFIG_DIR, chromeBinary } from "./core.mjs";
+import { FILE_BOX, uploadFiles, siteUrl, saveScreen, blockOf, collectJs, scrollJs, findRegion, BLOCK_TEXT, MODAL_OPEN, SELECT_PART, DEEP, PAGE_HEIGHT, MAX_TALL, CHOOSE_SELECT, CHOOSE_OPTION, chooseSaid, hostOf, linkedSite, isTrusted } from "./headless.mjs";
 import { loadScreens, center, wirePng } from "./screens.mjs";
 import { heldFor } from "./sends.mjs";
+import { holdOrGo } from "./chromegate.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SRC = join(HERE, "extension");
@@ -39,10 +41,12 @@ const EXT_ID = extId();
 // name. A builder there writes each argument into its code as JSON; built with a stand-in for
 // each, the stand-in's JSON becomes __a[i], the function's own argument. So the extension carries
 // the code itself and the app only ever sends a name and values, never code (no remote code).
-const ARG = (i) => ({ toJSON: () => "\u0001" + i });
+// One the builder makes a string first (String(want)) is the same; a number it writes as one
+// (Number(at.x)) is the stand-in's own number, 987650000 + i.
+const ARG = (i) => ({ toJSON: () => "\u0001" + i, toString: () => "\u0001" + i, valueOf: () => 987650000 + i });
 function fnOf(build, n) {
   let src = build(...Array.from({ length: n }, (_, i) => ARG(i)));
-  for (let i = 0; i < n; i++) src = src.split(JSON.stringify("\u0001" + i)).join(`__a[${i}]`);
+  for (let i = 0; i < n; i++) src = src.split(JSON.stringify("\u0001" + i)).join(`__a[${i}]`).split(String(987650000 + i)).join(`__a[${i}]`);
   return `(...__a) => ${src}`;
 }
 // A click as a mouse gives one, at x, y in the window: what's there gets the pointer and mouse
@@ -79,14 +83,34 @@ const TYPE_JS = `(text, enter) => { ${DEEP}
   }
   return { ok: true, held: String(box ? e.value : e.innerText).trim() === String(text).trim() };
 }`;
+// The files, as the extension put them together ({ name, type, b64 }), into the file box fileBox
+// found (window.__symbiotFileBox), as a person's pick would: its files set, then input and change.
+const ATTACH_JS = `(files) => {
+  const box = window.__symbiotFileBox; delete window.__symbiotFileBox;
+  if (!box) return { error: "Lost the page's file box. Map the page again." };
+  const dt = new DataTransfer();
+  for (const f of files) { const bin = atob(f.b64), a = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) a[i] = bin.charCodeAt(i); dt.items.add(new File([a], f.name, { type: f.type || 'application/octet-stream' })); }
+  box.files = dt.files;
+  box.dispatchEvent(new Event('input', { bubbles: true })); box.dispatchEvent(new Event('change', { bubbles: true }));
+  return { ok: true, n: box.files.length };
+}`;
 function pageJs() {
   const fns = {
     collect: `() => ${collectJs(false)}`,
+    collectWhole: `() => ${collectJs(true)}`,
+    height: `() => ${PAGE_HEIGHT}`,
+    wholeDone: "() => { window.__symbiotWhole = null; scrollTo({ top: 0, behavior: 'instant' }); return true; }",
     block: `() => ${BLOCK_TEXT}`,
     view: "() => ({ w: innerWidth, h: innerHeight, dpr: devicePixelRatio || 1 })",
     scroll: fnOf((to, where) => scrollJs(to, where), 2),
     find: fnOf((sel, label, c) => findRegion({ selector: sel, label }, c, false), 3),
     modal: `() => ${MODAL_OPEN}`,
+    chooseSelect: fnOf((sel, x, y, want) => CHOOSE_SELECT(sel, { x, y }, want), 4),
+    chooseOption: fnOf((want) => CHOOSE_OPTION(want), 1),
+    selectPart: fnOf((old) => SELECT_PART(old), 1),
+    insert: "(text) => ({ ok: document.execCommand('insertText', false, text) })",
+    fileBox: fnOf((sel, x, y) => FILE_BOX(sel, { x, y }), 3),
+    attach: ATTACH_JS,
     click: CLICK_JS,
     type: TYPE_JS,
   };
@@ -176,15 +200,35 @@ function startBroker({ sock = OWN_SOCK } = {}) {
 function stopBroker() { for (const c of conns) c.destroy(); conns.clear(); current = null; if (server) server.close(); server = null; }
 function heard(c, m) {
   if (!m || typeof m !== "object") return;
-  // a hello, by itself or as the answer to one: what the extension may do now
-  if (m.event === "hello") { c.hello = { version: String(m.version || ""), origins: Array.isArray(m.origins) ? m.origins : [], asks: Array.isArray(m.asks) ? m.asks : [], stopped: !!m.stopped, at: Date.now() }; current = c; }
+  // a hello, by itself or as the answer to one: what the extension may do now (and, kept, that it's loaded in Chrome)
+  if (m.event === "hello") {
+    c.hello = { version: String(m.version || ""), origins: Array.isArray(m.origins) ? m.origins : [], asks: Array.isArray(m.asks) ? m.asks : [], stopped: !!m.stopped, at: Date.now() }; current = c;
+    try { mkdirSync(OWN_DIR, { recursive: true, mode: 0o700 }); writeFileSync(SEEN, JSON.stringify({ at: c.hello.at, stopped: c.hello.stopped })); } catch {}
+  }
   const w = m.id && waiting.get(m.id); if (!w) return;
   waiting.delete(m.id); clearTimeout(w.t); w.resolve(m);
 }
 const NOT_CONNECTED = "Symbiot's extension in your own Chrome isn't connected: Chrome isn't open, the extension isn't loaded, or it was stopped from its toolbar button. Set it up in Settings → Connections → Your own Chrome.";
-function askChrome(op, args = {}, { timeout = 60000 } = {}) {
+// When Chrome is closed: once the extension has said hello on this computer, and wasn't stopped,
+// Symbiot starts Chrome the way a person does, with no window (its last profile, no automation
+// flags), and waits for the extension to connect. Not more than once a minute.
+const SEEN = join(OWN_DIR, "seen.json"), START_WAIT = 25000;
+let starter = (bin) => { const p = spawn(bin, ["--no-startup-window"], { detached: true, stdio: "ignore" }); p.on("error", () => {}); p.unref(); };
+let startedAt = 0;
+function setStarter(f) { starter = f; startedAt = 0; }
+async function wake() {
+  let seen = null; try { seen = JSON.parse(readFileSync(SEEN, "utf8")); } catch {}
+  if (!seen || seen.stopped || Date.now() - startedAt < 60000) return false;
+  const bin = chromeBinary(); if (!bin) return false;
+  startedAt = Date.now();
+  try { starter(bin); } catch { return false; }
+  for (const end = Date.now() + START_WAIT; Date.now() < end;) { if (current && !current.destroyed) return true; await new Promise((r) => setTimeout(r, 250)); }
+  return false;
+}
+async function askChrome(op, args = {}, { timeout = 60000 } = {}) {
+  if (!current || current.destroyed) await wake();
   const c = current;
-  if (!c || c.destroyed) return Promise.resolve({ error: NOT_CONNECTED, offline: true });
+  if (!c || c.destroyed) return { error: NOT_CONNECTED, offline: true };
   const id = "q" + (++seq);
   return new Promise((resolve) => {
     const t = setTimeout(() => { waiting.delete(id); resolve({ error: "Your Chrome didn't answer in time." }); }, timeout);
@@ -198,6 +242,13 @@ function ownChromeStatus({ home, platform } = {}) {
     ...(h ? { version: h.version, origins: h.origins.filter((o) => /^https?:/.test(o)).map((o) => o.replace(/\/\*$/, "")), asks: h.asks, stopped: h.stopped } : {}) };
 }
 
+// A site the user allowed Symbiot on in their Chrome, with the extension connected and not stopped:
+// a map of it goes there by itself. Allowing it there is the user saying so.
+function ownChromeFor(url) {
+  const h = current && !current.destroyed ? current.hello : null; if (!h || h.stopped) return false;
+  let o = ""; try { o = new URL(siteUrl(url)).origin; } catch { return false; }
+  return h.origins.some((x) => String(x).replace(/\/\*$/, "") === o);
+}
 // A site through the user's own Chrome, saved as a screen as the hidden browser's maps are
 // (screens.mjs addPageScreen, via "own-chrome"): its regions in the picture's pixels.
 const refusedBy = (r) => r.origin ? `Chrome hasn't allowed Symbiot on ${hostOf(r.origin)} yet. In Chrome, click Symbiot's button in the toolbar and press Allow next to ${hostOf(r.origin)}, then try again.` : r.error;
@@ -228,8 +279,12 @@ function saveLook(r, name) {
 // its site, opened at its address again when it has moved on), then what that leads to is mapped
 // as a new screen. The rules are the hidden browser's (headless.mjs actOnRegion): the user's
 // confirmation unless the site is trusted, and a draft-only run never sends. On top: whatever
-// sends, posts, pays or deletes (sends.mjs heldFor) is never pressed here by an agent. It's the
-// user's own identity in their own browser, so that press stays theirs, in the tab left open.
+// sends, posts, pays or deletes (sends.mjs heldFor), and Enter in a message box, waits for the
+// user's Go on a card, the same holds as an agent's actions in their Chrome (chromegate.mjs
+// holdOrGo): it's their own identity in their own browser. Once they say Go, the same press goes
+// through, once.
+const RETRY = "do the same again (the same symbiot screens command): it goes through, once";
+const gate = (host, summary, kind) => { const h = holdOrGo(host, summary, kind, { retry: RETRY }); return h ? { error: h.why, held: kind, hold: h.held } : null; };
 function ownScreen(id) { const s = loadScreens().find((x) => x.id === id); return s && s.via === "own-chrome" && s.page && s.page.url ? s : null; }
 const toPage = (s, p) => { const k = (s.page && s.page.dpr) || 1; return { x: p.x / k, y: p.y / k }; };
 async function tabOf(s) {
@@ -237,12 +292,13 @@ async function tabOf(s) {
   if (r.error) return { error: refusedBy(r), ...(r.offline ? { offline: true } : {}) };
   return r;
 }
-async function actInOwnChrome(id, regionId, verb, { confirmed = false, noSend = false } = {}, act) {
+async function actInOwnChrome(id, regionId, verb, { confirmed = false, noSend = false } = {}, act, before = null) {
   const s = ownScreen(id); if (!s) return { error: "not found" };
   const r = (s.regions || []).find((x) => x.id === regionId); if (!r) return { error: "That region is gone. Reload the screen." };
-  const host = hostOf(s.page.url), held = verb === "Press" ? heldFor("Clicks " + r.label, host) : "";
-  if (held) return { error: `"${r.label}" ${held === "pay" ? "pays" : held === "delete" ? "deletes" : "sends or posts"}, in the user's own Chrome and in their name, so an agent never presses it there. It's left for them in the Symbiot tab in their Chrome: say what's ready and that it's theirs to press.`, held };
-  if (!confirmed && !isTrusted(s.page.url)) return { error: `${verb === "Type" ? "Typing into" : "Pressing"} "${r.label}" acts on the real site in your own Chrome, signed in as you, and ${host} isn't one of your trusted sites.`, confirm: true, host };
+  const host = hostOf(s.page.url);
+  if (noSend && verb === "Press" && heldFor("Clicks " + r.label, host) === "send") return { error: `"${r.label}" sends or posts. This run only drafts: it never presses Send, Post, Comment or Reply. The draft stays for the user to send or post.` };
+  if (!confirmed && !isTrusted(s.page.url)) return { error: `${{ Type: "Typing into", Upload: "Attaching a file with", Choose: "Choosing in" }[verb] || "Pressing"} "${r.label}" acts on the real site in your own Chrome, signed in as you, and ${host} isn't one of your trusted sites.`, confirm: true, host };
+  const held = before ? before(r, host) : null; if (held) return held;
   const t = await tabOf(s); if (t.error) return t;
   const run = (fn, args = []) => askChrome("run", { tab: t.tab, fn, args }).then((x) => x.error ? { error: refusedBy(x) } : x.result);
   const c = toPage(s, center(r));
@@ -250,7 +306,7 @@ async function actInOwnChrome(id, regionId, verb, { confirmed = false, noSend = 
   if (hit && hit.error) return hit;
   if (t.same && !(hit && hit.by === "selector" && hit.clear) && await run("modal")) return { error: `"${r.label}" is covered by a pop-up that is open on the page now. Press in the pop-up (map the page again to see it), or close it first.`, stay: true };
   const at = hit ? { x: hit.x, y: hit.y } : c;
-  const done = await act(run, at, r);
+  const done = await act(run, at, r, t.tab);
   if (done && done.error) return { ...done, stay: true };
   await askChrome("wait", { tab: t.tab, ms: 15000 });
   const next = await askChrome("look", { tab: t.tab }, { timeout: 60000 });
@@ -259,18 +315,91 @@ async function actInOwnChrome(id, regionId, verb, { confirmed = false, noSend = 
   return saved.error ? saved : { ...saved, ...done, found: !!hit && hit.by === "selector", kept: !!t.same };
 }
 function pressInOwnChrome(id, regionId, opts = {}) {
-  return actInOwnChrome(id, regionId, "Press", opts, async (run, at, r) => { const x = await run("click", [at.x, at.y]); return x && x.error ? x : { pressed: r.label }; });
+  return actInOwnChrome(id, regionId, "Press", opts, async (run, at, r) => { const x = await run("click", [at.x, at.y]); return x && x.error ? x : { pressed: r.label }; },
+    (r, host) => { const k = heldFor("Clicks " + r.label, host); return k ? gate(host, "Clicks " + r.label, k) : null; });
 }
 // Enter sends in a chat or a message box: an agent presses it only in a search or filter box
-function typeInOwnChrome(id, regionId, text, { enter = false, ...opts } = {}) {
+// replace: only that part of what's in the field is typed over (selected, then typed, as a person
+// would), so the rest stays as it is (headless.mjs typeRegion's replace).
+function typeInOwnChrome(id, regionId, text, { enter = false, replace = null, ...opts } = {}) {
   text = String(text == null ? "" : text);
   if (text.length > 2000) return Promise.resolve({ error: "That's more than 2000 characters to type." });
+  if (replace != null && !String(replace)) return Promise.resolve({ error: "Give the part of the field to replace." });
   return actInOwnChrome(id, regionId, "Type", opts, async (run, at, r) => {
-    if (enter && !/\b(search|find|filter|look ?up|query)\b/i.test(r.label || "")) return { error: `Pressing Enter in "${r.label}" can send it, in the user's own Chrome and in their name, so an agent doesn't. Type without Enter and leave the send to them.`, held: "send" };
     const c = await run("click", [at.x, at.y]); if (c && c.error) return c;
+    if (replace != null) {
+      const p = await run("selectPart", [String(replace)]);
+      if (!p || !p.ok) return { error: p && p.problem === "more" ? `"${replace}" is in "${r.label}" ${p.count} times, so nothing was changed: give a longer part, one that's there once.` : `"${replace}" isn't in "${r.label}", so nothing was changed.` };
+      const x = await run("insert", [text]);
+      return x && x.ok ? { typed: r.label, replaced: String(replace) } : { error: `"${r.label}" wouldn't take the new text.` };
+    }
     const x = await run("type", [text, !!enter]);
     return x && x.error ? x : { typed: r.label, ...(x && x.held === false ? { note: "The field doesn't show all of what was typed: check it on the new screen." } : {}) };
+  }, (r, host) => {
+    if (!enter || /\b(search|find|filter|look ?up|query)\b/i.test(r.label || "")) return null;
+    if (opts.noSend) return { error: `Enter in "${r.label}" can send it. This run only drafts: type without Enter, and the draft stays for the user to send.` };
+    return gate(host, `Presses Enter in ${r.label}`, "send");
   });
+}
+// Choose: an option in a menu, a native one set as the page listens for it, else the site's own
+// opened and its option clicked (headless.mjs chooseRegion's page code).
+function chooseInOwnChrome(id, regionId, option, opts = {}) {
+  const want = String(option == null ? "" : option).trim(), s = ownScreen(id), r = s && (s.regions || []).find((x) => x.id === regionId);
+  if (r && !want) return Promise.resolve({ error: "Give the option to choose: its label, as the menu shows it." });
+  if (r && r.kind !== "menu") return Promise.resolve({ error: `"${r.label}" isn't a menu (it's a ${r.kind || "region"}). Choose works on a menu; use Press or Type for the rest.` });
+  return actInOwnChrome(id, regionId, "Choose", opts, async (run, at, r) => {
+    const sel = await run("chooseSelect", [r.selector || "", at.x, at.y, want]);
+    if (sel && sel.native) return sel.problem ? { error: chooseSaid(r, want, sel) } : { chose: sel.chose, value: sel.value };
+    const c = await run("click", [at.x, at.y]); if (c && c.error) return c;
+    await new Promise((ok) => setTimeout(ok, 400));
+    const o = await run("chooseOption", [want]);
+    if (!o || o.problem) return { error: chooseSaid(r, want, o || {}) };
+    const host = hostOf(s.page.url), kind = heldFor("Clicks " + o.chose, host), held = kind && gate(host, `Chooses ${o.chose} in ${r.label}`, kind);
+    if (held) { await run("click", [at.x, at.y]); return held; } // the menu closed again, nothing chosen
+    const k = await run("click", [o.at.x, o.at.y]); if (k && k.error) return k;
+    return { chose: o.chose };
+  });
+}
+// Fill: several fields on the one screen, then one button if asked, in the same tab without
+// opening it again, as the hidden browser's fillForm does. Every field and the button must be
+// on the page before anything is typed; a button that sends, pays or deletes is never pressed.
+async function fillInOwnChrome(id, fields, { press = "", ...opts } = {}) {
+  const s = ownScreen(id); if (!s) return { error: "not found" };
+  if (!Array.isArray(fields) || !fields.length) return { error: "Give at least one field to fill." };
+  const rs = s.regions || [], host = hostOf(s.page.url), steps = [];
+  for (const f of fields) {
+    const r = rs.find((x) => x.id === f.region); if (!r) return { error: "That region is gone. Reload the screen." };
+    const text = String(f.text == null ? "" : f.text);
+    if (r.kind !== "field") return { error: `"${r.label}" isn't a field (it's a ${r.kind || "region"}). Fill works on fields; press the rest with --press.` };
+    if (text.length > 2000) return { error: "That's more than 2000 characters." };
+    steps.push({ r, text });
+  }
+  const button = press ? rs.find((x) => x.id === press) : null;
+  if (press && !button) return { error: "That region is gone. Reload the screen." };
+  const k = button ? heldFor("Clicks " + button.label, host) : "";
+  if (k && opts.noSend && k === "send") return { error: `"${button.label}" sends or posts. This run only drafts: fill without pressing it, and the draft stays for the user to send.` };
+  if (!opts.confirmed && !isTrusted(s.page.url)) return { error: `Filling this form acts on the real site in your own Chrome, signed in as you, and ${host} isn't one of your trusted sites.`, confirm: true, host };
+  const held = k && gate(host, "Clicks " + button.label, k); if (held) return held;
+  const t = await tabOf(s); if (t.error) return t;
+  const run = (fn, args = []) => askChrome("run", { tab: t.tab, fn, args }).then((x) => x.error ? { error: refusedBy(x) } : x.result);
+  const spots = [];
+  for (const r of [...steps.map((x) => x.r), ...(button ? [button] : [])]) {
+    const hit = await run("find", [r.selector || "", r.label || "", toPage(s, center(r))]);
+    if (hit && hit.error) return hit;
+    if (!(hit && hit.by === "selector")) return { error: `"${r.label}" isn't on the page now${t.same ? "" : " (it was opened again from its address, which closes a pop-up and loses what was typed)"}, so nothing was filled or pressed. Map the page as it is now, then fill it.`, stay: true };
+    spots.push({ x: hit.x, y: hit.y });
+  }
+  const typed = [];
+  for (const [i, { r, text }] of steps.entries()) {
+    const c = await run("click", [spots[i].x, spots[i].y]); if (c && c.error) return { ...c, typed };
+    const x = await run("type", [text, false]); if (x && x.error) return { ...x, typed };
+    typed.push(r.label);
+  }
+  if (button) { const at = spots[spots.length - 1], c = await run("click", [at.x, at.y]); if (c && c.error) return { ...c, typed }; await askChrome("wait", { tab: t.tab, ms: 15000 }); }
+  const next = await askChrome("look", { tab: t.tab }, { timeout: 60000 });
+  if (next.error) return { error: refusedBy(next), typed };
+  const saved = saveLook(next, "");
+  return saved.error ? saved : { ...saved, typed, pressed: button ? button.label : "", kept: !!t.same };
 }
 // Scroll: the page (or the part of it that scrolls) moved, and what's in the window then mapped.
 async function scrollInOwnChrome(id, to = "down") {
@@ -289,7 +418,59 @@ async function scrollInOwnChrome(id, to = "down") {
   const saved = saveLook(next, s.name.replace(/ ↓ \d+%$/, "") + (pct ? ` ↓ ${pct}%` : ""));
   return saved.error ? saved : { ...saved, scrolled: to, kept: !!t.same };
 }
-// What isn't built for the user's own Chrome yet says so, rather than going to the hidden browser
-const NOT_YET = (what) => ({ error: `${what} isn't built for a page in your own Chrome yet. Use Press and Type, or map the page in Symbiot's own browser (symbiot screens map <site>, without --own-chrome).` });
+// Upload: the files into the region's file box (headless.mjs FILE_BOX finds it, as for the hidden
+// browser), sent to the extension in pieces a message can carry, then put in the box together.
+// A box that only opens the system's file dialog can't be filled from here: that says so.
+const UPLOAD_MAX = 25 * 1024 * 1024, PIECE = 512 * 1024;
+const TYPES = { pdf: "application/pdf", png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp", csv: "text/csv", txt: "text/plain", json: "application/json", zip: "application/zip", mp4: "video/mp4", docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" };
+function uploadInOwnChrome(id, regionId, files, opts = {}) {
+  const f = uploadFiles(files);
+  if (f.error) return Promise.resolve(f);
+  const total = f.files.reduce((n, x) => n + statSync(x).size, 0);
+  if (total > UPLOAD_MAX) return Promise.resolve({ error: `Those files come to ${Math.round(total / 1048576)} MB: your own Chrome takes up to ${UPLOAD_MAX / 1048576} MB at a time from Symbiot.` });
+  return actInOwnChrome(id, regionId, "Upload", opts, async (run, at, r, tab) => {
+    const box = await run("fileBox", [r.selector || "", at.x, at.y]);
+    if (!box) return { error: `No file box on the page for "${r.label}". In your own Chrome Symbiot can't answer the system's file dialog: map the page after pressing it, and upload into the box it shows.` };
+    if (box.error) return box;
+    if (f.files.length > 1 && !box.multiple) return { error: `${box.box} takes one file at a time.` };
+    const key = Math.random().toString(36).slice(2), meta = [];
+    for (const [i, file] of f.files.entries()) {
+      const b64 = readFileSync(file).toString("base64"), n = Math.max(1, Math.ceil(b64.length / PIECE));
+      for (let k = 0; k < n; k++) { const x = await askChrome("put", { key, file: i, part: k, parts: n, data: b64.slice(k * PIECE, (k + 1) * PIECE) }); if (x.error) return x; }
+      meta.push({ name: basename(file), type: TYPES[(file.split(".").pop() || "").toLowerCase()] || "" });
+    }
+    const x = await askChrome("attach", { tab, key, files: meta }, { timeout: 120000 });
+    if (x.error) return { error: refusedBy(x) };
+    return x.result && x.result.ok ? { uploaded: r.label, files: f.files, used: `${box.box}, ${box.how}` } : { error: (x.result && x.result.error) || "The file box didn't take the files." };
+  });
+}
+// Whole page: the page scrolled a window at a time, what's on each part kept (collectJs(true), in
+// the extension's own world on the page), drawn as one tall screen. Only looks, so it never asks.
+// A page whose list scrolls inside it (a mailbox) can't be opened out here: Scroll goes down it.
+async function wholeInOwnChrome(id) {
+  const s = ownScreen(id); if (!s) return { error: "not found" };
+  const t = await tabOf(s); if (t.error) return t;
+  const run = (fn, args = []) => askChrome("run", { tab: t.tab, fn, args }).then((x) => x.error ? { error: refusedBy(x) } : x.result);
+  const first = await run("height"); if (!first || first.error) return first || { error: "Couldn't read the page." };
+  if (first.inside) return { error: "This page's list scrolls inside it, so it can't be opened out in your own Chrome: use Scroll down to map the next part of it.", inside: true, stay: true };
+  const view = await run("view"); if (!view || view.error) return view || { error: "Couldn't read the page." };
+  let info = null, h = first.h, end = 0;
+  await run("wholeDone");
+  try {
+    for (let y = 0, i = 0; i < 60; i++) {
+      const m = await run("scroll", [y, ""]); const at = (m && m.y) || 0;
+      await new Promise((ok) => setTimeout(ok, 150));
+      info = await run("collectWhole"); if (!info || info.error) return info || { error: "Couldn't read the page." };
+      end = at + view.h; h = ((await run("height")) || {}).h || h;
+      if (end >= Math.min(MAX_TALL, h) || at < y || info.items.length >= 200) break;
+      y = Math.min(at + view.h - 200, Math.min(MAX_TALL, h) - view.h);
+    }
+  } finally { await run("wholeDone"); }
+  const tall = Math.min(MAX_TALL, end), items = info.items.filter((r) => r.y < tall);
+  const saved = saveScreen(s.name.replace(/ ↓ \d+%$/, "").slice(0, 67) + " (whole page)", wirePng(view.w, tall, items), { url: info.url, title: info.title, full: true, items, via: "own-chrome" });
+  if (saved.error) return saved;
+  const note = [DRAWN, h > tall + 1 && `The page goes on past ${tall} pixels, so this map stops there.`, items.length >= 200 && "It marks the first 200 buttons, links and fields, from the top."].filter(Boolean).join(" ");
+  return { ...saved, drawn: true, note, kept: !!t.same };
+}
 
-export { ownScreen, actInOwnChrome, pressInOwnChrome, typeInOwnChrome, scrollInOwnChrome, NOT_YET, CLICK_JS, TYPE_JS, HOST_NAME, EXT_ID, OWN_DIR, EXT_DIR, OWN_SOCK, extId, fnOf, pageJs, writeExtension, browsers, hostManifest, writeLauncher, setupOwnChrome, refreshOwnChrome, hostsSetUp, startBroker, stopBroker, askChrome, ownChromeStatus, mapInOwnChrome, saveLook, NOT_CONNECTED };
+export { uploadInOwnChrome, wholeInOwnChrome, setStarter, ownChromeFor, ownScreen, actInOwnChrome, pressInOwnChrome, typeInOwnChrome, chooseInOwnChrome, fillInOwnChrome, scrollInOwnChrome, CLICK_JS, TYPE_JS, HOST_NAME, EXT_ID, OWN_DIR, EXT_DIR, OWN_SOCK, extId, fnOf, pageJs, writeExtension, browsers, hostManifest, writeLauncher, setupOwnChrome, refreshOwnChrome, hostsSetUp, startBroker, stopBroker, askChrome, ownChromeStatus, mapInOwnChrome, saveLook, NOT_CONNECTED };

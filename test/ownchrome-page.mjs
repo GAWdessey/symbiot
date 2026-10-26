@@ -26,8 +26,10 @@ const html = `<!doctype html><title>Form</title><body style="margin:0;font:16px 
 <input id="name" aria-label="Name" style="width:300px"><button id="go" type="button">Go</button>
 <div id="note" contenteditable="true" aria-label="Note" style="width:300px;height:40px;border:1px solid #888;margin-top:20px"></div>
 <form id="f" style="margin-top:20px"><input id="q" aria-label="Search" name="q"></form>
+<select id="plan" aria-label="Plan" style="margin-top:20px"><option value="free">Free</option><option value="pro">Pro</option></select>
 <script>
-  window.heard = { input: [], click: 0, down: 0, submit: 0, note: 0 };
+  window.heard = { input: [], click: 0, down: 0, submit: 0, note: 0, plan: '' };
+  document.getElementById('plan').addEventListener('change', (e) => { heard.plan = e.target.value; });
   document.getElementById('name').addEventListener('input', (e) => heard.input.push(e.target.value));
   document.getElementById('go').addEventListener('mousedown', () => heard.down++);
   document.getElementById('go').addEventListener('click', () => heard.click++);
@@ -49,7 +51,7 @@ else {
       const call = (fn, ...args) => own(`self.__symbiot[${JSON.stringify(fn)}](...${JSON.stringify(args)})`);
       const info = await call("collect");
       const labels = info.items.map((r) => r.label);
-      ok("collect maps the page from its own world", ["Name", "Go", "Note", "Search"].every((l) => labels.includes(l)) && info.title === "Form", labels);
+      ok("collect maps the page from its own world", ["Name", "Go", "Note", "Search", "Plan"].every((l) => labels.includes(l)) && info.title === "Form", labels);
       const go = info.items.find((r) => r.label === "Go"), name = info.items.find((r) => r.label === "Name"), note = info.items.find((r) => r.label === "Note"), q = info.items.find((r) => r.label === "Search");
       const at = await call("find", go.selector, "Go", { x: go.x + go.w / 2, y: go.y + go.h / 2 });
       ok("find: the region by its selector, clear of anything over it", at && at.by === "selector" && at.clear === true, at);
@@ -64,6 +66,12 @@ else {
       await call("click", q.x + 5, q.y + 5);
       await call("type", "invoices", true);
       ok("Enter in a one-line form submits it", await main("heard.submit") === 1, await main("heard"));
+      await call("click", name.x + 5, name.y + 5);
+      const part = await call("selectPart", "Example"), ins = await call("insert", "Sample");
+      ok("replace: only the part is typed over, the rest stays, and the page heard it", part.ok && ins.ok && await main("document.getElementById('name').value") === "Pat Sample" && (await main("heard.input")).includes("Pat Sample"), { part, ins, v: await main("document.getElementById('name').value") });
+      const plan = info.items.find((r) => r.label === "Plan");
+      const ch = await call("chooseSelect", plan.selector, plan.x + 5, plan.y + 5, "Pro");
+      ok("chooseSelect: a native menu set by its option's label, and the page's change handler hears it", ch && ch.native && ch.chose === "Pro" && await main("heard.plan") === "pro", { ch, heard: await main("heard") });
       ok("nothing it set leaks into the page's world", await main("typeof self.__symbiot") === "undefined");
     });
   } catch (e) {
