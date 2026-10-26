@@ -356,6 +356,7 @@ var os=y.options||[];if(y.draft)h+=draftHtml(y.draft);if(y.status)h+="<div class
 if(y.report&&y.report.id)h+="<div class='bo'><button type='button' class='nopt brep' title='opens it on Reports'><span class='bt'>Read the report: "+esc(lqShort(y.report.title,60))+" &rsaquo;</span></button></div>";
 if(y.fix==='handover'&&y.sub)h+="<div class='bfor' title='"+escQ(y.sub)+"'>for: "+esc(y.sub)+"</div>";
 if(y.done&&typeof y.done==='object'&&y.done.lane)h+="<div class='bdone' title='"+escQ(y.done.text)+"'>"+esc(y.done.lane)+" has done this already: "+esc(y.done.text)+"</div>"; // (a string is what the agent says it has done so far, shown above)
+if(y.doneBy&&y.doneBy.lane&&y.doneBy.text)h+="<div class='bdone' title='"+escQ(y.doneBy.text)+"'>Already done by "+esc(y.doneBy.lane)+"&#39;s agent: "+esc(y.doneBy.text)+"</div>";
 if(y.run&&y.run.length)h+=runHtml(y);
 if(y.shared)h+="<div class='bdone' title='"+escQ("Your answer to "+y.shared.lane+": "+y.shared.a+" (its agent has it too, and checks whether it settles this)")+"'>Got your answer to "+esc(lqShort(y.shared.lane,40))+": &ldquo;"+esc(lqShort(y.shared.a,80))+"&rdquo;</div>";
 if(y.signInTo)h+="<div class='bo'><button type='button' class='nopt bsign' title='opens "+escQ(y.signInTo.name)+" in the Symbiot Browser: sign in there, then click Done'><span class='bt'>Sign in to "+esc(y.signInTo.name)+" &rsaquo;</span></button></div>";
