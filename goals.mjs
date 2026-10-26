@@ -134,7 +134,7 @@ async function doneWhenFor(g, { write } = {}) {
 // ---- where each child stands ---------------------------------------------------------
 // A run left waiting or paused is over once a later run in its folder finished, or once the folder's
 // TASKS.md has nothing open left: runs end that way from 0.94.1 (jobs.mjs supersede), and these read
-// the records from before it the same. Goal 440329bc asked "Can I redeploy sts-prod now…" five times
+// the records from before it the same. Goal 440329bc asked "Can I redeploy the server now…" five times
 // on 26 Oct 2026 from a run whose next run had done the redeploy and ticked the item.
 const laterFinished = (j, ctx) => ctx.jobs.find((x) => x.outcome && String(x.key).startsWith("run:") && x.path === j.path && (x.at || 0) > (j.at || 0) && FINISHED.has(x.state));
 function openItemsIn(path) { // the [ ] and [~] items in its folder's TASKS.md, or null with none to read

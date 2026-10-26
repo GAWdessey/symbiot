@@ -104,19 +104,19 @@ try {
     // as jobs.json had them: run A waiting on the user (bare, its summary asks for a yes), three paused
     // before it, then run B in the same folder done with the folder's only item ticked
     const pa = join(CFG, "drafts", "act-a7ea0001"), a0 = Date.now() - 5 * H;
-    mkdirSync(join(pa, ".symbiot"), { recursive: true }); writeFileSync(join(pa, ".symbiot", "TASKS.md"), "# Tasks\n\n- [x] Redeploy sts-prod so the Replies check runs\n");
+    mkdirSync(join(pa, ".symbiot"), { recursive: true }); writeFileSync(join(pa, ".symbiot", "TASKS.md"), "# Tasks\n\n- [x] Redeploy the server so the Replies check runs\n");
     const gr = G.openGoal("Get the 15-minute Replies check running in production", { child: "run:sa1", lane: "act-a7ea0001", path: pa, now: a0 });
     const rec = (id, at, o) => ({ key: "run:" + id, kind: "agent", lane: "act-a7ea0001", path: pa, text: "a run", waitingOn: "", at, changed: at + 60e3, history: [], outcome: true, ...o });
-    const ask = "PR 561 is merged, but the 15-minute Replies check isn't running in production yet. Someone needs to redeploy sts-prod. Can I redeploy sts-prod now to start the Replies check? Say yes and I'll do it.";
+    const ask = "PR 561 is merged, but the 15-minute Replies check isn't running in production yet. Someone needs to redeploy the server. Can I redeploy the server now to start the Replies check? Say yes and I'll do it.";
     J.saveJobs([...J.loadJobs(), rec("sp1", a0 + 1000, { state: "paused", bare: true }), rec("sp2", a0 + 2000, { state: "paused" }), rec("sp3", a0 + 3000, { state: "paused", bare: true }),
-      rec("sa1", a0 + 4000, { state: "waiting", waitingOn: "user", bare: true, task: "Redeploy sts-prod so the Replies check runs", summary: ask }), rec("sb1", a0 + 5000, { state: "done", summary: "Redeployed sts-prod; the Replies check ran at 10:15." })]);
+      rec("sa1", a0 + 4000, { state: "waiting", waitingOn: "user", bare: true, task: "Redeploy the server so the Replies check runs", summary: ask }), rec("sb1", a0 + 5000, { state: "done", summary: "Redeployed the server; the Replies check ran at 10:15." })]);
     const card = () => G.goalById(gr.key).card;
     await G.goalsTick(deps(), { now: a0 + H });
     ok("the waiting run with a later finished one: no \"user\" card from its summary", !(card() && card().kind === "user"), card());
     const rows = G.rollUp({ ...G.goalById(gr.key) }, { ...base(), jobs: J.loadJobs() }).kids;
     ok("…it and the paused runs before it read as ended", ["run:sa1", "run:sp1", "run:sp2", "run:sp3"].every((k) => rows.some((c) => c.key === k && c.state === "ended")), rows);
     // the card it had kept rebuilding: answered and cleared, the next tick must not bring it back
-    J.putGoal({ ...G.goalById(gr.key), state: "waiting", closed: null, card: { kind: "user", q: "Can I redeploy sts-prod now to start the Replies check?", options: ["Go ahead", "Drop it"], at: a0 } });
+    J.putGoal({ ...G.goalById(gr.key), state: "waiting", closed: null, card: { kind: "user", q: "Can I redeploy the server now to start the Replies check?", options: ["Go ahead", "Drop it"], at: a0 } });
     const ans = G.goalAnswer(gr.key, [{ q: "x", a: "Go ahead" }], deps());
     await G.goalsTick(deps(), { now: a0 + 2 * H });
     ok("…answering clears the card, and the next tick doesn't bring it back", ans.ok && !(card() && card().kind === "user"), card());

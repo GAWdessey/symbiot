@@ -33,7 +33,7 @@ function shift(j, state, now) { if (state === j.state) return; j.history = [...(
 // A folder's older run records left waiting or paused are over once a later run there finishes: it
 // worked from the same TASKS.md, and its end is the folder's state now (runRecord reads only the
 // newest). Left as they were, the goal over them (goals.mjs) asked the user for a step the later run
-// had done: "Can I redeploy sts-prod now…" five times on 26 Oct 2026, with three paused records
+// had done: "Can I redeploy the server now…" five times on 26 Oct 2026, with three paused records
 // beside it that would have held the goal open for good.
 const FINISHED = new Set(["done", "review"]);
 function supersede(jobs, j, now) {
