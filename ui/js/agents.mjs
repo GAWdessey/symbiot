@@ -15,11 +15,15 @@ function relHtml(rl){return "<div class='qrel"+(rl.waiting?" wait":"")+"'>Needs 
 (rl.waiting==='npm'?" &middot; not published yet, so this can't be done yet":rl.waiting==='install'?" &middot; "+(rl.name==='symbiot'?"update Symbiot first":"install it first"):"")+"</div>";}
 function askHtml(a){var k=a.ask;if(!k)return '';var qs=k.questions||[],ss=k.suggestions||[],aw=k.away||[];if(!qs.length&&!ss.length&&!aw.length)return '';
 var h="<div class='aq' data-id='"+esc(a.id)+"'>";
+// One question: pressing an option is the answer, sent at once, and the agent carries on (as on
+// Home); a radio and then "Send answers & continue" was two steps for a single Go. Several: an
+// option press picks it, and the block's Send answers sends them together, so no run starts on half.
+var one=qs.length===1;
 if(qs.length){h+="<h4><i class=ic-ask></i> "+qs.length+" question"+(qs.length>1?"s":"")+" for you</h4>";
 qs.forEach(function(q,i){var rl=q.release;h+="<div class='q' data-i='"+i+"'>"+(q.task?"<div class='qfor' title='"+escQ(q.task)+"'>for: "+esc(q.task)+"</div>":"")+"<div class='qt'>"+esc(q.shown||q.q)+"</div>"+(q.context?"<div class='qc'>"+codeText(q.context)+"</div>":"")+(rl?relHtml(rl):"");
-(q.options||[]).forEach(function(o,j){var off=rl&&rl.waiting&&DONEOPT.test(o);h+="<label class='opt"+(off?" off":"")+"'><input type='radio' name='q_"+esc(a.id)+"_"+i+"' value='"+j+"'"+(off?" disabled":"")+"><span>"+whoHtml((q.labels&&q.labels[j])||o)+(off?" <i>(once "+esc(rl.name+" "+rl.needs)+" is installed)</i>":"")+"</span></label>";});
-h+="<input class='qother' placeholder='"+((q.options&&q.options.length)?"or answer in your own words":"your answer")+"'></div>";});
-h+="<div class='row'><button class='act qsend' title='save the answers and hand the repo back to your agent'>Send answers &amp; continue</button><button class='ghost qsave' title='save the answers for the next run'>Save only</button></div>";}
+var os=q.options||[];if(os.length)h+="<div class='qopts' role='group' aria-label='answers to choose from'>"+os.map(function(o,j){var off=rl&&rl.waiting&&DONEOPT.test(o);return "<button type='button' class='qopt "+(one&&!j?"act":"ghost")+"' data-j='"+j+"'"+(off?" disabled":"")+(one?"":" aria-pressed='false'")+">"+whoHtml((q.labels&&q.labels[j])||o)+(off?" <i>(once "+esc(rl.name+" "+rl.needs)+" is installed)</i>":"")+"</button>";}).join('')+"</div>";
+h+="<div class='qown'><input class='qother' aria-label='"+(os.length?"or answer in your own words":"your answer")+"' placeholder='"+(os.length?"or answer in your own words":"your answer")+"'>"+(one?"<button type='button' class='ghost qsend' title='saves your answer and hands the work back to its agent'>Send answer</button>":"")+"</div></div>";});
+if(!one)h+="<div class='row'><button class='act qsend' title='save the answers and hand the repo back to your agent'>Send answers &amp; continue</button><button class='ghost qsave' title='save the answers for the next run'>Save only</button></div>";}
 if(ss.length){var shown=IDEASOPEN[a.path]?ss.length:(k.ideasShown||ss.length),nf=ss.filter(function(s){return s.from;}).length;h+="<h4><i class=ic-idea></i> "+(!nf?"Ideas from the agent":nf===ss.length?"Ideas for "+esc(a.name)+" from other agents":"Ideas for "+esc(a.name))+"</h4>";ss.forEach(function(s,i){if(i>=shown)return;h+=ideaHtml(s,i,'');});
 if(ss.length>shown)h+="<div class='row'><button class='ghost qmore' title='the agent ranks its ideas best first: weigh these two before adding more'>"+(ss.length-shown)+" more idea"+(ss.length-shown>1?"s":"")+", ranked lower</button></div>";}
 // ideas it had for another lane are on that lane's card (agents.mjs routeIdeas): here, one line saying where they went
@@ -31,21 +35,28 @@ var IDEASOPEN={};
 function qKeyOf(qe){var box=qe.closest('.aq');var a=box&&agentById(box.getAttribute('data-id'));var q=a&&a.ask.questions[+qe.getAttribute('data-i')];return q?a.path+'|'+q.q:'';}
 // the typed answer is kept in localStorage too (bdSet, the same key as its blob on Home): a reload or a restart keeps it
 if(document.addEventListener)document.addEventListener('input',function(ev){var t=ev.target;if(!t||!t.classList||!t.classList.contains('qother')||!t.closest)return;var qe=t.closest('.aq .q'),k=qe&&qKeyOf(qe);if(k)bdSet(k,t.value,null,null,'desk');});
-function saveDrafts(el){el.querySelectorAll('.aq .q').forEach(function(qe){var k=qKeyOf(qe);if(!k)return;var pick=qe.querySelector('input[type=radio]:checked'),t=qe.querySelector('.qother').value;QDRAFT[k]={o:pick?pick.value:'',t:t};if(t||bdAll()[k])bdSet(k,t,null,null,'desk');});}
-function restoreDrafts(el){el.querySelectorAll('.aq .q').forEach(function(qe){var k=qKeyOf(qe),d=QDRAFT[k];if(!d&&k){var b=bdAll()[k];if(b&&b.text)d={o:'',t:b.text};}if(!d)return;qe.querySelectorAll('input[type=radio]').forEach(function(r){r.checked=!r.disabled&&r.value===d.o;});qe.querySelector('.qother').value=d.t||'';});}
+function saveDrafts(el){el.querySelectorAll('.aq .q').forEach(function(qe){var k=qKeyOf(qe);if(!k)return;var pick=qe.querySelector('.qopt.on'),t=qe.querySelector('.qother').value;QDRAFT[k]={o:pick?pick.getAttribute('data-j'):'',t:t};if(t||bdAll()[k])bdSet(k,t,null,null,'desk');});}
+function restoreDrafts(el){el.querySelectorAll('.aq .q').forEach(function(qe){var k=qKeyOf(qe),d=QDRAFT[k];if(!d&&k){var b=bdAll()[k];if(b&&b.text)d={o:'',t:b.text};}if(!d)return;qe.querySelectorAll('.qopt[aria-pressed]').forEach(function(b){pickOpt(b,!b.disabled&&b.getAttribute('data-j')===d.o);});qe.querySelector('.qother').value=d.t||'';});}
 function collectAnswers(box,a){var out=[];box.querySelectorAll('.q').forEach(function(qe){var q=a.ask.questions[+qe.getAttribute('data-i')];if(!q)return;
-var other=(qe.querySelector('.qother').value||'').trim();var pick=qe.querySelector('input[type=radio]:checked');var ans=other||(pick?q.options[+pick.value]:'');if(ans)out.push({q:q.q,a:ans});});return out;}
+var other=(qe.querySelector('.qother').value||'').trim();var pick=qe.querySelector('.qopt.on');var ans=other||(pick?q.options[+pick.getAttribute('data-j')]:'');if(ans)out.push({q:q.q,a:ans});});return out;}
+// a picked option fills as the block's main button does (act); the rest stay outlined
+function pickOpt(b,on){b.classList.toggle('on',on);if(!b.hasAttribute('aria-pressed'))return;b.setAttribute('aria-pressed',on?'true':'false');b.classList.toggle('act',on);b.classList.toggle('ghost',!on);}
 function wireAsks(el){el.querySelectorAll('.aq').forEach(function(box){var a=agentById(box.getAttribute('data-id'));if(!a||!a.ask)return;
-function send(rerun){var msg=document.getElementById(box.closest('#panel-asks')?'asksmsg':'agentsmsg');var ans=collectAnswers(box,a);
+function send(rerun,given){var msg=document.getElementById(box.closest('#panel-asks')?'asksmsg':'agentsmsg');var ans=given||collectAnswers(box,a);
 if(!ans.length){msg.innerHTML="<div class='note err'>Pick an option or type an answer first.</div>";return;}
 box.querySelectorAll('button').forEach(function(b){b.disabled=true;});
 api('/api/agents/answer',{path:a.path,answers:ans,rerun:rerun}).then(function(r){
-if(!r||r.error){box.querySelectorAll('button').forEach(function(b){b.disabled=false;});msg.innerHTML="<div class='note err'>"+esc((r&&r.error)||'failed')+"</div>";return;}
+if(!r||r.error){box.querySelectorAll('button').forEach(function(b){b.disabled=false;});if(given)box.querySelectorAll('.qopt.on').forEach(function(b){pickOpt(b,false);});msg.innerHTML="<div class='note err'>"+esc((r&&r.error)||'failed')+"</div>";return;}
 ans.forEach(function(x){var k=a.path+'|'+x.q;delete QDRAFT[k];bdSet(k,'');}); // sent: its drafts go
 if(r.talk){box.querySelectorAll('button').forEach(function(b){b.disabled=false;});box.querySelectorAll('input.qother').forEach(function(i){i.value='';});msg.innerHTML="<div class='lqblob'>"+blobTalk(r.talk,a.name)+"</div><div class='muted'>The question stays open: answer it when you're ready.</div>";return;}
 msg.innerHTML="<div class='note ok'>&#10003; Saved "+r.saved+" answer"+(r.saved>1?"s":"")+" for <b>"+esc(a.name)+"</b> in .symbiot/ANSWERS.md"+(r.rerun?" &middot; your agent is picking them up now.":".")+(r.yours&&r.yours.length?"<div class='err'><i class=ic-person></i> Still yours to do: "+esc(r.yours.join(' '))+"</div>":"")+(r.note?"<div class='muted'>"+esc(r.note)+"</div>":"")+"</div>";loadAgents();if(current==='asks')loadAsks();});}
 var s1=box.querySelector('.qsend'),s2=box.querySelector('.qsave');
 if(s1)s1.addEventListener('click',function(){send(true);});if(s2)s2.addEventListener('click',function(){send(false);});
+box.querySelectorAll('.qopt').forEach(function(btn){btn.addEventListener('click',function(){var qe=btn.closest('.q'),q=a.ask.questions[+qe.getAttribute('data-i')];if(!q)return;
+if(!btn.hasAttribute('aria-pressed')){pickOpt(btn,true);send(true,[{q:q.q,a:q.options[+btn.getAttribute('data-j')]}]);return;}
+var on=!btn.classList.contains('on');qe.querySelectorAll('.qopt').forEach(function(b){pickOpt(b,on&&b===btn);});});});
+// Enter in a typed answer sends it, as the button beside it does
+box.querySelectorAll('.qown .qother').forEach(function(inp){inp.addEventListener('keydown',function(ev){if(ev.key==='Enter'&&!ev.isComposing&&s1&&a.ask.questions.length===1&&inp.value.trim()){ev.preventDefault();send(true);}});});
 var more=box.querySelector('.qmore');if(more)more.addEventListener('click',function(){IDEASOPEN[a.path]=true;loadAgents();});
 box.querySelectorAll('.qidea').forEach(function(btn){btn.addEventListener('click',function(){var s=ideaOf(a,btn);if(!s)return;btn.disabled=true;
 var sk=btn.parentNode.querySelector('.qskip');if(sk)sk.remove();

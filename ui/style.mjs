@@ -725,6 +725,15 @@ body.lq-light .rbackbar{background:rgba(246,248,251,.95);box-shadow:0 1px 0 rgba
 .aq .qrel{font-size:12px;margin-top:4px;color:var(--green)}.aq .qrel.wait{color:var(--amber)}
 .aq label.opt.off{color:var(--faint);cursor:default}.aq .opt.off i{font-size:12px}
 .aq .qother{margin-top:7px;padding:7px 10px;font-size:13px}
+.aq .qopts{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.aq .qopt{min-height:36px;padding:7px 16px;max-width:100%;text-align:left;white-space:normal;line-height:1.35;font-size:13px}
+.aq .qopt i{font-size:12px;opacity:.8}
+.aq .qopt:focus-visible,.aq .qsend:focus-visible{outline:2px solid currentColor;outline-offset:2px}
+.aq .qown{display:flex;gap:8px;align-items:center;margin-top:8px}
+.aq .qown .qother{flex:1;min-width:0;margin-top:0}
+.aq .qown .qsend{flex:none;padding:7px 14px;font-size:13px}
+body.lq-touch .aq .qopt,body.lq-touch .aq .qown .qsend,body.lq-touch .aq .qown .qother{min-height:44px}
+@media (max-width:520px){.aq .qopts{flex-direction:column}.aq .qopt{width:100%}.aq .qown{flex-wrap:wrap}.aq .qown .qother{flex:1 1 100%}.aq .qopt,.aq .qown .qsend,.aq .qown .qother{min-height:44px}}
 .aq .row{margin:10px 0 2px}
 label.check{display:flex;gap:8px;align-items:center;font-size:13px;color:var(--text);margin:6px 0}
 label.check input{width:auto}
@@ -938,11 +947,12 @@ body.lq-liquid #panel-tasks > .note,body.lq-liquid #panel-tasks .tnote{font-size
 body.lq-liquid .aq{border:1px solid rgba(255,255,255,.08);border-left:2px solid var(--amber);border-radius:14px;background:rgba(255,255,255,.03);padding:12px 16px}
 body.lq-liquid.lq-light .aq{border-color:rgba(21,26,33,.08);border-left-color:var(--amber);background:rgba(255,255,255,.55)}
 body.lq-liquid .aq h4{font:600 11px var(--sans);letter-spacing:.1em;display:flex;align-items:center;gap:6px}
-body.lq-liquid .aq .q{border-bottom-color:var(--line)}
+body.lq-liquid .aq .q{padding:12px 16px;margin:8px 0 0}
 body.lq-liquid .aq label.opt{gap:10px;padding:4px 0}
 body.lq-liquid .aq .opt input{margin-top:1px}
 body.lq-liquid .who{display:inline-flex;align-items:center;gap:4px;padding:1px 8px;border-radius:999px;background:rgba(255,255,255,.07);font-size:12px;font-weight:600;color:var(--bone);white-space:nowrap}
 body.lq-liquid.lq-light .who{background:rgba(21,26,33,.06)}
+body.lq-liquid .aq .qopt .who,body.lq-liquid.lq-light .aq .qopt .who{font-size:11px;padding:0 6px;margin-right:4px;background:transparent;color:inherit;border:1px solid currentColor;opacity:.8}
 /* drift */
 body.lq-liquid .drift{border:1px solid rgba(255,255,255,.07);background:rgba(255,255,255,.03);border-radius:14px;padding:14px 16px}
 body.lq-liquid.lq-light .drift{border-color:rgba(21,26,33,.07);background:rgba(255,255,255,.55)}
