@@ -86,8 +86,8 @@ try {
   // 23 Oct 2026: "what is this for?" typed on a relay card (needs:earlier-7f4dfae5, not among Home's first six)
   // went to its agent as "this card", in ~/earlier-7f4dfae5, and the AI said the card was empty.
   const N = await import("../needs.mjs");
-  ok("blank, placeholder and self-referential words are no question", ["", "  ", "this card", "This card?", "the card", "undefined", "N/A", "…", "null"].every(N.blankText) && !N.blankText("Can I send the guide to Jono?") && !N.blankText("I didn't send it to anyone."));
-  ok("…a card is blank only when none of its words say anything", N.blankAsk({ kind: "ask", q: "this card", sub: "" }) && !N.blankAsk({ kind: "ask", q: "", sub: "Send the guide to Jono?" }) && !N.blankAsk({ kind: "setup", title: "Connect an AI" }));
+  ok("blank, placeholder and self-referential words are no question", ["", "  ", "this card", "This card?", "the card", "undefined", "N/A", "…", "null"].every(N.blankText) && !N.blankText("Can I send the guide to Alex?") && !N.blankText("I didn't send it to anyone."));
+  ok("…a card is blank only when none of its words say anything", N.blankAsk({ kind: "ask", q: "this card", sub: "" }) && !N.blankAsk({ kind: "ask", q: "", sub: "Send the guide to Alex?" }) && !N.blankAsk({ kind: "setup", title: "Connect an AI" }));
   const logged = [], cards = [{ kind: "ask", id: "needs:r9", path: run, q: "this card", title: "Grok guide waits for your OK" }, { kind: "ask", id: "ask:" + run, path: run, q: Q }];
   const kept = H.dropBlank(cards, [{ id: "r9", path: run, name: "Agent: Make a clean copy of the guide" }], (l) => logged.push(l));
   ok("the blank card is dropped, the real one kept", kept.length === 1 && kept[0].q === Q, kept);
@@ -97,7 +97,7 @@ try {
   ok("a card Home or the relay built is found by its id, with its own question and folder", (H.cardFor("needs:r9", { deps: { shown } }) || {}).q === NQ && H.cardFor("needs:r9", { deps: { shown } }).path === run);
   const none = new Map(), runs = () => [{ id: "earlier-7f4dfae5", path: run, needs: { what: "I didn't send it to anyone.", check: "the brief" } }];
   ok("…one gone since is found from its run, by the run's id, never as a folder named for it", (H.cardFor("needs:earlier-7f4dfae5", { deps: { shown: none, agents: runs } }) || {}).path === run && /didn't send it/.test(H.cardFor("needs:earlier-7f4dfae5", { deps: { shown: none, agents: runs } }).q));
-  ok("…else with the question the page sent", (H.cardFor("needs:gone1", { q: "Send it to Jono?", deps: { shown: new Map([["needs:gone1", { id: "needs:gone1", path: run, q: "" }]]), agents: () => [] } }) || {}).q === "Send it to Jono?");
+  ok("…else with the question the page sent", (H.cardFor("needs:gone1", { q: "Send it to Alex?", deps: { shown: new Map([["needs:gone1", { id: "needs:gone1", path: run, q: "" }]]), agents: () => [] } }) || {}).q === "Send it to Alex?");
   ok("…and with no real folder or question, there's no card: nothing is made up", H.cardFor("needs:earlier-7f4dfae5", { deps: { shown: none, agents: () => [] } }) === null && H.cardFor("needs:r9", { q: "this card", deps: { shown: new Map([["needs:r9", { id: "needs:r9", path: run, q: "" }]]), agents: () => [] } }) === null);
   ok("cardTalk won't talk about \"this card\"", (await H.cardTalk(run, [{ q: "this card", a: "what is this for?" }], { force: true, ask: async () => JSON.stringify({ reply: "it's empty" }) })) === null);
   S.addTalk("goal:7b486530", "Should I move the domain?", { from: "you", text: "how should i know" });

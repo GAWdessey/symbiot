@@ -122,7 +122,7 @@ function judgeConnector(tool, input = {}, { session = "", home = homedir(), now 
   if (!h) { h = { id: randomBytes(4).toString("hex"), host, summary, kind: "send", at: now, session }; holds.push(h); writeJson(HOLDS(home), holds.slice(-200)); }
   // the user's standing rules that name who it goes to (their address, or a name in it)
   const names = new Set(to.flatMap((x) => [x.toLowerCase(), ...x.toLowerCase().split(/[@.+_\s-]+/).filter((w) => /^[a-z]{4,}$/.test(w) && !/^(gmail|outlook|yahoo|hotmail|mail|info|team|hello|support|com)$/.test(w))]));
-  // …or a name in a rule that's part of the address ("Jono" in jsmithjono@…): not a word that starts a sentence
+  // …or a name in a rule that's part of the address ("Alex" in jsmithalex@…): not a word that starts a sentence
   const locals = to.map((x) => ((x.match(/([\w.+-]+)@/) || [])[1] || "").toLowerCase()).filter(Boolean);
   const named = (r) => [...r.matchAll(/(?<![.!?]\s|^)\b([A-Z][a-z]{3,})\b/g)].some((w) => locals.some((l) => l.includes(w[1].toLowerCase())));
   const rules = (readJson(join(dir(home), "standing.json"), []) || []).map((r) => String((r && r.rule) || "")).filter((r) => r && ([...names].some((n) => new RegExp(`\\b${n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`, "i").test(r)) || named(r)));
