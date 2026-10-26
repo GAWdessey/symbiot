@@ -138,6 +138,19 @@ try {
   ok("…the page does that on focus", /addEventListener\('focus',function\(\)\{if\(VCLIP\.pend/.test(uiJs));
   ok("no clipboard: Copy says so instead of pretending", (await page.vaultClip(KEY, { clip: {}, later, stop })) === false);
   ok("leaving the page or hiding the window locks it", /if\(tab==='vault'\)\{[^}]*\}else\{if\(VLT\.del\)vaultFlush\(\);if\(VLT\.token\|\|Object\.keys\(VLT\.shown\)\.length\)vaultLockNow\(\)/.test(uiJs) && /document\.hidden&&VLT\.token\)vaultLockNow\(\)/.test(uiJs));
+  // a failed reload, over a list that had loaded with the lockout box and a note up: only the error and Try again are left
+  const el = (id) => ({ id, innerHTML: "", textContent: "", className: "", style: {}, classes: new Set(), classList: { add(c) { this.o.classes.add(c); }, remove(c) { this.o.classes.delete(c); }, toggle(c, on) { if (on) this.o.classes.add(c); else this.o.classes.delete(c); }, contains(c) { return this.o.classes.has(c); } }, querySelector: () => null });
+  const dom = {}; for (const id of ["panel-vault", "vaultlist", "vaultdetail", "vaultlock", "vaultfilters", "vaultlogbox", "vaultmsg", "vaultsheet"]) { dom[id] = el(id); dom[id].classList.o = dom[id]; }
+  const vbar = el("vbar"); vbar.classList.o = vbar; dom["panel-vault"].querySelector = (s) => (s === ".vbar" ? vbar : null);
+  const draw = new Function("$", "document", "var current='vault',agoTxt=function(){return 'just now';};" + uiJs.match(/var VLT=\{.*\n/)[0] + grabVar("VIC") + ["esc", "escQ", "vaultOpen", "vaultLeft", "vaultSay", "vaultChip", "vaultClose", "vaultDraw"].map(grab).join("\n") + "\nreturn {VLT:VLT,vaultDraw:vaultDraw};")((id) => dom[id] || null, { querySelector: () => null });
+  Object.assign(draw.VLT, { state: "err", list: [e, tw], wait: 300000, waitTo: Date.now() + 300000, sheet: "unlock", then: { act: "show", name: e.name } });
+  dom.vaultsheet.innerHTML = "Too many wrong tries"; dom.vaultmsg.innerHTML = "<span>Copied its name.</span>";
+  draw.vaultDraw();
+  ok("a failed reload: the error and Try again, alone", /Couldn't open the vault/.test(dom.vaultdetail.innerHTML) && /data-va='retry'/.test(dom.vaultdetail.innerHTML) && dom.vaultlist.innerHTML === "" && dom["panel-vault"].classes.has("vsolo"));
+  ok("…no search, lock chip or filters, and no log", vbar.style.display === "none" && dom.vaultfilters.innerHTML === "" && dom.vaultlogbox.style.display === "none");
+  ok("…the old lockout box is closed and the old note is gone", dom.vaultsheet.classes.has("hidden") && dom.vaultsheet.innerHTML === "" && draw.VLT.sheet === "" && draw.VLT.then === null && dom.vaultmsg.innerHTML === "");
+  ok("…and Try again shows it loading", /else if\(a==='retry'\)\{VLT\.state='load';vaultDraw\(\);loadVault\(\);\}/.test(uiJs));
+  ok("…the page lays it out alone, on a phone too", /#panel-vault\.vsolo \.vlist\{display:none\}/.test(EMBEDDED_UI) && /#panel-vault\.vsolo \.vdetail\{display:block\}/.test(EMBEDDED_UI));
   ok("Settings links to it, and it's a page by name", /id="openvault"/.test(EMBEDDED_UI) && /vault:'Vault'/.test(uiJs) && (await import("../adapt.mjs")).SHAPES.includes("vault"));
 } finally {
   rmSync(HOME, { recursive: true, force: true });

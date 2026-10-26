@@ -1009,6 +1009,7 @@ body.lq-light #vaultmsg{--vred:#B42318}body.lq-light #panel-vault{--vred:#B42318
 .vdot{width:8px;height:8px;border-radius:50%;background:var(--amber);flex:none}
 .vsplit{display:grid;grid-template-columns:minmax(260px,340px) minmax(0,1fr);gap:18px;align-items:start}
 .vlist{min-width:0}
+#panel-vault.vsolo .vsplit{grid-template-columns:minmax(0,1fr)}#panel-vault.vsolo .vlist{display:none}#panel-vault.vsolo .vdetail{position:static;width:100%;max-width:640px;margin:0 auto}
 .vgh{display:flex;align-items:center;gap:8px;padding:14px 10px 4px;font:600 12.5px var(--sans);color:var(--faint)}.vgh:first-child{padding-top:2px}
 .vgh i{font-style:normal;font-weight:400}
 #panel-vault .vrow{display:flex;align-items:center;gap:11px;width:100%;min-height:54px;padding:8px 10px;margin:1px 0;border-radius:11px;border:0;background:transparent;text-align:left;color:inherit;cursor:pointer;font:inherit}
@@ -1097,6 +1098,7 @@ body.lq-liquid .vsheet{background:#16181C}body.lq-liquid.lq-light .vsheet{backgr
 .vsplit{grid-template-columns:minmax(0,1fr)}
 #panel-vault.vone .vlist,#panel-vault.vone .vfilt,#panel-vault.vone .vbar{display:none}
 #panel-vault:not(.vone) .vdetail{display:none}
+#panel-vault.vsolo .vdetail{display:block}
 .vdetail{position:static;padding:16px;border-radius:14px}
 #panel-vault .vback{display:flex;align-items:center;gap:4px;min-height:40px;margin:0 0 10px;padding:0 10px 0 4px;background:transparent;border:0;color:var(--bone);font:600 14px var(--sans);cursor:pointer}
 .vdh{flex-wrap:wrap}.vdact{width:100%}.vdact button{flex:1}
