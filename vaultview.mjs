@@ -94,8 +94,11 @@ function issuesOf(list, { peek = peekSecret } = {}) {
       const h = createHash("sha256").update(String(v.v)).digest("hex");
       const o = seen.get(h);
       if (o && o !== s.name) {
-        if (!(out[s.name] || []).some((x) => x.kind === "same" && x.other === o)) add(s.name, { kind: "same", other: o, text: `Same value as “${labelOf(o)}”. Keep one: delete the other.` });
-        if (!(out[o] || []).some((x) => x.kind === "same" && x.other === s.name)) add(o, { kind: "same", other: s.name, text: `Same value as “${labelOf(s.name)}”. Keep one: delete the other.` });
+        // two services' logins with one password are both real (people reuse one): never "delete the other"
+        const two = groupOf(o) !== groupOf(s.name) && groupOf(o) !== "Other" && groupOf(s.name) !== "Other";
+        const say = (other) => two ? `Same password as “${labelOf(other)}”, another site's login. Keep both; change one of them on its site when you can.` : `Same value as “${labelOf(other)}”. Keep one: delete the other.`;
+        if (!(out[s.name] || []).some((x) => x.kind === "same" && x.other === o)) add(s.name, { kind: "same", other: o, text: say(o) });
+        if (!(out[o] || []).some((x) => x.kind === "same" && x.other === s.name)) add(o, { kind: "same", other: s.name, text: say(s.name) });
       } else if (!o) seen.set(h, s.name);
     }
   }
