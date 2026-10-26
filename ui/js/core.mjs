@@ -46,7 +46,7 @@ var isMap=tab==='map',isSet=tab==='settings',isTasks=tab==='tasks',isDrift=tab==
 $('panel-map').classList.toggle('hidden',!isMap);
 $('panel-board').classList.toggle('hidden',!isBoard);if(isBoard){loadBoard();loadLinks();}
 $('panel-run').classList.toggle('hidden',!isRun);
-$('panel-settings').classList.toggle('hidden',!isSet);if(isSet){loadFirstSteps();licLoad();langLoad();intuLoad();ovrLoad();loadAgentCfg();loadScanRoots();loadKnowledge();loadLinks();loadLine();loadMind();loadSecrets();triLoad();loadTrusted();loadMail();loadDesktop();loadPhoneLink();}
+$('panel-settings').classList.toggle('hidden',!isSet);if(isSet){loadFirstSteps();licLoad();langLoad();intuLoad();ovrLoad();loadAgentCfg();loadScanRoots();loadKnowledge();loadLinks();loadOwn();loadLine();loadMind();loadSecrets();triLoad();loadTrusted();loadMail();loadDesktop();loadPhoneLink();}
 $('panel-tasks').classList.toggle('hidden',!isTasks);
 $('panel-drift').classList.toggle('hidden',!isDrift);
 $('panel-reports').classList.toggle('hidden',tab!=='reports');if(tab==='reports')loadReports();

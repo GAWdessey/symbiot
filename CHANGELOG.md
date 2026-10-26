@@ -2,6 +2,12 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one), for anyone who installs the app: what changed in it, never whose work it was (no projects, people, accounts, services, run ids or task wording of the person who made it). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.91.0 — 2026-10-26
+
+- **Symbiot can work in your own Chrome.** Some sites turn away a browser under remote control. Symbiot now has its own Chrome extension, so it can work in your everyday Chrome instead, signed in as you, with nothing that marks it as automated. Set it up in Settings → Connections → Your own Chrome. Set up prepares the extension and connects it to Symbiot, and the card shows how to load it in Chrome once. After that, the card says whether it's connected.
+- **Only the sites you allow, in a window of its own.** The extension can't touch any site until you press Allow for that site on its button in Chrome's toolbar, and Forget there takes a site back. It also only works on sites you've linked in Symbiot. It opens its pages in a window of its own, in a tab group named Symbiot, and never touches your own tabs. Stop on its button closes its tabs and disconnects it.
+- **Agents can map, press, type and scroll there, but some presses stay yours.** An agent never presses Send, Post, Pay or Delete in your Chrome, nor Enter in a message box. It leaves the page ready in the Symbiot tab and tells you so. Chrome lets an extension take pictures of pages only if it has access to every site, so a map from your Chrome is a drawing instead: every button, link and field outlined where it is on the page.
+
 ## 0.90.18 — 2026-10-26
 
 - **Sites that refuse this computer's connection are remembered.** When a site's page says this computer's internet address is blocked, or calls it a proxy or VPN, Symbiot notes that site. No browser on this computer gets in there, your own Chrome included, so a step there now asks you to use your phone on mobile data, with the site's own review form when it has one. That step no longer offers a Sign in button, and agents stop retrying the site.

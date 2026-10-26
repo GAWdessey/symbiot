@@ -1073,6 +1073,7 @@ body.lq-light .vmono{color:hsl(var(--h) 55% 28%);background:hsl(var(--h) 60% 90%
 .vlog .vlr{display:flex;gap:10px;padding:6px 0;border-top:1px solid var(--line)}.vlog .vlr b{color:var(--text);font-weight:500;flex:1;min-width:0;overflow-wrap:anywhere}
 #panel-vault .vback{display:none}
 #vaultmsg{position:fixed;left:16px;right:16px;bottom:104px;margin:0 auto;width:fit-content;max-width:560px;box-sizing:border-box;z-index:85;display:flex;align-items:center;gap:12px;padding:10px 10px 10px 16px;border-radius:12px;background:var(--bone);color:var(--ink);font-size:14px;line-height:1.4;box-shadow:0 10px 30px rgba(0,0,0,.35)}
+.ownsteps{margin:6px 0 4px;padding-left:22px}.ownsteps li{margin:4px 0}.ownpathrow{display:flex;gap:8px;align-items:center;margin-top:4px}.ownpath{flex:1;min-width:0;overflow-wrap:anywhere;word-break:break-all;font-size:12.5px;line-height:1.5}.owncopy{flex:none}
 #vaultmsg:empty{display:none}#vaultmsg.err{background:var(--vred);color:#1B0B0C}body.lq-light #vaultmsg.err{color:#fff}
 #vaultmsg button{min-height:32px;padding:0 12px;border-radius:8px;border:0;background:rgba(0,0,0,.12);color:inherit;font:600 13.5px var(--sans);cursor:pointer}
 #vaultsheet{position:fixed;inset:0;z-index:90;display:grid;place-items:center;padding:16px;background:rgba(4,6,8,.55)}
