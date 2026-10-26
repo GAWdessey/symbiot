@@ -35,6 +35,7 @@ import { sessionCookie, mapPage, wholePage, pressRegion, typeRegion, chooseRegio
 import { weeklyState, setWeekly, runWeekly, startWeekly, autostartState, setAutostart, installLauncher, iconSvg, setLauncherLook, desktopNotify } from "./desktop.mjs";
 import { markNews, newsSince, watchState, addWatch, setEvery, removeWatch, clearNews, seenWatch, checkWatch, startWatches, setBrief, draftReply, openChat, watchBoard, boardChat, clearBoardChat } from "./watch.mjs";
 import { setLinkAct, setLinksActAll, linksState, linkSite, checkLink, unlinkSite, addSite, signInAsked, sitesCheck } from "./links.mjs";
+import { lineState, checkLine, forgetBlocked } from "./lineblocks.mjs";
 import { testWeeks, testInstalls, postsState, draftPosts, approvePost, editPost, skipPost, voiceFromLinkedIn, addMedia, removeMedia, mediaFile, mediaDir, pictureOfPage, clipOfPage, openUrl } from "./post.mjs";
 import { mindState, forget, actNow, actIn, loadMind } from "./mind.mjs";
 import { goalsTick, goalAnswer, goalFor } from "./goals.mjs";
@@ -680,6 +681,10 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       if (u.pathname === "/api/links/check" && req.method === "POST") { const b = await readBody(req); return json(res, await checkLink(String(b.id || ""))); }
       if (u.pathname === "/api/links/actall" && req.method === "POST") { const b = await readBody(req); return json(res, setLinksActAll(b.on === true)); } // agents may act on every site in your own Chrome (chromegate.mjs "*")
       if (u.pathname === "/api/links/act" && req.method === "POST") { const b = await readBody(req); return json(res, setLinkAct(String(b.id || ""), b.on === true)); } // agents may act on it in your own Chrome (chromegate.mjs)
+      // This computer's connection (lineblocks.mjs): sites that refuse it, and Check, which asks two reputation lists about its address
+      if (u.pathname === "/api/line") return json(res, lineState());
+      if (u.pathname === "/api/line/check" && req.method === "POST") return json(res, await checkLine());
+      if (u.pathname === "/api/line/forget" && req.method === "POST") { const b = await readBody(req); return json(res, forgetBlocked(String(b.host || ""))); }
       if (u.pathname === "/api/links/unlink" && req.method === "POST") { const b = await readBody(req); return json(res, unlinkSite(String(b.id || ""))); }
       // Posts (post.mjs): the week's drafts, waiting on you. Approve is your yes: Marketing's
       // agent posts it through Symbiot's signed-in browser.

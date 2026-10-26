@@ -28,6 +28,7 @@
     "jobs.mjs",
     "asksdone.mjs",
     "browserfails.mjs",
+    "lineblocks.mjs",
     "writeups.mjs",
     "server.mjs",
     "agents.mjs",
