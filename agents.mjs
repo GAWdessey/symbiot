@@ -17,7 +17,7 @@ import { sentAfter } from "./sentmail.mjs";
 import { parseRun, lastRunText, readRunLog, runStarted, briefPlan, stepOf, runLine, waitingOn, waitUntil, RECHECK } from "./work.mjs";
 import { noteDuration, noteCost, kindOf } from "./estimate.mjs";
 import { plainAsk } from "./plain.mjs";
-import { apiOptions, blockedSignIn, apiRoute, realChrome, CHROME_READ, CHROME_ACT } from "./browserfails.mjs";
+import { apiOptions, blockedSignIn, apiRoute, realChrome, ownChromeStep, CHROME_READ, CHROME_ACT } from "./browserfails.mjs";
 import { actSites, goAhead, signInNotNeeded, switchOnAct } from "./chromegate.mjs";
 import { pushGo } from "./pushgate.mjs";
 import { goAhead as phoneGo } from "./phonegate.mjs";
@@ -1181,6 +1181,8 @@ function needsOf(path, { final = "", waiting = null, end = Date.now(), start = e
   // still couldn't read): never yours to do again, but its agent's, through the site's API (browserfails.mjs)
   const nb = n.kind !== "approve" && blockedSignIn(`${n.label} ${n.what} ${n.check}`, end);
   if (nb) n = { kind: "approve", what: `The browser can't hold this sign-in: ${nb.host} (${nb.why}). Go ahead, and its agent reads it through ${nb.route} instead.`, check: "", label: `${nb.name}: its API, not the browser`, api: nb.host, say: apiRoute(nb) };
+  // any other step it sends you to the Symbiot Browser for is yours in your own Chrome (browserfails.mjs ownChromeStep)
+  else if (n.kind === "step") n = { ...n, what: ownChromeStep(n.what), ...(n.label ? { label: ownChromeStep(n.label) } : {}) };
   if (n.kind === "approve" && draftRun(path)) return null; // a drafted reply: its card shows it and sends it (watch.mjs draftCard)
   // signing in to, linking or doing by hand on a platform that's linked: the agent's, not yours
   if (n.kind !== "approve" && linkedChore(`${n.label} ${n.what} ${n.check}`, linkedIds())) return null;
