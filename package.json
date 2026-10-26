@@ -1,6 +1,6 @@
 {
   "name": "symbiot",
-  "version": "0.90.18",
+  "version": "0.91.0",
   "description": "Your week, written from your real work. Reads your local git and writes it up with the AI of your choice — Claude, OpenAI, Gemini, or a local model.",
   "type": "module",
   "bin": {
@@ -38,6 +38,9 @@
     "mail.mjs",
     "sentmail.mjs",
     "screens.mjs",
+    "ownchrome.mjs",
+    "ownchrome-host.mjs",
+    "extension",
     "headless.mjs",
     "chromeimport.mjs",
     "watch.mjs",

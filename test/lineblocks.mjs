@@ -59,7 +59,7 @@ try {
   delete process.env.SYMBIOT_NO_NET;
   ok("the smoke test switches it off", /SYMBIOT_NO_NET: "1"/.test(src("test/smoke.mjs")) && /\["\/api\/line\/check", "POST"\]/.test(src("test/smoke.mjs")));
   const { EMBEDDED_UI } = await import("../ui.mjs");
-  ok("Settings → Connections has the check, says which lists it asks, and lists the refused sites with Forget", /id="linecheck"/.test(EMBEDDED_UI) && /ip-api\.com and proxycheck\.io/.test(EMBEDDED_UI) && /lineforget/.test(EMBEDDED_UI) && /loadLinks\(\);loadLine\(\);/.test(EMBEDDED_UI));
+  ok("Settings → Connections has the check, says which lists it asks, and lists the refused sites with Forget", /id="linecheck"/.test(EMBEDDED_UI) && /ip-api\.com and proxycheck\.io/.test(EMBEDDED_UI) && /lineforget/.test(EMBEDDED_UI) && /loadLinks\(\);(?:loadOwn\(\);)?loadLine\(\);/.test(EMBEDDED_UI));
   ok("it ships", JSON.parse(src("package.json")).files.includes("lineblocks.mjs"));
 } finally {
   rmSync(HOME, { recursive: true, force: true });
