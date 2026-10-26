@@ -440,7 +440,7 @@ async function boardChat(id, question, { hours = 72, now = Date.now(), ask = wri
   const history = (w.chat || []).slice(-12).map((m) => `${m.role === "user" ? "User" : "You"}: ${m.text}`).join("\n\n");
   const r = await converse({ where: `${w.name} card`, role, context, history, question, ask, now,
     act: { // a repo named: its lane (its tasks, its agent); none: an agent of its own
-      agent: (req, known, repo, said) => (repo ? actIn(req, repo, { map: lanes(), known, title: w.name, context: `${w.name}, new lately:\n${listed}`, ops: run, now, said }) : run(req, { title: w.name, context: `${w.name}, new lately:\n${listed}`, known, now })),
+      agent: (req, known, repo, said, kind) => (repo ? actIn(req, repo, { map: lanes(), known, title: w.name, context: `${w.name}, new lately:\n${listed}`, ops: run, now, said, kind }) : run(req, { title: w.name, context: `${w.name}, new lately:\n${listed}`, known, now })),
       task: (text, repo) => taskIn(text, repo, { map: lanes() }) } });
   const answer = r.reply;
   // read again: a check may have saved the file while the model answered

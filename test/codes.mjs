@@ -197,6 +197,10 @@ try {
   ok("a code kept before this isn't read back…", !JSON.stringify(D.doneList()).includes("820119") && !D.heldBy(cq, { lane: "ops" }), D.doneList());
   D.recordDone("Which plan should Pro be sold on?", "monthly", "ops");
   ok("…and is cleaned from the file with the next answer", !readFileSync(DONE, "utf8").includes("820119"));
+  // 23 Oct 2026: the phone check's card was held by ops' question on the same check, asked back about the day before
+  writeFileSync(DONE, JSON.stringify([{ k: "can you wake your phone and open symbiot on it so the phone code check can start", q: "Can you wake your phone and open Symbiot on it, so the phone code check can start?", a: "did you fix the force app open?", lane: "ops", ts: Date.now() - 86400000, back: true }]));
+  ok("a code ask isn't held by another question on the same subject that the user asked back about", !D.heldBy(S.QUESTION, { lane: "ops", id: "codecheck-x" }) && !D.heldBy(S.QUESTION, { lane: "ops" }));
+  ok("…while a question that isn't a code ask still is", !!D.heldBy("Can you open Symbiot on your phone so the phone code check can carry on?", { lane: "ops" }));
 } catch (e) { ok("ran", false, String((e && e.stack) || e)); }
 finally { rmSync(HOME, { recursive: true, force: true }); }
 console.log(`\n${fail ? "✗" : "✓"} codes: ${pass} passed, ${fail} failed`);

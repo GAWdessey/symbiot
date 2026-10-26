@@ -73,6 +73,34 @@ try {
   A.answerQuestions(folder, [{ q: Q5, id: `phone-go-${h5.held}`, a: "no, not now" }]);
   ok("a no lets nothing through", !!s4("adb shell input tap 1 1"));
 
+  console.log("A LAUNCH INSIDE ANOTHER PROGRAM OR A SCRIPT — held too (23 Oct 2026: only adb typed on the line was seen)");
+  P.letGo("s4", { home: HOME }); // (that run has ended)
+  const wrapped = ["bash -c \"adb -s R5X shell am start -n co.example.app/.Main\"", "node -e \"require('child_process').execFileSync('adb', ['shell', 'am', 'start', '-n', 'co.example.app/.Main'])\"", "sh -c 'adb shell input keyevent KEYCODE_WAKEUP'"];
+  ok("bash -c, node -e, sh -c around adb's am start or a key: each held for a yes", wrapped.every((c) => (P.judgePhone(c, { session: "s9", cwd: folder, home: HOME }) || {}).held), wrapped.map((c) => { const r = P.judgePhone(c, { session: "s9", cwd: folder, home: HOME }); return r && (r.held || r.why.slice(0, 60)); }));
+  writeFileSync(join(folder, "open-it.mjs"), "import { execFileSync } from 'node:child_process';\nexecFileSync('adb', ['-s', 'R5X', 'shell', 'am', 'start', '-n', 'co.example.app/.Main']);\n");
+  writeFileSync(join(folder, "read-it.sh"), "adb shell getprop ro.product.model\n");
+  const viaScript = P.judgePhone("node open-it.mjs", { session: "s9", cwd: folder, home: HOME });
+  ok("a script in the run's folder that opens an app over adb: held", (viaScript || {}).held, [viaScript, P.adbCalls("node open-it.mjs", { cwd: folder })]);
+  ok("…one that only reads the phone goes ahead", P.judgePhone("bash read-it.sh", { session: "s9", cwd: folder, home: HOME }) === null);
+  ok("…and words that only mention it reach no phone", P.judgePhone("echo am start", { session: "s9", cwd: folder, home: HOME }) === null && P.judgePhone("node test/phone.mjs", { session: "s9", cwd: folder, home: HOME }) === null);
+  P.letGo("s9", { home: HOME });
+
+  console.log("NOTHING SYMBIOT SHIPS OPENS AN APP ON THE PHONE BY ITSELF");
+  const { readFileSync: rf } = await import("node:fs"), SRC = new URL("..", import.meta.url).pathname;
+  const files = JSON.parse(rf(join(SRC, "package.json"), "utf8")).files.filter((f) => /\.m?js$/.test(f));
+  const LAUNCH_IN = /["'`](?:am|monkey)["'`]\s*,\s*["'`](?:start|start-activity|-p)\b|["'`]input["'`]\s*,\s*["'`](?:tap|swipe|text|keyevent|press)["'`]|\bam\s+start\b.*\$\{|termux-open\b/;
+  const sites = files.flatMap((f) => { let t = ""; try { t = rf(join(SRC, f), "utf8"); } catch { return []; } return t.split("\n").map((l, i) => [f, i + 1, l]).filter(([, , l]) => LAUNCH_IN.test(l) && !/^\s*\/\//.test(l)); });
+  // the two there are: Pair a phone's push to a phone on a cable (phone.mjs adbLink, only right after the user pressed
+  // it), and `symbiot app` typed in Termux opening its own window there (server.mjs openApp)
+  const known = sites.filter(([f]) => f === "phone.mjs" || f === "server.mjs");
+  ok("the only places that start an app on a phone: Pair a phone's push and openApp", sites.length === known.length && known.filter(([f]) => f === "phone.mjs").length === 1, sites.map(([f, n, l]) => `${f}:${n} ${l.trim().slice(0, 80)}`));
+  const PH = rf(join(SRC, "phone.mjs"), "utf8"), push = PH.slice(PH.indexOf("function adbLink("), PH.indexOf("let adbTimer"));
+  ok("…and the push waits for a code the user opened with Pair a phone", /!p\.usb/.test(push) && /p\.pushed\.includes\(s\)/.test(push) && !/newCode\(/.test(push), push.slice(0, 300));
+  const java = ["SymbiotService", "BootReceiver", "Bootstrap", "CodeListener", "LinkKey"].map((n) => [n, rf(join(SRC, "android/src/co/symbiot/app", n + ".java"), "utf8")]);
+  ok("the phone app's background parts never bring an activity up (a notification opens it only when tapped)", java.every(([, t]) => !/startActivit|setFullScreenIntent|moveTaskToFront/.test(t)), java.filter(([, t]) => /startActivit|setFullScreenIntent|moveTaskToFront/.test(t)).map(([n]) => n));
+  const MA = rf(join(SRC, "android/src/co/symbiot/app/MainActivity.java"), "utf8");
+  ok("an approved computer pairs again without asking, and the approval outlives the app's restart", /pairApproved/.test(MA) && /approved\(this\)\.contains\(fp\)/.test(MA) && /pendingPair\(this\)/.test(MA));
+
   console.log("THE GATE'S OWN FILES — never written by an agent");
   ok("the held launches and the lock can't be written from the shell, nor with Write", !!sh(`echo '{}' > ${join(CFG, "phone-lock.json")}`) && !!judge("Write", { file_path: join(CFG, "phone-holds.json"), content: "[]" }, { session: "s3", cwd: lane, home: HOME }));
 } catch (e) { ok("ran", false, String((e && e.stack) || e)); }

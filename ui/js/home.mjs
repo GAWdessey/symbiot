@@ -124,6 +124,7 @@ else if((d.kind==='you'||d.kind==='feed')&&at[d.shape]!=null)links.push([at[d.sh
 function lqHomeLine(h){var el=$('lqline'),b=document.body,t='',pc=h.computer,ap=(h.phoneApproved||[]).slice(-1)[0];
 if(pc&&pc.away)t="<b>"+esc(pc.name)+" is out of reach.</b> Showing what it sent "+(pc.heard?"at "+esc(pcTime(pc.heard)):"last")+(pc.queued?" · "+pc.queued+" change"+(pc.queued>1?"s":"")+" waiting to send":"")+".";
 else if(pc&&pc.old)t="<b>Pair this phone with "+esc(pc.name)+" again:</b> the link between them is sealed now.";
+else if(h.phoneUsbFail)t="<b>Your phone didn&rsquo;t pair over the cable.</b> "+esc(h.phoneUsbFail.why)+" Nothing more is sent to it: pair it from Settings &rarr; Your phone when you&rsquo;re ready.";
 else if(ap)t=ap.status==='waiting'?"Approving "+esc(ap.repo)+" from "+esc(ap.phone)+" as soon as "+esc(ap.why||'it can')+".":ap.status==='failed'?"<b>Approving "+esc(ap.repo)+" from "+esc(ap.phone)+" failed:</b> "+esc(ap.error||''):(ap.status==='approving'?"Approving ":"Approved ")+esc(ap.repo)+" from "+esc(ap.phone)+" at "+esc(pcTime(ap.at))+".";
 if(!t&&qPaused())t='<b>'+esc(qPaused())+'</b>';
 if(!t&&h.browserSince)t="<b>The Symbiot Browser is open</b>, since "+esc(pcTime(h.browserSince))+" ("+esc(agoTxt(h.browserSince))+"). Agents read from a copy of its sign-ins meanwhile, and it closes by itself after "+(h.browserIdle||20)+" minutes unused.";
@@ -355,6 +356,7 @@ var os=y.options||[];if(y.draft)h+=draftHtml(y.draft);if(y.status)h+="<div class
 if(y.report&&y.report.id)h+="<div class='bo'><button type='button' class='nopt brep' title='opens it on Reports'><span class='bt'>Read the report: "+esc(lqShort(y.report.title,60))+" &rsaquo;</span></button></div>";
 if(y.fix==='handover'&&y.sub)h+="<div class='bfor' title='"+escQ(y.sub)+"'>for: "+esc(y.sub)+"</div>";
 if(y.done&&typeof y.done==='object'&&y.done.lane)h+="<div class='bdone' title='"+escQ(y.done.text)+"'>"+esc(y.done.lane)+" has done this already: "+esc(y.done.text)+"</div>"; // (a string is what the agent says it has done so far, shown above)
+if(y.doneBy&&y.doneBy.lane&&y.doneBy.text)h+="<div class='bdone' title='"+escQ(y.doneBy.text)+"'>Already done by "+esc(y.doneBy.lane)+"&#39;s agent: "+esc(y.doneBy.text)+"</div>";
 if(y.run&&y.run.length)h+=runHtml(y);
 if(y.shared)h+="<div class='bdone' title='"+escQ("Your answer to "+y.shared.lane+": "+y.shared.a+" (its agent has it too, and checks whether it settles this)")+"'>Got your answer to "+esc(lqShort(y.shared.lane,40))+": &ldquo;"+esc(lqShort(y.shared.a,80))+"&rdquo;</div>";
 if(y.signInTo)h+="<div class='bo'><button type='button' class='nopt bsign' title='opens "+escQ(y.signInTo.name)+" in the Symbiot Browser: sign in there, then click Done'><span class='bt'>Sign in to "+esc(y.signInTo.name)+" &rsaquo;</span></button></div>";

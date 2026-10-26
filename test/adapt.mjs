@@ -488,7 +488,7 @@ try {
   const { workScene, workGo } = await import("../home.mjs");
   const ws = workScene({ deps: {
     agents: () => [{ name: "symbiot", path: "/s", status: "running", progress: { done: 1, total: 3 }, work: { todos: [{ status: "completed", text: "a", active: "A" }, { status: "in_progress", text: "Fix the reader", active: "Fixing the **WhatsApp** reader" }] }, ask: { questions: [] } },
-      { name: "atlas", path: "/c", status: "running", work: { doing: "Ran npm test", todos: [] }, ask: { questions: [{ q: "?" }] } }, { name: "old", path: "/o", status: "done" }],
+      { name: "atlas", path: "/c", status: "running", work: { doing: "Ran npm test", todos: [] }, ask: { questions: [{ q: "Ship the atlas fix?" }] } }, { name: "old", path: "/o", status: "done" }],
     pending: () => [{ repo: "ChatApp", path: "/g", tasks: [{}, {}], files: [{}] }, { repo: "busy", path: "/b", running: true, tasks: [{}] }],
     tasks: () => [{ id: "1", text: "Add a Skip button to each idea in the Agents tab, so you can turn down an idea you don't want", repo: "symbiot" }, { id: "2", text: "Merge near-duplicates", repo: "whatsapp_module" }, { id: "3", text: "done one", repo: "x", done: true }, { id: "4", text: "no repo", repo: "" }],
   } });

@@ -115,6 +115,19 @@ try {
     ok("Open terminal picks the terminal the computer has, in the card's folder", r1.ok && r1.via === "gnome-terminal" && calls[0][1][0] === "--working-directory=/tmp", [r1, calls]);
     ok("…Terminal on a Mac, Command Prompt on Windows without Windows Terminal", openTerminal("/tmp", { platform: "darwin", has: () => false, spawnIt: (c) => (calls.push([c]), {}) }).via === "Terminal" && openTerminal("/tmp", { platform: "win32", has: () => false, spawnIt: () => ({}) }).via === "Command Prompt");
     ok("…and no terminal installed says so, with what to do instead", /paste the commands/.test(openTerminal("/tmp", { platform: "linux", has: () => false, spawnIt: () => ({}) }).error || "")); }
+
+  console.log("MONEY UP FRONT — adding a card never reads as a free step (23 Oct 2026)");
+  { const add = { kind: "ask", id: "ask:/runs/mk", path: "/runs/mk", q: "Add the company card in Campaign Manager under Billing setup to claim the ads credit", options: ["👤 You: I've added it", "Skip this part"] };
+    const m = N.moneyNote(add);
+    ok("a card that has the user add a card says first that the site may hold or charge money on it", m.money && /^Adding a card can cost money/.test(m.why) && m.q === add.q && m.options === add.options, m);
+    ok("…a question as the Workdesk shows it gets it in its context line", /^Adding a card can cost money.*Under billing/.test(N.moneyNote({ q: "Can you add your card?", context: "Under billing, for the ads.", options: [] }).context || ""));
+    ok("…once: one that already warns of a hold is left as it is", N.moneyNote({ ...add, why: "The site may hold about R425 on it." }).money === undefined && N.moneyNote(m) === m);
+    ok("…a card that adds nothing that pays is left alone", N.moneyNote({ kind: "ask", q: "Add the logo to the card?", options: [] }).money === undefined);
+    const src = "Add the company card under Billing setup. The site may hold about R425 on it.";
+    ok("the writer's words that drop the warning aren't used; ones that keep it are", N.checkCardText({ question: "Can you add the company card under Billing setup?", why: "It claims the ads credit." }, 0, src) === null && !!N.checkCardText({ question: "Can you add the company card under Billing setup?", why: "The site may hold about R425 on your card." }, 0, src));
+    const hs = homeState({ fresh: true, deps: { repos: () => ({}), board: () => ({ cards: [] }), pending: () => [], lanes: () => ({ handoffs: [] }), reports: () => ({ count: 0 }), connected: () => true, waits: () => [], clashes: () => [], agentGone: () => "", signedOut: () => [], stuck: () => [], drafts: () => [], agentCmd: () => "claude", marketing: () => false, agents: () => [], goalCards: () => [{ ...add, id: "goal:mk", path: "goal:mk" }], troubles: () => [] } });
+    const shown = (hs.you || []).find((y) => y.id === "goal:mk");
+    ok("…on Home too", /^Adding a card can cost money/.test(shown.why || ""), shown); }
 } catch (e) { ok("ran", false, String((e && e.stack) || e)); }
 finally { rmSync(HOME, { recursive: true, force: true }); }
 console.log(`\n${fail ? "✗" : "✓"} needs: ${pass} passed, ${fail} failed`);

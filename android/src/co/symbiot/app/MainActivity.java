@@ -94,6 +94,7 @@ public class MainActivity extends Activity {
         setContentView(web);
         SymbiotService.channels(this);
         external = termuxUrl(this);
+        pair = pendingPair(this);
         if (!take(getIntent()) && external == null) SymbiotService.start(this);
         new Thread(this::watchExternal, "symbiot-termux").start();
         tick();
@@ -113,21 +114,53 @@ public class MainActivity extends Activity {
     }
     // A pairing link, from a camera scan or pushed over USB (adb), is only handed on once the
     // user taps Approve: "Link to <computer>?". Capped in size, like Orca's pairing input.
+    // Approve is kept: the computer's key (the link's k) is remembered, so a link from it again
+    // pairs without asking, and the approved link waits in prefs until the page has taken it,
+    // so a restart of the app (an update, Android closing it) doesn't lose it. Each approval used
+    // to be held in memory only, and the computer pushed again on each start: the prompt came
+    // back, approval after approval (23 Oct 2026).
     private static final int PAIR_MAX = 2048;
+    private static final long PAIR_KEEP = 10 * 60 * 1000; // a pairing code's life (phone.mjs CODE_MS)
     private void approvePair(final Uri d) {
         final String link = d.toString();
         if (link.length() > PAIR_MAX) { Toast.makeText(this, "That isn't a Symbiot link", Toast.LENGTH_SHORT).show(); return; }
-        String n = null;
-        try { n = d.getQueryParameter("n"); } catch (Exception e) { /* opaque link: no name */ }
+        String n = pairParam(d, "n");
         n = n == null ? "" : n.replaceAll("[^\\p{L}\\p{N} ._-]", "");
         if (n.length() > 40) n = n.substring(0, 40);
-        final String name = n.isEmpty() ? "your computer" : n;
-        new AlertDialog.Builder(this)
+        final String name = n.isEmpty() ? "your computer" : n, fp = pairParam(d, "k");
+        if (fp != null && approved(this).contains(fp)) { keepPair(link, fp); Toast.makeText(this, "Pairing with " + name + "…", Toast.LENGTH_SHORT).show(); return; }
+        if (pairAsk != null && pairAsk.isShowing()) pairAsk.dismiss(); // (one prompt at a time)
+        pairAsk = new AlertDialog.Builder(this)
             .setTitle("Link to " + name + "?")
-            .setMessage("Approve to pair this phone with Symbiot on " + name + ".")
-            .setPositiveButton("Approve", (dlg, w) -> { pair = link; })
+            .setMessage("Approve to pair this phone with Symbiot on " + name + ". It won't ask again for this computer.")
+            .setPositiveButton("Approve", (dlg, w) -> keepPair(link, fp))
             .setNegativeButton("Cancel", null)
             .show();
+    }
+    private AlertDialog pairAsk;
+    private void keepPair(String link, String fp) {
+        pair = link; handing = false;
+        SharedPreferences.Editor e = prefs(this).edit().putString("pairLink", link).putLong("pairAt", System.currentTimeMillis());
+        if (fp != null) {
+            java.util.Set<String> fps = new java.util.HashSet<>(approved(this)); fps.add(fp);
+            e.putStringSet("pairApproved", fps);
+        }
+        e.apply();
+    }
+    private static java.util.Set<String> approved(Context ctx) { return prefs(ctx).getStringSet("pairApproved", java.util.Collections.emptySet()); }
+    // the approved link still waiting for the page, while its code may still be good
+    private static String pendingPair(Context ctx) {
+        SharedPreferences p = prefs(ctx);
+        String link = p.getString("pairLink", null);
+        return link != null && System.currentTimeMillis() - p.getLong("pairAt", 0) < PAIR_KEEP ? link : null;
+    }
+    // A pairing link's value: its query (symbiot://pair?…) or the part after # (the site's link).
+    private static String pairParam(Uri d, String key) {
+        try { String v = d.getQueryParameter(key); if (v != null) return v; } catch (Exception e) { /* opaque link */ }
+        String f = d.getEncodedFragment();
+        if (f == null) return null;
+        for (String kv : f.split("&")) { int i = kv.indexOf('='); if (i > 0 && kv.substring(0, i).equals(key)) return Uri.decode(kv.substring(i + 1)); }
+        return null;
     }
     private static String http(String link) { return link.replaceFirst("^symbiot://", "http://"); }
 
@@ -268,7 +301,7 @@ public class MainActivity extends Activity {
         if (handing) return;
         handing = true;
         final String p = pair;
-        web.evaluateJavascript("window.symbiotPairLink?(symbiotPairLink(" + JSONObject.quote(p) + "),'ok'):''", r -> { handing = false; if ("\"ok\"".equals(r) && p.equals(pair)) pair = null; });
+        web.evaluateJavascript("window.symbiotPairLink?(symbiotPairLink(" + JSONObject.quote(p) + "),'ok'):''", r -> { handing = false; if ("\"ok\"".equals(r) && p.equals(pair)) { pair = null; prefs(this).edit().remove("pairLink").remove("pairAt").apply(); } });
     }
 
     private String status(String state) {

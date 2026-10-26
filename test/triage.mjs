@@ -104,6 +104,40 @@ try {
     let sys = ""; await T.judge({ q: "Which account is the domain in?" }, {}, { write: async (s) => { sys = s; return { text: '{"verdict":"agent","why":"w"}' }; } });
     ok("the newest ones the user said weren't theirs are shown to the judge, as what not to put to them", /said weren't theirs to answer/.test(sys) && sys.includes("Which login should I use for the registrar?") && sys.includes("its in the vault"), sys.slice(-400));
   }
+
+  console.log("REDO — a spend with no reason, or an account Symbiot knows exists, goes back before it's a card (23 Oct 2026)");
+  const buy = { q: "Can I buy the two replacement domains for $16.40?", context: "They're ready in the cart.", options: ["🤖 Agent: buy them now (recommended)", "Skip this part"] };
+  const pre = T.precheck(buy);
+  ok("a $16.40 domain buy that never says why: redo, not a card", pre && pre.verdict === "redo" && /without saying why/.test(pre.why), pre);
+  ok("…and the run is told to ask again with the reason, the user not asked yet", /Not shown to the user yet/.test(T.answerFor(pre)) && /ask again/.test(T.answerFor(pre)), T.answerFor(pre));
+  ok("…the AI isn't asked for it", (await T.judge(buy, {}, { write: async () => { throw new Error("asked"); } })).verdict === "redo");
+  const why = { q: "Can I pay R250 for the new domain?", context: "The old one can't be transferred: its registrar locked it, so a new one is the only way to keep the site up." , options: ["🤖 Agent: pay it (recommended)", "Skip this part"] };
+  ok("a spend that says why it's needed: left to judge as the user's", T.precheck(why) === null, T.precheck(why));
+  ok("an R2 bucket or a plain number isn't money", T.precheck({ q: "Can I make the R2 bucket for the 3 reports?", options: [] }) === null);
+  const acct = { q: "Can you create an Acme Cloudflare account?", context: "The rebuild needs one.", options: ["👤 You (only you: your sign-up): create it", "Skip this part"] };
+  const knownAcct = "- account: Acme Cloudflare account sam@acme.example, made 23 Oct under the main login\n- person: Sam runs sales";
+  const pa = T.precheck(acct, knownAcct);
+  ok("an account Symbiot remembers: redo, check it exists first", pa && pa.verdict === "redo" && /already knows of a (Acme )?Cloudflare account/.test(pa.why), pa);
+  ok("…none remembered: left to judge", T.precheck(acct, "- person: Sam runs sales") === null);
+  const rd = T.precheck({ q: "Can you read the report 'Who owns what at the host' before I carry on?", options: ["👤 You: read it, then tell me to go on", "Skip this part"] });
+  ok("a card that sends the user to read a report: redo, with check it's current, a summary and the one question left", rd && rd.verdict === "redo" && /out of date/.test(rd.why) && /2-3 line summary/.test(rd.why), rd);
+  ok("…one that asks a real question and links the report for detail: left to judge", T.precheck({ q: "Should the site move to the new account this week?", context: "The details are in the report 'Who owns what'.", options: ["🤖 Agent: move it this week (recommended)", "Skip this part"] }) === null);
+
+  console.log("MONEY UP FRONT — a card that has the user add a card or claim a credit says a hold or charge may come (23 Oct 2026)");
+  const card = { q: "Can you add the company card in the ad account's Campaign Manager?", context: "Under Billing setup, so the ads credit can be claimed.", options: ["👤 You (only you: your card): add it under Billing setup (recommended)", "Skip this part"] };
+  const pc = T.precheck(card);
+  ok("adding a card with no word on money: redo, not a card", pc && pc.verdict === "redo" && /hold or a charge/.test(pc.why) && /their yes/.test(pc.why), pc);
+  ok("…and the run is told to ask again, the user not asked yet", /Not shown to the user yet/.test(T.answerFor(pc)));
+  ok("…the AI isn't asked for it", (await T.judge(card, {}, { write: async () => { throw new Error("asked"); } })).verdict === "redo");
+  const was = T.precheck(card, "- site: Campaign Manager reserved R425.45 on the card when one was added, 23 Oct\n- person: Sam runs sales");
+  ok("a hold Symbiot remembers on that site: its amount goes to the agent", was && /R425\.45/.test(was.why) && !/Sam/.test(was.why), was);
+  ok("\"claim the credit\" and \"nothing is charged\" is calling it free: redo too", T.precheck({ q: "Can you claim the R1,000 ads credit?", context: "Nothing is charged to claim it.", options: ["👤 You: claim it", "Skip this part"] })?.verdict === "redo");
+  const warned = { q: "Can you add the company card in the ad account's Campaign Manager to claim the ads credit?", context: "The site may place a hold of about R425 on the card when it's added; I spend nothing on ads.", options: ["👤 You (only you: your card): add it, knowing about the hold (recommended)", "Skip this part"] };
+  ok("one that says the site may hold about R425 on the card: left to judge as the user's", T.precheck(warned) === null, T.precheck(warned));
+  const real = { q: "Ads: the ad account 1234567 is made. Claiming the credit needs a card on it: add one, or hold?", context: "Done: the ad account exists (ID 1234567, USD, no campaign). The site says a valid payment method must be on the account before any coupon can be redeemed. I won't spend anything either way.", options: ["👤 You (only you: entering card details): add the card at Billing → Billing setup, then I claim the credit unspent (recommended)", "Hold the credit: leave the account as it is", "Skip ads for now"] };
+  const pr = T.precheck(real);
+  ok("the card as it was written that day (\"Hold the credit\" is waiting, not money; an id before USD is no price): redo for the money warning", pr && pr.verdict === "redo" && /hold or a charge/.test(pr.why), pr);
+  ok("a card on a board, a logo on a card: no money", T.precheck({ q: "Can you add the new task card to the board?", options: [] }) === null && T.precheck({ q: "Should I add the logo to the business card?", options: [] }) === null);
 } catch (e) { ok("ran", false, String((e && e.stack) || e)); }
 finally { rmSync(HOME, { recursive: true, force: true }); }
 console.log(`\n${fail ? "✗" : "✓"} triage: ${pass} passed, ${fail} failed`);

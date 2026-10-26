@@ -605,9 +605,11 @@ const SCROLLER = `function modalScroller() {
   const can = (e) => e.scrollHeight - e.clientHeight > 1 && /^(auto|scroll|overlay)$/.test(getComputedStyle(e).overflowY);
   const shown = (e) => { const b = e.getBoundingClientRect(), cs = getComputedStyle(e); return b.width > 20 && b.height > 20 && b.bottom > 0 && b.right > 0 && b.top < H && b.left < W && cs.visibility !== 'hidden' && cs.display !== 'none' && +cs.opacity !== 0; };
   // the one on top: the last open one whose middle is its own
-  // a box that holds the window: marked modal, or fixed over a good part of it (not a cookie bar or a chat bubble)
+  // a box that holds the window: marked modal, or fixed over a good part of it or over its middle,
+  // where the wheel is (LinkedIn's small Scheduled posts box), not a cookie bar or a chat bubble at an edge
   const fixed = (e) => { for (let n = e; n && n !== document.documentElement; n = n.parentElement) if (getComputedStyle(n).position === 'fixed') return true; return false; };
-  const holds = (e) => { const b = e.getBoundingClientRect(); return e.getAttribute('aria-modal') === 'true' || (() => { try { return e.matches('dialog:modal'); } catch (x) { return false; } })() || (fixed(e) && b.width * b.height >= W * H / 6); };
+  const mid = (b) => b.left <= W / 2 && b.right >= W / 2 && b.top <= H / 2 && b.bottom >= H / 2;
+  const holds = (e) => { const b = e.getBoundingClientRect(); return e.getAttribute('aria-modal') === 'true' || (() => { try { return e.matches('dialog:modal'); } catch (x) { return false; } })() || (fixed(e) && (b.width * b.height >= W * H / 6 || mid(b))); };
   const boxes = [...document.querySelectorAll('dialog[open], [role=dialog], [role=alertdialog], [aria-modal=true]')].filter(shown).filter(holds).filter((e) => !e.parentElement || !e.parentElement.closest('dialog[open], [role=dialog], [role=alertdialog], [aria-modal=true]'));
   if (!boxes.length) return null;
   const onTop = (e) => { const b = e.getBoundingClientRect(), t = document.elementFromPoint(Math.max(0, Math.min(W - 1, (b.left + b.right) / 2)), Math.max(0, Math.min(H - 1, (Math.max(0, b.top) + Math.min(H, b.bottom)) / 2))); return !!t && e.contains(t); };

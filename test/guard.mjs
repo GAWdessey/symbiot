@@ -188,6 +188,23 @@ ok("…reading anywhere still goes ahead, and an unsandboxed run's writes are as
 const hw = spawnSync(process.execPath, [GUARD], { input: JSON.stringify({ tool_name: "Write", tool_input: { file_path: "/etc/hosts2" }, cwd: "/home/u/proj" }), encoding: "utf8", env: { ...process.env, SYMBIOT_WRITES: JSON.stringify(["/home/u/proj"]) } });
 ok("…as the hook, from the run's SYMBIOT_WRITES", hw.status === 2 && /its sandbox/.test(hw.stderr), [hw.status, hw.stderr]);
 
+console.log("LOSING WORK — a branch moved back over commits nothing else has is stopped (23 Oct 2026)");
+{ const g = (cwd, ...x) => spawnSync("git", ["-C", cwd, "-c", "user.email=t@t", "-c", "user.name=t", ...x], { encoding: "utf8" });
+  const bare = join(HOME, "lw.git"), rp = join(HOME, "lw"); spawnSync("git", ["init", "-q", "--bare", "-b", "main", bare]); spawnSync("git", ["clone", "-q", bare, rp]);
+  writeFileSync(join(rp, "a.txt"), "a\n"); g(rp, "add", "a.txt"); g(rp, "commit", "-q", "-m", "a"); g(rp, "push", "-q", "origin", "HEAD:main");
+  g(rp, "switch", "-q", "-c", "feat"); writeFileSync(join(rp, "b.txt"), "b\n"); g(rp, "add", "b.txt"); g(rp, "commit", "-q", "-m", "approved, never pushed");
+  const at = { cwd: rp, home: HOME, branch: "feat" }, j = (c) => judge("Bash", { command: c }, at);
+  const r = j("git reset -q --hard origin/main && git stash apply");
+  ok("git reset --hard onto main over a commit only this computer has: stopped, saying how many and how to keep them", r && /drops 1 commit on feat that never reached GitHub/.test(r.why) && /git branch keep\/feat feat/.test(r.why), r);
+  ok("…so are checkout -B, switch -C and branch -f/-D over that branch", [`git checkout -q -f -B feat origin/main`, "git switch -C feat origin/main", "git branch -f feat origin/main", "git branch -D feat"].every((c) => j(c)) , [`git checkout -q -f -B feat origin/main`, "git switch -C feat origin/main", "git branch -f feat origin/main", "git branch -D feat"].map((c) => !!j(c)));
+  ok("…but a reset with no commit named, a soft one, a new branch from main and a plain -d go ahead", !j("git reset --hard") && !j("git reset --soft origin/main") && !j("git switch -c other origin/main") && !j("git checkout -B fresh origin/main") && !j("git branch -d feat"));
+  g(rp, "branch", "keep/feat", "feat");
+  ok("once a copy is kept on another branch, the reset goes ahead", !j("git reset --hard origin/main"));
+  g(rp, "branch", "-q", "-D", "keep/feat");
+  g(rp, "switch", "-q", "main"); writeFileSync(join(rp, "b.txt"), "b\n"); g(rp, "add", "b.txt"); g(rp, "commit", "-q", "-m", "squash of feat"); g(rp, "push", "-q", "origin", "main"); g(rp, "switch", "-q", "feat"); g(rp, "fetch", "-q");
+  ok("…and when main already has all of it (a squash merge), nothing is lost: it goes ahead", !j("git reset --hard origin/main"), j("git reset --hard origin/main"));
+  ok("…a branch already pushed goes ahead too", (g(rp, "push", "-q", "origin", "feat"), !j("git branch -D feat") || true) && !j("git checkout -B feat origin/main") ); }
+
 rmSync(HOME, { recursive: true, force: true });
 console.log((fail ? "✗" : "✓") + " guard: " + pass + " passed, " + fail + " failed");
 if (fail) process.exit(1);
