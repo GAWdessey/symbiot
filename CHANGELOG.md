@@ -2,6 +2,10 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one), for anyone who installs the app: what changed in it, never whose work it was (no projects, people, accounts, services, run ids or task wording of the person who made it). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.92.1 — 2026-10-26
+
+- **The keyboard stays put after you unlock the Vault.** When Copy, Show or Add asks for your PIN, focus goes back to that button once the vault unlocks or you press Escape, instead of falling to the top of the page.
+
 ## 0.92.0 — 2026-10-26
 
 - **Everything Symbiot does on a page now works in your own Chrome.** Choose in a menu, Fill a form and press its button, Replace part of a field, Upload a file and Whole page now work there too, along with Press, Type and Scroll. Choose, Fill and Upload use the same page code as Symbiot's own browser. A whole page is drawn as one tall screen.
