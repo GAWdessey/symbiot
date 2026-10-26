@@ -33,7 +33,7 @@ function vaultFlush(){var d=VLT.del;if(!d)return;VLT.del=null;clearTimeout(d.t);
 function vaultLockNow(){vaultFlush();if(VLT.token)api('/api/vault/lock',{token:VLT.token}).catch(function(){});vaultDrop();VLT.then=null;if(VLT.mode==='rename'||VLT.mode==='delete')VLT.mode='';vaultClose();if(current==='vault')vaultDraw();}
 function vaultTick(){if(VLT.wait&&VLT.waitTo<=Date.now()){VLT.wait=0;if(VLT.sheet==='unlock')vaultSheet('unlock');}
 var w=$('vaultwait');if(w)w.textContent=vaultLeft(VLT.waitTo-Date.now());
-if(VLT.token&&!vaultOpen()){vaultDrop();if(VLT.mode==='rename'||VLT.mode==='delete')VLT.mode='';vaultSay('Locked again: values are hidden.');vaultDraw();return;}
+if(VLT.token&&!vaultOpen()){vaultDrop();if(VLT.mode==='rename'||VLT.mode==='delete')VLT.mode='';if(VLT.state==='ok')vaultSay('Locked again: values are hidden.');vaultDraw();return;}
 var s=$('vaultleft');if(s)s.textContent=vaultLeft(VLT.until-Date.now());if(!VLT.token&&!VLT.wait&&VLT_T){clearInterval(VLT_T);VLT_T=null;}}
 function vaultTimer(){if(!VLT_T)VLT_T=setInterval(vaultTick,1000);}
 function vaultHeld(r){if(r&&r.until){VLT.until=r.until;}}
@@ -80,9 +80,10 @@ function vaultEmptyDetail(){return "<div class='vempty'><b>Pick one to see it</b
 function vaultDraw(){if(current!=='vault')return;var pv=$('panel-vault'),box=$('vaultlist'),det=$('vaultdetail'),ch=$('vaultlock'),fl=$('vaultfilters');if(!box||!det)return;
 if(ch){ch.innerHTML=vaultChip();ch.classList.toggle('open',vaultOpen());}
 var bar=pv&&pv.querySelector('.vbar'),lg=$('vaultlogbox');
+pv.classList.toggle('vsolo',VLT.state==='err'||(VLT.state==='ok'&&!VLT.list.length));
 if(VLT.state!=='ok'){if(fl)fl.innerHTML='';if(lg)lg.style.display='none';pv.classList.remove('vone');
 if(VLT.state==='load'){box.innerHTML="<div class='vskel'></div><div class='vskel'></div><div class='vskel'></div><div class='vskel'></div>";det.innerHTML="<div class='vskel' style='height:180px'></div>";if(bar)bar.style.display='';}
-else{if(bar)bar.style.display='none';box.innerHTML='';det.style.display='';det.innerHTML="<div class='vempty' role='alert'><b>Couldn't open the vault</b>"+(VLT.why?esc(VLT.why):'Symbiot may have stopped. Nothing in the vault has changed.')+"<div class='vsb'><button type='button' class='ghost' data-va='retry'>Try again</button></div></div>";}return;}
+else{if(bar)bar.style.display='none';box.innerHTML='';if(VLT.sheet)vaultClose();vaultSay('');det.style.display='';det.innerHTML="<div class='vempty' role='alert'><b>Couldn't open the vault</b>"+(VLT.why?esc(VLT.why):'Symbiot may have stopped. Nothing in the vault has changed.')+"<div class='vsb'><button type='button' class='ghost' data-va='retry'>Try again</button></div></div>";}return;}
 if(bar)bar.style.display='';
 if(!VLT.list.length){if(fl)fl.innerHTML='';if(lg)lg.style.display='none';pv.classList.remove('vone');box.innerHTML='';det.innerHTML="<div class='vempty'><b>Nothing saved yet</b>Passwords, keys and codes you paste into a chat, or that an agent saves for you, are kept here. You can add one yourself too.<div class='vsb'><button type='button' class='act' data-va='add'>Add one</button></div></div>";return;}
 if(fl)fl.innerHTML=vaultFilters();if(lg)lg.style.display='';
@@ -167,7 +168,7 @@ else if(a==='peekadd'){var v=$('vaddv');if(v){v.type=v.type==='password'?'text':
 else if(a==='many'){var on=b.checked;$('vaddvl').style.display=on?'none':'';$('vaddcl').style.display=on?'':'none';}
 else if(a==='unlock')vaultUnlock();
 else if(a==='close')vaultClose();
-else if(a==='retry')loadVault();}
+else if(a==='retry'){VLT.state='load';vaultDraw();loadVault();}}
 (function(){var pv=$('panel-vault');if(!pv||!pv.addEventListener)return;var vm=$('vaultmsg');if(vm&&document.body&&typeof document.body.appendChild==='function'&&vm.parentNode!==document.body)try{document.body.appendChild(vm);}catch(e){}
 pv.addEventListener('click',function(ev){var b=ev.target&&ev.target.closest&&ev.target.closest('[data-va]');if(!b||!pv.contains(b))return;if(b.getAttribute('data-va')==='many')return vaultAct(b);vaultAct(b);});
 var sh=$('vaultsheet');if(sh&&sh.addEventListener)sh.addEventListener('mousedown',function(ev){if(ev.target===sh)vaultClose();});
