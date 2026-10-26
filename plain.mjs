@@ -4,7 +4,7 @@
 // only Home's list: the same ask on the Workdesk still read as a file (2026-10-12).
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { signInNotNeeded, SETTING } from "./chromegate.mjs";
+import { signInNotNeeded, SETTING, holdOf, goWords, holdState } from "./chromegate.mjs";
 
 // An ask in words for someone who doesn't code: a permission request lists what the agent
 // wants to run, with Allow / Don't allow; any file path left in the question or choices
@@ -56,11 +56,24 @@ function plainAsk(path, q, { max = 2 } = {}) {
   if (n && n.off && opts.length) { ask = `Should agents click and type on ${n.host} in your Chrome? What stops the agent there is Symbiot's own setting, not a sign-in: ${SETTING(n.host)}. Yes switches it on, and the agent carries on.`; labels = [`Switch it on for ${n.host}${/recommended/i.test(opts[0]) ? " (recommended)" : ""}`, ...labels.slice(1)]; }
   else if (n && !n.off) ask = `${text} (No sign-in needed: ${n.host} was open signed in in your Chrome ${Math.max(1, Math.round((Date.now() - n.at) / 60000))} min ago.)`;
   if (n && q.context) { const c = String(q.context).split(/(?<=[.!?])\s+/).filter((s) => !/\b(?:sign(?:ed)?|log(?:ged)?)[ -]?(?:in|out)\b|\bpassword\b/i.test(s)).join(" "); if (c !== q.context) context = c; }
+  // A Go card on a held press in the user's Chrome (chrome-go-<hold>): its buttons name the press and its no
+  // (Send / Don't send, Pay R 289 / Don't pay), and go carries the hold's own line (where, and what's pressed)
+  // and the money line, so the user agrees to what will be pressed, not to the agent's heading (26 Oct 2026).
+  const gm = String(q.id || "").match(/^chrome-go-([0-9a-f]+)$/);
+  let go = null; if (gm) try { const h = holdOf(gm[1]), w = goWords(h, `${text}\n${q.context || ""}`); if (w) go = goCard(w, h, q); } catch {}
+  if (go && opts.length === 2) labels = [go.button, go.dont];
   // raw: the question as the agent wrote it, the key its answer is saved under (agents.mjs
   // answerQuestions). Sending the plain words back matched nothing, so a permission card's
   // Allow, and Send under it, did nothing at all (whatsapp_module, 2026-10-12).
   const shown = ask.replace(PATHISH, "a file");
-  return { q: shown, ...(shown !== text ? { raw: text } : {}), ...(labels.some((l, i) => l !== opts[i]) ? { labels } : {}), ...(context != null ? { context } : {}) };
+  return { q: shown, ...(shown !== text ? { raw: text } : {}), ...(labels.some((l, i) => l !== opts[i]) ? { labels } : {}), ...(context != null ? { context } : {}), ...(go ? { go } : {}) };
+}
+// What a Go card shows besides its heading: the hold's line, and for a payment the money said plainly (the
+// agent's own sentence about it if it wrote one, else the amount). Home showed that only on the Workdesk.
+function goCard(w, h, q) {
+  const said = String(q.context || "").split(/(?<=[.!?])\s+/).find((x) => /\b(?:hold|charge|charges|money|costs?)\b/i.test(x)) || "";
+  const money = w.kind === "pay" ? said || (w.amount ? `It pays ${w.amount}.` : "It pays money from your account or card.") : "";
+  return { id: w.id, kind: w.kind, line: w.line, button: w.button, dont: w.dont, given: w.given, state: holdState(h), ...(money ? { money } : {}) };
 }
 
 export { PATHISH, PLAIN_RULE, plainAsk };

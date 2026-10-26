@@ -496,7 +496,7 @@ function homeState({ now = Date.now(), fresh = false, deps = {}, tick = false } 
     // the user answered another agent on this work: it has that answer, and is checking whether it settles this (lanes.mjs shareAnswer)
     const sh = sharedTo(a.path), shared = sh && (a.status === "running" || Date.parse(sh.at) > (a.startedAt || 0)) ? { shared: sh } : {}; // and not once it has asked again since
     you.push({ kind: "ask", id: "ask:" + a.path, path: a.path, repo, ...shared, name: repo ? named(lane ? map[lane] : a.path, repo) : plain(String(a.name || "an agent").replace(/^Agent:\s*/, "").replace(/^New job:\s*/i, ""), 60), // the card's header is narrow: no "New job:" in it
-      title: `${a.name} asks`, sub: String(pa.q || q.q || "").slice(0, 90), ...(q.task ? { task: q.task } : {}), ...(q.talk ? { talk: q.talk } : {}), ...pa, options: opts, ...closed, ...(qs.length > 1 ? { more: qs.length - 1 } : {}), ...signInCard([q.q, ...opts]), ...reportLink(q.report), shape: "agents" });
+      title: `${a.name} asks`, sub: String(pa.q || q.q || "").slice(0, 90), ...(q.task ? { task: q.task } : {}), ...(q.talk ? { talk: q.talk } : {}), ...pa, options: opts, ...(pa.go ? { rec: 0 } : {}), ...closed, ...(qs.length > 1 ? { more: qs.length - 1 } : {}), ...signInCard([q.q, ...opts]), ...reportLink(q.report), shape: "agents" });
   }
   // What stopped and can't go on without you, as a question too: a handover that
   // couldn't start (lanes.mjs stuckHandovers: "Allow this run access to ~/Company?"),

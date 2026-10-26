@@ -2,6 +2,14 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one), for anyone who installs the app: what changed in it, never whose work it was (no projects, people, accounts, services, run ids or task wording of the person who made it). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.94.0 — 2026-10-26
+
+- **A Go card names what it will press, and lets you say no.** A card for a send, payment, delete or saved-password fill in your Chrome has two buttons: one named for the press (Send, Post, Pay R 289, Delete, Fill password) and its no (Don't send, Don't pay). Don't closes the hold, nothing is pressed, and the agent is told.
+- **You see the real press, not just the agent's heading.** Under the heading, one line from the hold itself says where and what: "In your Chrome, on the site: Clicks Send on the reply". A payment also shows its money line on Home, where you press it.
+- **Only a Go opens the hold.** The button, or a plain yes, lets that one press through. Anything else you type on the card ("not yet", "change the subject first") goes to the agent as words, and the press stays held.
+- **You see what came of each Go.** After a Go, the card says what happens next: the press goes through once, when its agent tries again within 30 minutes. Each agent's block on the Workdesk, and Settings → Connections → Your own Chrome, then list what happened: sent at a time, your Go lapsed, you said Don't, or what went wrong.
+- **The Vault's "Fills only on" can be set and changed.** Add one with its website, or change or clear it later with Edit, as in a password manager. An entry with no website says it asks you before its first fill. Saving the form as it shows no longer renames an entry.
+- **Settings fits a phone.** On a narrow screen, the Your own Chrome button sits under its text, full width.
 ## 0.93.2 — 2026-10-26
 
 - **One press answers a question on the Workdesk.** Its choices are buttons now, not round ticks: when an agent asks one thing, pressing Go (or any other choice) sends it and the agent carries on, instead of a pick and then "Send answers & continue". When it asks several, your presses pick an answer for each, and Send answers sends them together. Your own words go with Send answer beside the box, or Enter.

@@ -12,7 +12,7 @@
 import { join } from "node:path";
 import { createHash, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 import { CONFIG_DIR, readState, writeJsonAtomic } from "./core.mjs";
-import { listSecrets, peekSecret, saveSecret, renameSecret, deleteSecret } from "./vault.mjs";
+import { listSecrets, peekSecret, saveSecret, renameSecret, deleteSecret, fillSite, setSite } from "./vault.mjs";
 
 const PIN_FILE = () => join(CONFIG_DIR, "vault-pin.json"), LOG_FILE = () => join(CONFIG_DIR, "vault-log.json");
 const UNLOCK_MS = 5 * 60000, TRIES = 5, LOCKOUT_MS = 5 * 60000, LOG_KEEP = 500, PIN_MIN = 6;
@@ -169,22 +169,33 @@ function vaultValue(name, { token = "", act = "reveal", now = Date.now() } = {})
 const cleanName = (n) => String(n || "").replace(/\s+/g, " ").trim().slice(0, 80);
 // A name from what the user typed: what it's for, and the account it's for, in brackets as agents read it.
 const nameFrom = (label, account = "") => { const l = cleanName(label), a = cleanName(account); return a && !l.includes(a) ? `${l} (${a})`.slice(0, 80) : l; };
-function addEntry({ label = "", account = "", values = [], token = "", now = Date.now() } = {}) {
+// site: the website it fills on ("Fills only on"), when the user gives one; it can be changed or cleared later (renameEntry).
+function addEntry({ label = "", account = "", values = [], site = "", token = "", now = Date.now() } = {}) {
   const until = held(token, now); if (!until) return LOCKED;
   const name = nameFrom(label, account); if (!name) return { error: "Say what it's for: that's its name." };
   const vals = [].concat(values).map((v) => String(v || "").trim()).filter(Boolean);
   if (!vals.length) return { error: "Paste the password, key or codes to keep." };
   if (listSecrets().some((s) => s.name.toLowerCase() === name.toLowerCase())) return { error: `There's already one called “${labelOf(name)}”. Open that one, or give this a different name.` };
-  const r = saveSecret(name, vals); if (r.error) return r;
-  note(name, "add", now);
-  return { ok: true, name, count: r.count, until };
+  if (String(site || "").trim() && !fillSite(site)) return { error: "That isn't a website. Type its address, like example.com, or leave it empty." };
+  const r = saveSecret(name, vals, { site }); if (r.error) return r;
+  note(name, "add", now, r.site ? { site: r.site } : {});
+  return { ok: true, name, count: r.count, ...(r.site ? { site: r.site } : {}), until };
 }
-function renameEntry(name, { label = "", account = "", token = "", now = Date.now() } = {}) {
+// Edit: its name and account, and (site given, "" to clear) the website it fills on, as 1Password and Bitwarden let you
+// edit an item's website. The site was set once and never moved, so a wrong one meant deleting the entry (26 Oct 2026).
+function renameEntry(name, { label = "", account = "", site, token = "", now = Date.now() } = {}) {
   const until = held(token, now); if (!until) return LOCKED;
-  const to = nameFrom(label, account); if (!to) return { error: "Give it a name." };
+  // the form shows a tidied label ("GitHub recovery codes" for "github recovery codes"): saved as it was shown, that's
+  // the same name, kept as it is, so an Edit that only changes the website doesn't rename what agents ask for
+  const typed = nameFrom(label, account), to = typed.toLowerCase() === String(name || "").toLowerCase() || typed === nameFrom(labelOf(name), accountOf(name)) ? String(name || "") : typed; if (!to) return { error: "Give it a name." };
   if (to !== name && listSecrets().some((s) => s.name !== name && s.name.toLowerCase() === to.toLowerCase())) return { error: `There's already one called “${labelOf(to)}”.` };
+  if (site !== undefined && String(site || "").trim() && !fillSite(site)) return { error: "That isn't a website. Type its address, like example.com, or leave it empty." };
   const r = renameSecret(String(name || ""), to); if (r.error) return r;
   if (r.name !== name) note(r.name, "rename", now, { from: name });
+  if (site !== undefined) {
+    const was = (listSecrets().find((s) => s.name === r.name) || {}).site || "", want = String(site || "").trim() ? fillSite(site) : "";
+    if (want !== was) { const m = setSite(r.name, want); if (m.error) return m; note(r.name, "site", now, want ? { site: want } : {}); }
+  }
   return { ok: true, name: r.name, until };
 }
 function removeEntry(name, { token = "", now = Date.now() } = {}) {
