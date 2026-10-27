@@ -107,7 +107,33 @@ try {
   as(A, `const v = await import(${JSON.stringify(pathToFileURL(join(ROOT, "vault.mjs")).href)}); v.saveSecret("acme play console token", ["tok-123"]); return S.now();`);
   ok("a secret saved here reaches the laptop's vault", as(B, `await S.now(); const v = await import(${JSON.stringify(pathToFileURL(join(ROOT, "vault.mjs")).href)}); return v.peekSecret("acme play console token").values?.[0]?.v;`) === "tok-123");
 
-  console.log("8) THE MERGE ITSELF");
+  console.log("8) TWO LANES CALLED MARKETING, TWO REPOS");
+  // each computer's marketing is a repo of its own: a task made for this one's is the laptop's to leave alone
+  const mk = (h, word) => { const p = join(h, "lanes", "marketing"); mkdirSync(p, { recursive: true }); sh("git", ["init", "-q", "-b", "main"], p); writeFileSync(join(p, "README.md"), word + "\n"); sh("git", ["-c", "user.name=t", "-c", "user.email=t@t", "add", "."], p); sh("git", ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", word], p); return { p, id: "g" + sh("git", ["rev-list", "--max-parents=0", "HEAD"], p).slice(0, 12) }; };
+  const mA = mk(A, "tracker"), mB = mk(B, "site");
+  const withLane = (h, m) => { const d = JSON.parse(readFileSync(cfg(h, "lane-ids.json"), "utf8")); d.ids[m.id] = { name: "marketing", path: m.p, at: 1 }; put(h, "lane-ids.json", d); };
+  withLane(A, mA); withLane(B, mB);
+  ok("the two marketing lanes have different ids", mA.id !== mB.id, [mA.id, mB.id]);
+  const MT = "Resume the stalled fix for the GitHub installer downloads figure";
+  as(A, `const t = C.loadTasks(); t.push({ id: "m1", text: ${JSON.stringify(MT)}, repo: "marketing", laneId: ${JSON.stringify(mA.id)}, done: false, ts: Date.now() }); C.saveTasks(t); return S.now();`);
+  as(B, `return S.now();`);
+  const L = `const L = await import(${JSON.stringify(pathToFileURL(join(ROOT, "laneids.mjs")).href)});`, Hm = `const H = await import(${JSON.stringify(pathToFileURL(join(ROOT, "home.mjs")).href)});`;
+  const mb1 = as(B, `return C.loadTasks().find((x) => x.id === "m1");`);
+  ok("the laptop has the task, under marketing, with this computer's lane id", mb1 && mb1.repo === "marketing" && mb1.laneId === mA.id, mb1);
+  ok("…which the laptop knows is the other computer's lane, and this computer knows is its own", as(B, `${L} return L.otherMachine(C.loadTasks().find((x) => x.id === "m1"));`) === true && as(A, `${L} return L.otherMachine(C.loadTasks().find((x) => x.id === "m1"));`) === false);
+  const why = (h, p) => as(h, `${Hm} return H.waitWhy({ map: { marketing: ${JSON.stringify(p)} }, named: (_, n) => n, running: [], held: {}, ready: new Set(), isParked: () => false, deps: { cmd: () => "claude", fails: {}, beside: () => new Set(), brief: () => ({ at: 0, tasks: [] }), lastRun: () => 0 } })(C.loadTasks().find((x) => x.id === "m1"));`);
+  const wB = why(B, mB.p), wA = why(A, mA.p);
+  ok("on the laptop it waits for the other computer, and nothing starts it there", wB.kind === "elsewhere" && wB.noGo === true && /other computer/.test(wB.text), wB);
+  ok("…while this computer starts it in its own marketing", wA.kind === "next", wA);
+  const T2 = `const T = await import(${JSON.stringify(pathToFileURL(join(ROOT, "tasks.mjs")).href)});`;
+  const pb = as(B, `${T2} const fs = await import("node:fs"), r = T.pushTasks({ repo: "marketing" }); let brief = ""; try { brief = fs.readFileSync(${JSON.stringify(join(mB.p, ".symbiot", "TASKS.md"))}, "utf8"); } catch {} return { r, brief };`);
+  ok("the laptop's marketing brief never gets it", pb && pb.r.empty === true && !/installer downloads/.test(pb.brief || ""), pb);
+  const Gm = `const G = await import(${JSON.stringify(pathToFileURL(join(ROOT, "goals.mjs")).href)}), J = await import(${JSON.stringify(pathToFileURL(join(ROOT, "jobs.mjs")).href)});`;
+  const old = Date.now() - 3 * 86400e3, deps = `{ tasks: C.loadTasks(), jobs: J.loadJobs(), map: { marketing: ${JSON.stringify(mB.p)} } }`;
+  const gB = as(B, `${Gm} const g = { key: "goal:mk1", kind: "goal", lane: "marketing", text: "Fix the installer downloads figure", asked: "Fix the installer downloads figure", doneWhen: "the figure is right", children: ["task:m1"], paths: [], state: "running", waitingOn: "", what: "", at: ${old}, changed: ${old}, moved: ${old}, history: [] }; J.putGoal(g, { now: ${old} }); await G.goalsTick(${deps}, { now: ${old} }); await G.goalsTick(${deps}, { now: ${old} + 3 * 86400e3 }); return G.goalById("goal:mk1");`);
+  ok("its goal, three days on, waits on the other computer and isn't called stalled", gB && gB.waitingOn === "another computer" && !(gB.card && gB.card.kind === "stalled"), gB);
+
+  console.log("9) THE MERGE ITSELF");
   const U = await import("../sync.mjs");
   ok("answers given on both sides are all kept", (() => { const u = U.unionSections("# A\n\n### one\nx\n", "# A\n\n### two\ny\n"); return /### one\nx/.test(u) && /### two\ny/.test(u) && u.split("### one").length === 2; })());
   ok("a lane is its repo's first commit on every machine, its name otherwise", U.laneKey("gabc", "x") === "gabc" && U.laneKey("p123", "Notes") === "n:notes");

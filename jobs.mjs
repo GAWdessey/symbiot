@@ -159,7 +159,7 @@ function syncOnUser(cards = [], { now = Date.now() } = {}) {
 // it now is running, its turn coming is queued, held on a card of the user's waits on the user,
 // blocked is asked with why. A task that left the list is done there (a run, Approve or a send
 // takes it from there). Its note is why, as of when its state last changed.
-const TASK_STATE = { working: ["running", ""], queued: ["queued", "lane"], beside: ["queued", ""], next: ["queued", ""], peak: ["queued", "time"], asks: ["queued", "user"], step: ["queued", "user"], approve: ["queued", "user"], waiting: ["waiting", ""] }; // waiting: its agent marked it [~], the note says on what
+const TASK_STATE = { working: ["running", ""], queued: ["queued", "lane"], beside: ["queued", ""], next: ["queued", ""], peak: ["queued", "time"], asks: ["queued", "user"], step: ["queued", "user"], approve: ["queued", "user"], waiting: ["waiting", ""], elsewhere: ["waiting", "another computer"] }; // waiting: its agent marked it [~], the note says on what
 function syncTasks(items = [], { now = Date.now() } = {}) {
   try {
     const jobs = loadJobs(), byKey = new Map(jobs.map((j) => [j.key, j])), on = new Set();

@@ -45,6 +45,7 @@ import { newClashes } from "./checks.mjs";
 import { postsState } from "./post.mjs";
 import { sentLine } from "./sentmail.mjs";
 import { laneCap, verdict, peel, inflight, inflightIds, parallelLane, openTasksOf, laneFacts, dropHeld, startParallel, besideAgain } from "./parallel.mjs";
+import { otherMachine, loadLaneIds } from "./laneids.mjs";
 import { licenceState, isPro } from "./licence.mjs";
 import { PHONE, ANDROID_APP, computerView, phoneApprovals, linkState, ask as askComputer } from "./phone.mjs";
 import { draftPreview, MARKETING, MARKETING_DIR, aboutMarketing, displayName, productNames, productOf, untagged, tagged, draftFiles, setDraftStatus, postedCmd } from "./marketing.mjs";
@@ -1282,10 +1283,13 @@ function lastRunAt(path) { const r = loadRuns().find((x) => x.path === path); re
 function waitWhy({ map, named, running, held, ready, isParked, deps = {} }) {
   const brief = deps.brief || briefOf, lastRun = deps.lastRun || lastRunAt, now = deps.now || Date.now();
   const agentSet = !!(deps.cmd || handoffCmd)(), fails = deps.fails || AUTO_FAIL, besideIds = (deps.beside || inflightIds)();
+  const elsewhere = deps.otherMachine || ((ids) => (t) => !!ids && otherMachine(t, ids))((() => { try { return loadLaneIds(); } catch { return null; } })());
   return (t) => {
     const lane = t.repo, name = lane === RUNS_LANE ? "ops" : named(map[lane], lane), age = now - (Number(t.ts) || now);
     const flag = (text) => ({ kind: "stuck", stuck: true, text });
     if (yours(t.text)) return { kind: "you", noGo: true, text: "Yours to do: no agent can, so nothing starts it" };
+    // its lane is the other computer's, not this one's lane of the same name (laneids.mjs): it runs there
+    if (elsewhere(t)) return { kind: "elsewhere", noGo: true, text: `Waiting for the other computer: its ${name} is a different project from this one's, so it runs there` };
     if (isParked(lane)) return { kind: "parked", text: `Blocked: ${name} is parked, so nothing starts there until you unpark it` };
     if (t.later) return { kind: "later", text: "Waiting for Go: a fix to Symbiot noted from chat, so it starts no run and parks nothing until you say" };
     if (!agentSet) return { kind: "blocked", text: "Blocked: no coding agent is set (Settings → Handoff)" };
