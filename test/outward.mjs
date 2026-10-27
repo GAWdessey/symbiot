@@ -5,6 +5,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync } from 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
 const HOME = mkdtempSync(join(tmpdir(), "symbiot-outward-"));
 process.env.HOME = HOME; process.env.USERPROFILE = HOME;
@@ -71,7 +72,7 @@ try {
   // clients, servers, addresses), and anywhere for a personal mail address that isn't a placeholder.
   // The author credit ("<first> <last>" in LICENSE and package.json) is the one place a name belongs.
   {
-    const { execSync } = await import("node:child_process"), root = new URL("..", import.meta.url).pathname;
+    const { execSync } = await import("node:child_process"), root = fileURLToPath(new URL("..", import.meta.url));
     const files = execSync("git ls-files", { cwd: root, encoding: "utf8" }).split("\n").filter((f) => f && !/^(LICENSE|site\/|fonts\/|icons\/)|\.(png|ico|jpg|jpeg|gif|webp|woff2?|ttf|apk|jar|keystore)$|package-lock\.json$/.test(f));
     const names = String(process.env.SYMBIOT_PRIVATE_NAMES || "").split(",").map((x) => x.trim()).filter(Boolean);
     const author = (() => { try { return String(JSON.parse(readFileSync(join(root, "package.json"), "utf8")).author || "").replace(/\s*<.*$/, "").trim(); } catch { return ""; } })();
@@ -95,7 +96,7 @@ try {
   // copied from real runs. CI on GitHub can't know which addresses are the maker's; this computer can.
   // So, run here: no tracked file holds an address of this computer, or of a server it has signed in to.
   {
-    const { execSync, spawnSync } = await import("node:child_process"), os = await import("node:os"), root = new URL("..", import.meta.url).pathname;
+    const { execSync, spawnSync } = await import("node:child_process"), os = await import("node:os"), root = fileURLToPath(new URL("..", import.meta.url));
     const realHome = os.userInfo().homedir, kh = join(realHome, ".ssh", "known_hosts");
     // Docker's bridges (docker0's 172.17.0.1, br-…) get the same addresses on every machine: they don't say whose it is
     const mine = new Set(Object.entries(os.networkInterfaces()).filter(([n]) => !/^(docker\d|br-)/.test(n)).flatMap(([, a]) => a).filter((a) => a && a.family === "IPv4" && !a.internal).map((a) => a.address));

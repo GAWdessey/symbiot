@@ -6,9 +6,10 @@
 //
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 let pass = 0, fail = 0;
 const ok = (n, c, got) => { if (c) { pass++; console.log("  ✓ " + n); } else { fail++; console.log("  ✗ " + n + (got !== undefined ? "  got: " + JSON.stringify(got).slice(0, 300) : "")); } };
-const ROOT = new URL("..", import.meta.url).pathname;
+const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const { EMBEDDED_UI } = await import("../ui.mjs");
 const js = readdirSync(join(ROOT, "ui", "js")).filter((f) => f.endsWith(".mjs"));
 const parts = await Promise.all(["style.mjs", "markup.mjs", ...js.map((f) => "js/" + f)].map(async (f) => [f, (await import(`../ui/${f}`)).default]));

@@ -9,7 +9,7 @@
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { spawn, execSync } from "node:child_process";
 import { createServer } from "node:net";
 import { createInterface } from "node:readline";
@@ -30,9 +30,9 @@ const readJ = (f, d = null) => { try { return JSON.parse(readFileSync(f, "utf8")
 writeFileSync(join(ROOT, "computer.mjs"), `
   import { createInterface } from "node:readline";
   import { readFileSync } from "node:fs";
-  const p = await import(${JSON.stringify(join(SRC, "phone.mjs"))});
-  const t = await import(${JSON.stringify(join(SRC, "tasks.mjs"))});
-  const w = await import(${JSON.stringify(join(SRC, "watch.mjs"))});
+  const p = await import(${JSON.stringify(pathToFileURL(join(SRC, "phone.mjs")).href)});
+  const t = await import(${JSON.stringify(pathToFileURL(join(SRC, "tasks.mjs")).href)});
+  const w = await import(${JSON.stringify(pathToFileURL(join(SRC, "watch.mjs")).href)});
   const approved = [];
   p.setPhoneApprove(async (repo, untasked) => { approved.push({ repo, untasked }); return { ok: true, pr: "https://github.com/me/demo/pull/7" }; });
   const cmds = { on: () => p.setPhoneLink(true), off: () => p.setPhoneLink(false), code: () => p.newCode(), usbcode: () => p.newCode({ usb: true }), state: (a) => p.linkState(a.later ? { now: Date.now() + a.later } : {}), unpair: (a) => p.unpairPhone(a.id),
@@ -150,14 +150,14 @@ try {
   const ADIR = join(ROOT, "android"); mkdirSync(join(ADIR, ".config", "symbiot"), { recursive: true });
   const code2 = (await pc.cmd("code")).code;
   const runA = (src, env = {}) => new Promise((res) => { const ch = spawn(process.execPath, ["--input-type=module", "-e", src], { env: { ...process.env, HOME: ADIR, USERPROFILE: ADIR, SYMBIOT_ANDROID_APP: "1", ...env } }); let o = "", e = ""; ch.stdout.on("data", (d) => { o += d; }); ch.stderr.on("data", (d) => { e += d; }); ch.on("exit", () => { try { res(JSON.parse(o.trim().split("\n").pop())); } catch { res({ error: e.slice(-600) || o }); } }); });
-  const ap = await runA(`const p = await import(${JSON.stringify(join(SRC, "phone.mjs"))}); const r = await p.pairComputer("127.0.0.1:${port}", "${code2}", { name: "Galaxy" }); console.log(JSON.stringify(r)); process.exit(0);`);
+  const ap = await runA(`const p = await import(${JSON.stringify(pathToFileURL(join(SRC, "phone.mjs")).href)}); const r = await p.pairComputer("127.0.0.1:${port}", "${code2}", { name: "Galaxy" }); console.log(JSON.stringify(r)); process.exit(0);`);
   const aCfg = readFileSync(join(ADIR, ".config", "symbiot", "config.json"), "utf8"), aSec = readJ(join(ADIR, ".config", "symbiot", "secrets.json"), {}), seal = readJ(join(ADIR, ".config", "symbiot", "android-seal.json"));
   ok("on the Android app the token and key go to the app (android-seal.json) for its Keystore, never to config or secrets", ap.paired && seal && seal.token && seal.key && !aCfg.includes(seal.token) && !("computerSecret" in aSec), [ap, aSec]);
   rmSync(join(ADIR, ".config", "symbiot", "android-seal.json"));
-  const ap2 = await runA(`const p = await import(${JSON.stringify(join(SRC, "phone.mjs"))}); const r = await p.pollComputer({ notify: () => {}, discover: async () => [] }); console.log(JSON.stringify(r)); process.exit(0);`, { SYMBIOT_COMPUTER_SECRET: JSON.stringify(seal) });
+  const ap2 = await runA(`const p = await import(${JSON.stringify(pathToFileURL(join(SRC, "phone.mjs")).href)}); const r = await p.pollComputer({ notify: () => {}, discover: async () => [] }); console.log(JSON.stringify(r)); process.exit(0);`, { SYMBIOT_COMPUTER_SECRET: JSON.stringify(seal) });
   ok("…and back in SYMBIOT_COMPUTER_SECRET at the next start, it still asks", !ap2.error && ap2.last > 0, ap2);
   // agents, git, npm and gh inherited it from the environment, which undid keeping it in the Keystore
-  const ap4 = await runA(`const p = await import(${JSON.stringify(join(SRC, "phone.mjs"))}); const { execFileSync } = await import("node:child_process");
+  const ap4 = await runA(`const p = await import(${JSON.stringify(pathToFileURL(join(SRC, "phone.mjs")).href)}); const { execFileSync } = await import("node:child_process");
     const child = execFileSync(process.execPath, ["-p", "Object.keys(process.env).includes(\\"SYMBIOT_COMPUTER_SECRET\\")"], { encoding: "utf8" }).trim();
     const r = await p.pollComputer({ notify: () => {}, discover: async () => [] });
     console.log(JSON.stringify({ child, mine: "SYMBIOT_COMPUTER_SECRET" in process.env, relaunch: JSON.parse(p.relaunchEnv().SYMBIOT_COMPUTER_SECRET || "{}").token === ${JSON.stringify(seal.token)}, last: r.last, error: r.error })); process.exit(0);`, { SYMBIOT_COMPUTER_SECRET: JSON.stringify(seal) });
@@ -165,11 +165,11 @@ try {
   ok("…only Symbiot relaunching itself after an update is handed it (relaunchEnv)", ap4.relaunch === true, ap4);
   // Android's own discovery (the app's service) took about 9.5 s for one computer; Node gave up at 8
   const nsdFile = join(ADIR, ".config", "symbiot", "android-nsd.json");
-  const ap5 = await runA(`const p = await import(${JSON.stringify(join(SRC, "phone.mjs"))}); const fs = await import("node:fs");
+  const ap5 = await runA(`const p = await import(${JSON.stringify(pathToFileURL(join(SRC, "phone.mjs")).href)}); const fs = await import("node:fs");
     setTimeout(() => fs.writeFileSync(${JSON.stringify(nsdFile)}, JSON.stringify([{ name: "Symbiot-1a2b", port: 7392, addresses: ["192.168.8.50"], fp: "abc" }])), 9600);
     const f = await p.findComputers(); console.log(JSON.stringify({ f })); process.exit(0);`);
   ok("on the Android app, a computer its discovery finds after 9.6 s is still found", ap5.f && ap5.f.length === 1 && ap5.f[0].url === "http://192.168.8.50:7392" && ap5.f[0].fp === "abc", ap5);
-  const ap3 = await runA(`const p = await import(${JSON.stringify(join(SRC, "phone.mjs"))}); console.log(JSON.stringify(p.computerState())); process.exit(0);`);
+  const ap3 = await runA(`const p = await import(${JSON.stringify(pathToFileURL(join(SRC, "phone.mjs")).href)}); console.log(JSON.stringify(p.computerState())); process.exit(0);`);
   ok("…without it (the Keystore's key gone), it says to pair again", ap3.old && /pair/i.test(ap3.error || ""), ap3);
 
   console.log("5. BACK BY ITSELF — another address, found again, never unpaired by a network error");

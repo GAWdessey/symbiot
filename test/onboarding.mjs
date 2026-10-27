@@ -7,7 +7,7 @@
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync, chmodSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { execSync } from "node:child_process";
 import net from "node:net";
 
@@ -80,7 +80,7 @@ try {
   const fsPhone = firstSteps({ deps: { connected: () => true, repos: () => ({}), cmd: () => "", links: () => ({ items: [] }), connectors: () => ({}), knowledge: () => ({ folders: [] }) } }).steps.find((x) => x.id === "phone");
   const fsPaired = firstSteps({ deps: { phone: () => ({ phones: [{ name: "Pixel" }] }), connected: () => true, repos: () => ({}), cmd: () => "", links: () => ({ items: [] }), connectors: () => ({}), knowledge: () => ({ folders: [] }) } }).steps.find((x) => x.id === "phone");
   ok("Settings' first steps have Your phone too (optional), for whoever finished setup before", fsPhone && fsPhone.optional && !fsPhone.done && fsPaired.done && /Pixel paired/.test(fsPaired.sub), [fsPhone, fsPaired]);
-  const droid = execSync(`${JSON.stringify(process.execPath)} --input-type=module -e 'const h = await import(${JSON.stringify(join(dirname(fileURLToPath(import.meta.url)), "..", "home.mjs"))}); const c = await import(${JSON.stringify(join(dirname(fileURLToPath(import.meta.url)), "..", "core.mjs"))}); const cf = c.loadConfig(); delete cf.onboarding; c.saveConfig(cf); const first = h.startOnboarding().step; const a = h.setOnboarding({ restart: true }); const b = h.setOnboarding({ step: "phone" }); console.log(JSON.stringify({ first, steps: a.steps, step: a.step, phone: a.phone, after: b.step }));'`, { env: { ...process.env, HOME, USERPROFILE: HOME, SYMBIOT_ANDROID_APP: "1" }, encoding: "utf8" });
+  const droid = execSync(`${JSON.stringify(process.execPath)} --input-type=module -e 'const h = await import(${JSON.stringify(pathToFileURL(join(dirname(fileURLToPath(import.meta.url)), "..", "home.mjs")).href)}); const c = await import(${JSON.stringify(pathToFileURL(join(dirname(fileURLToPath(import.meta.url)), "..", "core.mjs")).href)}); const cf = c.loadConfig(); delete cf.onboarding; c.saveConfig(cf); const first = h.startOnboarding().step; const a = h.setOnboarding({ restart: true }); const b = h.setOnboarding({ step: "phone" }); console.log(JSON.stringify({ first, steps: a.steps, step: a.step, phone: a.phone, after: b.step }));'`, { env: { ...process.env, HOME, USERPROFILE: HOME, SYMBIOT_ANDROID_APP: "1" }, encoding: "utf8" });
   const dj = JSON.parse(droid.trim().split("\n").pop());
   ok("in the phone's app, Setup starts at Your computer, a new install's too (and has no Your phone step)", dj.steps.join() === "computer,welcome,done" && !dj.steps.includes("ai") && dj.step === "computer" && dj.first === "computer" && dj.phone.role === "phone" && dj.phone.paired === false && dj.after === "computer", dj);
   // the phone app installed over an older one: its setup had started at "Meet Symbiot"
@@ -104,7 +104,7 @@ try {
   ok("a Symbiot that finished setup isn't sent through it again (the new step doesn't reopen it)", onboarding().pending === false, onboarding().pending);
 
   console.log("A PHONE NEVER ASKS FOR ITS OWN AI");
-  const ph = JSON.parse(execSync(`${JSON.stringify(process.execPath)} --input-type=module -e 'const h = await import(${JSON.stringify(join(dirname(fileURLToPath(import.meta.url)), "..", "home.mjs"))}); const s = h.homeState({}); const a = await h.homeAsk("hi"); console.log(JSON.stringify({ cards: s.you.map((y) => y.id), err: a.error }));'`, { env: { ...process.env, HOME: join(HOME, "nophone"), USERPROFILE: join(HOME, "nophone"), SYMBIOT_AS_PHONE: "1", SYMBIOT_CLAUDE_CMD: "/nonexistent" }, encoding: "utf8" }).trim().split("\n").pop());
+  const ph = JSON.parse(execSync(`${JSON.stringify(process.execPath)} --input-type=module -e 'const h = await import(${JSON.stringify(pathToFileURL(join(dirname(fileURLToPath(import.meta.url)), "..", "home.mjs")).href)}); const s = h.homeState({}); const a = await h.homeAsk("hi"); console.log(JSON.stringify({ cards: s.you.map((y) => y.id), err: a.error }));'`, { env: { ...process.env, HOME: join(HOME, "nophone"), USERPROFILE: join(HOME, "nophone"), SYMBIOT_AS_PHONE: "1", SYMBIOT_CLAUDE_CMD: "/nonexistent" }, encoding: "utf8" }).trim().split("\n").pop());
   ok("a phone (Termux too) gets no Connect-an-AI, agent or connector card", !ph.cards.some((id) => /^setup:(ai|agent|conn|pick)/.test(id)), ph.cards);
   ok("its chat says to pair, not to connect an AI", /Pair this phone/.test(ph.err || ""), ph.err);
 

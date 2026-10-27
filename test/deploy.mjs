@@ -6,6 +6,7 @@
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const HOME = mkdtempSync(join(tmpdir(), "symbiot-deploy-"));
 process.env.HOME = HOME; process.env.USERPROFILE = HOME;
@@ -105,13 +106,13 @@ ok("the user's own yes with a new command keeps it on", both.ok && D.runbookOf("
 {
   const { spawnSync: sp } = await import("node:child_process");
   D.setRunbook("dl", { policy: "ask" });
-  const set = sp(process.execPath, [new URL("../index.mjs", import.meta.url).pathname, "deploy", "set", "dl", "--policy", "always"], { encoding: "utf8", env: { ...process.env, HOME, SYMBIOT_NO_APP: "1" } });
+  const set = sp(process.execPath, [fileURLToPath(new URL("../index.mjs", import.meta.url)), "deploy", "set", "dl", "--policy", "always"], { encoding: "utf8", env: { ...process.env, HOME, SYMBIOT_NO_APP: "1" } });
   ok("symbiot deploy set --policy always is refused, and changes nothing", set.status === 1 && /user's to switch on/.test(set.stderr) && D.runbookOf("dl").policy === "ask", [set.status, set.stderr]);
 }
 D.setRunbook("dl", { policy: "never" });
 ok("policy never: a merge asks nothing and deploys nothing", (await D.onMerged(dl, "dl", "https://github.com/x/dl/pull/32", { act })).skipped === "never" && acts.length === 2);
 const { spawnSync } = await import("node:child_process");
-const cli = spawnSync(process.execPath, [new URL("../index.mjs", import.meta.url).pathname, "deploy"], { encoding: "utf8", env: { ...process.env, HOME, SYMBIOT_NO_APP: "1" } });
+const cli = spawnSync(process.execPath, [fileURLToPath(new URL("../index.mjs", import.meta.url)), "deploy"], { encoding: "utf8", env: { ...process.env, HOME, SYMBIOT_NO_APP: "1" } });
 ok("symbiot deploy lists it, in a line", /dl: on prod-box, `ssh prod-box ~\/dl\/deploy\.sh` · live https:\/\/dl\.example · check https:\/\/dl\.example\/health for "ok" · never deploys/.test(cli.stdout), cli.stdout + cli.stderr);
 }
 console.log(`\n${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0);

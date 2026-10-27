@@ -9,6 +9,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
 const HOME = mkdtempSync(join(tmpdir(), "symbiot-phonegate-"));
 process.env.HOME = HOME; process.env.USERPROFILE = HOME;
@@ -47,7 +48,7 @@ try {
   ok("another run's adb is refused while this one has the phone, saying where to hand it", busy && /only one run touches the phone at a time/.test(busy.why) && busy.why.includes(lane), busy);
   ok("…its phone check too", !!sh("node scripts/phone-codes-check.mjs --install", "s2", other));
   ok("…but adb's housekeeping isn't", sh("adb devices", "s2", other) === null);
-  const hook = (ev) => spawnSync(process.execPath, [new URL("../guard.mjs", import.meta.url).pathname], { input: JSON.stringify(ev), encoding: "utf8", env: { ...process.env, HOME } });
+  const hook = (ev) => spawnSync(process.execPath, [fileURLToPath(new URL("../guard.mjs", import.meta.url))], { input: JSON.stringify(ev), encoding: "utf8", env: { ...process.env, HOME } });
   ok("another run's end doesn't free it", !P.letGo("s2", { home: HOME }) && !!sh("adb shell getprop x", "s2", other));
   hook({ hook_event_name: "Stop", session_id: "s1", stop_hook_active: false });
   ok("the run that has it ends: the next one may use the phone", sh("adb shell getprop ro.product.model", "s2", other) === null);
@@ -86,7 +87,7 @@ try {
   P.letGo("s9", { home: HOME });
 
   console.log("NOTHING SYMBIOT SHIPS OPENS AN APP ON THE PHONE BY ITSELF");
-  const { readFileSync: rf } = await import("node:fs"), SRC = new URL("..", import.meta.url).pathname;
+  const { readFileSync: rf } = await import("node:fs"), SRC = fileURLToPath(new URL("..", import.meta.url));
   const files = JSON.parse(rf(join(SRC, "package.json"), "utf8")).files.filter((f) => /\.m?js$/.test(f));
   const LAUNCH_IN = /["'`](?:am|monkey)["'`]\s*,\s*["'`](?:start|start-activity|-p)\b|["'`]input["'`]\s*,\s*["'`](?:tap|swipe|text|keyevent|press)["'`]|\bam\s+start\b.*\$\{|termux-open\b/;
   const sites = files.flatMap((f) => { let t = ""; try { t = rf(join(SRC, f), "utf8"); } catch { return []; } return t.split("\n").map((l, i) => [f, i + 1, l]).filter(([, , l]) => LAUNCH_IN.test(l) && !/^\s*\/\//.test(l)); });

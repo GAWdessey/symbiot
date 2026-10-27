@@ -9,7 +9,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url)), T = mkdtempSync(join(tmpdir(), "symbiot-sync-"));
 let pass = 0, fail = 0;
@@ -19,7 +19,7 @@ const PIN = "harbour-731";
 // run code as one home: `S` is sync.mjs, `V` vaultview.mjs, `C` core.mjs, `M` mind.mjs; prints JSON
 function as(home, code) {
   const env = { ...process.env, HOME: home, USERPROFILE: home, SYMBIOT_VAULT: "file", GIT_TERMINAL_PROMPT: "0" };
-  const r = spawnSync(process.execPath, ["--input-type=module", "-e", `const S = await import(${JSON.stringify(join(ROOT, "sync.mjs"))}), V = await import(${JSON.stringify(join(ROOT, "vaultview.mjs"))}), C = await import(${JSON.stringify(join(ROOT, "core.mjs"))}), M = await import(${JSON.stringify(join(ROOT, "mind.mjs"))});\nconst out = await (async () => { ${code} })();\nconsole.log("\\n@@" + JSON.stringify(out ?? null));`], { env, encoding: "utf8", timeout: 120000 });
+  const r = spawnSync(process.execPath, ["--input-type=module", "-e", `const S = await import(${JSON.stringify(pathToFileURL(join(ROOT, "sync.mjs")).href)}), V = await import(${JSON.stringify(pathToFileURL(join(ROOT, "vaultview.mjs")).href)}), C = await import(${JSON.stringify(pathToFileURL(join(ROOT, "core.mjs")).href)}), M = await import(${JSON.stringify(pathToFileURL(join(ROOT, "mind.mjs")).href)});\nconst out = await (async () => { ${code} })();\nconsole.log("\\n@@" + JSON.stringify(out ?? null));`], { env, encoding: "utf8", timeout: 120000 });
   const line = (r.stdout || "").split("\n@@").pop();
   try { return JSON.parse(line); } catch { return { crashed: true, stderr: (r.stderr || "").slice(-1500), stdout: (r.stdout || "").slice(-500) }; }
 }
@@ -100,12 +100,12 @@ try {
   ok("keys.json and one sealed file per machine", files.includes("keys.json") && files.filter((f) => /^machines\/[0-9a-f]+\.enc$/.test(f)).length === 2, files);
   const blob = files.map((f) => sh("git", ["--git-dir", REMOTE, "show", "main:" + f], T)).join("\n") + sh("git", ["--git-dir", REMOTE, "log", "--format=%s%n%b", "main"], T);
   ok("not a task, a fact, an answer or the PIN is readable in it", !/streak|Acme|Play Store|Orange|harbour/i.test(blob));
-  ok("the sync key isn't in it either, only wrapped", !blob.includes(as(A, `const v = await import(${JSON.stringify(join(ROOT, "vault.mjs"))}); return v.peekSecret(S.KEY_NAME).values[0].v;`)));
-  ok("the sync key is kept in each computer's vault, and isn't synced as a secret", !as(B, `const v = await import(${JSON.stringify(join(ROOT, "vault.mjs"))}); return (await S.stamped()).vault[S.KEY_NAME] || null;`));
+  ok("the sync key isn't in it either, only wrapped", !blob.includes(as(A, `const v = await import(${JSON.stringify(pathToFileURL(join(ROOT, "vault.mjs")).href)}); return v.peekSecret(S.KEY_NAME).values[0].v;`)));
+  ok("the sync key is kept in each computer's vault, and isn't synced as a secret", !as(B, `const v = await import(${JSON.stringify(pathToFileURL(join(ROOT, "vault.mjs")).href)}); return (await S.stamped()).vault[S.KEY_NAME] || null;`));
 
   console.log("7) SECRETS");
-  as(A, `const v = await import(${JSON.stringify(join(ROOT, "vault.mjs"))}); v.saveSecret("acme play console token", ["tok-123"]); return S.now();`);
-  ok("a secret saved here reaches the laptop's vault", as(B, `await S.now(); const v = await import(${JSON.stringify(join(ROOT, "vault.mjs"))}); return v.peekSecret("acme play console token").values?.[0]?.v;`) === "tok-123");
+  as(A, `const v = await import(${JSON.stringify(pathToFileURL(join(ROOT, "vault.mjs")).href)}); v.saveSecret("acme play console token", ["tok-123"]); return S.now();`);
+  ok("a secret saved here reaches the laptop's vault", as(B, `await S.now(); const v = await import(${JSON.stringify(pathToFileURL(join(ROOT, "vault.mjs")).href)}); return v.peekSecret("acme play console token").values?.[0]?.v;`) === "tok-123");
 
   console.log("8) THE MERGE ITSELF");
   const U = await import("../sync.mjs");
