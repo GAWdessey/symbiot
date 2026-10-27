@@ -25,7 +25,7 @@ import { repoPathMap, laneMap, nearLane, openWork, detectRepo } from "./scan.mjs
 import { afterShip } from "./deploy.mjs";
 import { ruleLines } from "./overrides.mjs";
 import { MARKETING_DIR, ensureMarketing, marketingBrief } from "./marketing.mjs";
-import { laneIdOf, nameOfId, noteLanes } from "./laneids.mjs";
+import { laneIdOf, nameOfId, noteLanes, otherMachine, loadLaneIds } from "./laneids.mjs";
 
 // ---- tasks: a persistent checklist (stored by core.mjs) -------------------
 // One line (TASKS.md has a task per line, and a tick only matches a whole one),
@@ -1575,6 +1575,7 @@ function pushTasks(filter) {
   // one an older chat left waiting for Go (addTask later) goes with the rest: chat-noted Symbiot
   // fixes start right away now (mind.mjs actIn), so nothing should still sit parked for a Go
   { const go = tasks.filter((t) => t.later); for (const t of go) delete t.later; if (go.length) saveTasks(all); }
+  { const ids = loadLaneIds(); tasks = tasks.filter((t) => !otherMachine(t, ids)); } // its lane is on the other machine: not this one's same-named lane's (laneids.mjs)
   { const beside = inflightIds(), skip = new Set((filter && filter.exclude) || []); tasks = tasks.filter((t) => !beside.has(t.id) && !skip.has(t.id)); } // one running beside its lane's agent (parallel.mjs), or peeled off to start there now: not in the lane's own brief
   if (!tasks.length) return { empty: true, written: [], unresolved: [] };
   const groups = {}; for (const t of tasks) { const k = t.repo || ""; (groups[k] = groups[k] || []).push(t); }
