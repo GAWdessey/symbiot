@@ -44,9 +44,12 @@ function unwrapKey(keys, pin) {
 const laneMap = () => { const d = readState(LANE_IDS(), (x) => x && typeof x === "object") || {}; return d.ids || {}; };
 // A lane's key on every machine: a git lane's id is its first commit (laneids.mjs), the same anywhere; else its name.
 const laneKey = (id, name) => (/^g/.test(id || "") ? id : "n:" + String(name || "").toLowerCase());
+// One key per folder: two ids naming one folder (one of them stale, from before a clone of the same
+// repo came) put another lane's questions in it and deleted its own (27 Oct 2026). The newest stands.
 function localLanes() {
-  const byKey = {};
-  for (const [id, v] of Object.entries(laneMap())) if (v && v.path) byKey[laneKey(id, v.name)] = { id, name: v.name, path: v.path };
+  const byKey = {}, byPath = new Map();
+  for (const [id, v] of Object.entries(laneMap())) if (v && v.path) { const o = byPath.get(v.path); if (!o || (v.at || 0) > (o.v.at || 0)) byPath.set(v.path, { id, v }); }
+  for (const { id, v } of byPath.values()) byKey[laneKey(id, v.name)] = { id, name: v.name, path: v.path };
   return byKey;
 }
 const LANE_FILES = ["QUESTIONS.md", "ANSWERS.md"];

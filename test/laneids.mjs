@@ -44,6 +44,24 @@ try {
   const cart = t.find((x) => x.id === "a1");
   ok("the task filed under shop goes to shop-app, by its lane's id, and says where it was", cart.repo === "shop-app" && cart.refiled && cart.refiled.from === "shop", cart);
   ok("…the other lane's task stays where it was", t.find((x) => x.id === "a2").repo === "cafe");
+
+  console.log("A COPY OF A REPO COMES — the id the first went by is retired, never left on the copy");
+  // a copy of a repo (the same first commit) came as a second lane: the first's id was left naming the copy's folder,
+  // and the sync wrote the first's questions there (27 Oct 2026)
+  repo(join(W, "daily"), "daily"); execSync(`git clone -q ${join(W, "daily")} ${join(W, "forge")}`, { env });
+  const solo = { daily: join(W, "daily") }; L.noteLanes(solo); const gid = L.laneIdOf("daily");
+  ok("alone, it goes by its first commit", /^g/.test(gid), gid);
+  const pair = { daily: join(W, "daily"), forge: join(W, "forge") }; L.noteLanes(pair);
+  const d = L.loadLaneIds();
+  ok("with its copy, each goes by its path, and the old id names no folder", /^p/.test(L.laneIdOf("daily")) && /^p/.test(L.laneIdOf("forge")) && !d.ids[gid] && d.retired[gid] === L.laneIdOf("daily"), d);
+  ok("…a task still carrying the old id is this machine's, not the other's", !L.otherMachine({ laneId: gid, repo: "daily" }));
+  // git failing for a moment (a timeout on a busy disk) isn't "no history": the ids stay as they were
+  const fail = () => ({ status: null, error: new Error("ETIMEDOUT") });
+  const before = L.idsFor(pair), during = L.idsFor(pair, { root: (p) => L.rootOf(p, { git: fail }) });
+  ok("a git call that fails keeps the root it had: no id moves", JSON.stringify(before) === JSON.stringify(during), [before, during]);
+  const ids0 = JSON.stringify(L.loadLaneIds().ids);
+  L.noteLanes(pair, { root: (p) => (p === join(W, "daily") ? "" : L.rootOf(p)) }); // just after a restart: nothing read yet, and git fails for daily
+  ok("…and just after a restart, the root kept on disk: the copy never takes the shared id alone", JSON.stringify(L.loadLaneIds().ids).replace(/"at":\d+/g, "") === ids0.replace(/"at":\d+/g, "") && !L.loadLaneIds().ids[gid], L.loadLaneIds().ids);
 } catch (e) { ok("ran", false, String((e && e.stack) || e)); }
 finally { rmSync(HOME, { recursive: true, force: true }); }
 console.log(`\n${fail ? "✗" : "✓"} laneids: ${pass} passed, ${fail} failed`);
