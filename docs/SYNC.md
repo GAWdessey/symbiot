@@ -31,6 +31,11 @@ its name. A lane's questions and answers travel under the same key and are writt
 that lane's own folder on each machine; a lane the other machine doesn't have yet keeps
 its records in the sync state and they land when the repo shows up there.
 
+A task whose lane only the other machine has stays that machine's, even when a lane here
+has the same name (two `marketing` lanes, two different repos): it isn't put in this
+machine's lane's brief or started here, Home says it waits for the other computer, and its
+goal isn't called stalled while it waits (`laneids.mjs otherMachine`).
+
 ## Transport
 
 A private git repo (or any folder both machines can reach: a bare repo on a shared drive,

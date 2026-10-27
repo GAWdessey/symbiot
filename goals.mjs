@@ -32,9 +32,11 @@ import { randomBytes } from "node:crypto";
 import { CONFIG_DIR, loadTasks, clipWords, jobWords, readState, writeJsonAtomic, sameTask } from "./core.mjs";
 import { goalRows, putGoal, loadJobs, ENDED, FINISHED } from "./jobs.mjs";
 import { sentAt } from "./handback.mjs";
+import { otherMachine, loadLaneIds } from "./laneids.mjs";
 
 const DAY = 86400e3, H = 3600e3, DEAD_RUN = 3 * H; // runs that hang are stopped after 45 minutes (agents.mjs runsTick)
 const GOALS_DIR = join(CONFIG_DIR, "drafts"); // a goal's breakdown is a report in a folder of its own there (act-<id>)
+const ELSEWHERE = "another computer"; // a task whose lane is only on the other machine (laneids.mjs otherMachine): it runs there, and its wait isn't a stall
 const STALL_AFTER = DAY, NUDGE_AFTER = DAY, SURFACE_AFTER = 3 * DAY, WAIT_OLD = 7 * DAY, LEFT_TRIES = 1;
 const CARDS_FILE = join(CONFIG_DIR, "goal-cards.json"); // the old-wait cards' "keep waiting" (an email wait isn't a goal)
 const clip = (s, n) => String(s || "").replace(/\s+/g, " ").trim().slice(0, n);
@@ -156,6 +158,8 @@ function superseded(j, ctx) {
   if ((j.state === "paused" || j.task || j.bare) && (ctx.openItems || openItemsIn)(j.path) === 0) return { state: "ended", ok: true, path: j.path, at: j.changed, what: "its folder has no open items left" };
   return null;
 }
+const elsewhereFrom = () => { let ids = null; try { ids = loadLaneIds(); } catch {} return (t) => !!ids && otherMachine(t, ids); };
+const elsewhereNow = (t) => elsewhereFrom()(t);
 // { at, state: active | waiting | ended, waitingOn, what, path, ok (ended done, not failed or stopped), summary }
 function childState(key, ctx) {
   const [kind, id] = [key.slice(0, key.indexOf(":")), key.slice(key.indexOf(":") + 1)];
@@ -164,6 +168,7 @@ function childState(key, ctx) {
     if (!t || t.removed) return { state: "ended", ok: false, what: "removed from the Workdesk" };
     if (t.done || t.archived) return { state: "ended", ok: true, path: ctx.map[t.repo] || "" };
     if (t.review) return { state: "waiting", waitingOn: "user", what: "its changes wait for Approve", path: ctx.map[t.repo] || "" };
+    if ((ctx.elsewhere || elsewhereNow)(t)) return { state: "waiting", waitingOn: ELSEWHERE, what: `its lane, ${t.repo}, is on the other computer, not this one's ${t.repo}`, at: t.ts || 0 };
     return { state: "active", path: ctx.map[t.repo] || "" };
   }
   if (kind === "run") {
@@ -254,7 +259,7 @@ function rollUp(g, ctx) {
   const u = first((c) => c.state === "waiting" && c.waitingOn === "user");
   if (u) return { state: "waiting", waitingOn: "user", what: clip(u.what, 200), since: u.at || 0, kids };
   if (first((c) => c.state === "active")) return { state: "running", waitingOn: "", what: "", kids };
-  for (const on of ["lane", "third party", "time"]) { const c = first((x) => x.state === "waiting" && x.waitingOn === on); if (c) return { state: "waiting", waitingOn: on, what: clip(c.what, 200), since: c.at || 0, kids }; }
+  for (const on of ["lane", "third party", "time", ELSEWHERE]) { const c = first((x) => x.state === "waiting" && x.waitingOn === on); if (c) return { state: "waiting", waitingOn: on, what: clip(c.what, 200), since: c.at || 0, kids }; }
   if (!kids.length) return { state: "running", waitingOn: "", what: "", kids };
   return { state: "ended", waitingOn: "", what: "", kids };
 }
@@ -317,7 +322,7 @@ function askIn(said) {
 //   notTheirs(card), unclear(card) (the card writer's verdicts, needs.mjs),
 //   tasks, ledger, waits, jobs, map }. Returns what it did, for the log and the tests.
 async function goalsTick(deps = {}, { now = Date.now() } = {}) {
-  const ctx = { tasks: deps.tasks || loadTasks(), ledger: deps.ledger || { handoffs: [] }, waits: deps.waits || [], jobs: deps.jobs || loadJobs(), map: deps.map || {}, running: deps.running || (() => false), openItems: deps.openItems, now };
+  const ctx = { tasks: deps.tasks || loadTasks(), ledger: deps.ledger || { handoffs: [] }, waits: deps.waits || [], jobs: deps.jobs || loadJobs(), map: deps.map || {}, running: deps.running || (() => false), openItems: deps.openItems, elsewhere: deps.elsewhere || elsewhereFrom(), now };
   const did = [];
   if (!deps.jobs) { try { tidyGoals({ now }); ctx.jobs = loadJobs(); } catch {} }
   for (const g0 of goalRows({ jobs: ctx.jobs })) {
@@ -389,7 +394,7 @@ async function goalsTick(deps = {}, { now = Date.now() } = {}) {
         if (until && until <= now && start(c.path, "the time it waited for came") && deps.settle) deps.settle(c.path, "the time it waited for came");
       }
     }
-    if (g.state !== "done" && now - (g.moved || g.at) > STALL_AFTER && (!g.card || g.card.kind === "user")) g.card = { kind: "stalled", q: `Stalled: ${g.text}, ${g.waitingOn ? `waiting on ${g.waitingOn === "user" ? "you" : g.waitingOn}${g.what ? ` (${clip(g.what, 120)})` : ""}` : "with nothing moving"} since ${new Date(g.moved || g.at).toLocaleString("en-ZA", { hour12: false })}`, options: ["Look into it now", "Keep waiting", "Drop it"], at: now };
+    if (g.state !== "done" && !(r.state === "waiting" && r.waitingOn === ELSEWHERE) && now - (g.moved || g.at) > STALL_AFTER && (!g.card || g.card.kind === "user")) g.card = { kind: "stalled", q: `Stalled: ${g.text}, ${g.waitingOn ? `waiting on ${g.waitingOn === "user" ? "you" : g.waitingOn}${g.what ? ` (${clip(g.what, 120)})` : ""}` : "with nothing moving"} since ${new Date(g.moved || g.at).toLocaleString("en-ZA", { hour12: false })}`, options: ["Look into it now", "Keep waiting", "Drop it"], at: now };
     g.history = g.history || [];
     if (JSON.stringify(g) !== JSON.stringify(g0)) putGoal(g, { now });
   }
