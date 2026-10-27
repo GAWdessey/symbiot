@@ -219,6 +219,8 @@ function esc(s){return String(s).replace(/[&<>"']/g,function(ch){return ch==='&'
 function okUrl(u){u=String(u||'');return /^https?:\\/\\//i.test(u)?u:'';}
 // An agent's option, with its who-acts markers as badges: 👤 You (you do this
 // step) and 🤖 Agent (picking it is enough; the next run does it). Escaped first.
-function whoHtml(o){return esc(o).replace(/👤[ ]*(You:|You(?=[ ]))?/g,"<span class='who you'><i class=ic-person></i> You</span> ").replace(/🤖[ ]*(Agent:|Agent(?=[ ]))?/g,"<span class='who agent'><i class=ic-bot></i> Agent</span> ");}
+// "👤 You (only you: your Render login): create a key…": the reason goes in the chip (You · your Render login) and the
+// button keeps just the action, "Create a key…"; the raw tag showed after the chip (UI review, 27 Oct 2026).
+function whoHtml(o){return esc(o).replace(/👤[ ]*You[ ]*[(]only you:[ ]*([^()]{1,60})[)][ ]*:?[ ]*(\\S?)/g,function(m,why,c){return "<span class='who you'><i class=ic-person></i> You &middot; "+why.trim()+"</span> "+c.toUpperCase();}).replace(/👤[ ]*(You:|You(?=[ ]))?/g,"<span class='who you'><i class=ic-person></i> You</span> ").replace(/🤖[ ]*(Agent:|Agent(?=[ ]))?/g,"<span class='who agent'><i class=ic-bot></i> Agent</span> ");}
 
 `;
