@@ -35,6 +35,7 @@ import { createHash } from "node:crypto";
 import { CONFIG_DIR, readState, writeJsonAtomic } from "./core.mjs";
 import { promptFor } from "./overrides.mjs";
 import { addsPayment, warnsHold, HOLD_WARNING } from "./sends.mjs";
+import { dangles } from "./handover.mjs";
 
 const CARDTEXT = () => join(CONFIG_DIR, "cardtext.json");
 const MAX_KEEP = 300, CARD_V = 4; // CARD_V: a card written before its agent's own line (doing), its check (proof, run), or the unclear rule, is written again
@@ -52,10 +53,10 @@ function isUpdate(y) {
   return /^\s*done:/i.test(String(y.raw || y.q || ""));
 }
 // A card with nothing to ask: its words blank, a placeholder ("undefined", "n/a"), or only about
-// itself ("this card"). On 23 Oct 2026 a card's talk went to its agent as "this card", and the AI
+// itself ("this card"), or cut off on a word that needs more ("They wait on you for.", 27 Oct 2026). On 23 Oct 2026 a card's talk went to its agent as "this card", and the AI
 // told the user the card was empty and had nothing behind it. Such a card is never shown or asked about.
 const PLACEHOLDER = /^(?:(?:this|the|that|a)\s+)?(?:card|question|ask|step|item|task|one)$|^(?:this|that|it|here|undefined|null|nan|none|n a|na|tbd|todo|placeholder|untitled|object object|lorem ipsum.*)$/i;
-const blankText = (s) => { const t = String(s || "").replace(/[^\p{L}\p{N}]+/gu, " ").trim(); return !t || PLACEHOLDER.test(t); };
+const blankText = (s) => { const t = String(s || "").replace(/[^\p{L}\p{N}]+/gu, " ").trim(); return !t || PLACEHOLDER.test(t) || dangles(s); };
 const blankAsk = (y) => !!y && y.kind === "ask" && blankText(y.raw) && blankText(y.q) && blankText(y.sub);
 // { you, updates }: updates as the list shows them, newest first.
 // A card the writer found isn't theirs ("Is the domain moved yet?", "Have you scheduled the 29 Oct

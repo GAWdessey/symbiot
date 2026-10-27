@@ -17,7 +17,7 @@ let pass = 0, fail = 0;
 const ok = (n, c, got) => { if (c) { pass++; console.log("  ✓ " + n); } else { fail++; console.log("  ✗ " + n + (got !== undefined ? "  got: " + JSON.stringify(got) : "")); } };
 
 const { dispatch, lanesTick, outcome, loadLedger, lanesState, stageOf, underWay, MAX_CHAIN, aboutIt, partlyDone, remoteKey, orcaMoves, orcaRelink, stuckHandovers, allowHandover, skipHandover, namedDirs, handingOf } = await import("../lanes.mjs");
-const { parseHandoffs, handoverRules, CLI_LOGIN, ONLY_YOU, leftToYou, gitWork, agentsGitWork, agentsClicking, agentsCodeWork, heldAsks, agentsPosting, linkedAsks, linkedChore } =await import("../handover.mjs");
+const { parseHandoffs, handoverRules, CLI_LOGIN, ONLY_YOU, leftToYou, dangles, gitWork, agentsGitWork, agentsClicking, agentsCodeWork, heldAsks, agentsPosting, linkedAsks, linkedChore } =await import("../handover.mjs");
 const { buildTasksMd, mergeWhenGreen } = await import("../tasks.mjs");
 {
   const fake = (buckets, mergeStatus = 0) => { const calls = []; const gh = (a) => { calls.push(a.slice(0, 2).join(" ")); return a[1] === "checks" ? { status: 0, stdout: JSON.stringify(buckets.map((bucket) => ({ bucket }))) } : { status: mergeStatus, stderr: "" }; }; return { gh, calls }; };
@@ -356,6 +356,12 @@ try {
   ok("…the reply to Alex you said you'd send: named by its point, with the catch it found", l2 && l2.kind === "approve" && l2.label === "Reply to Alex" && /^Reply to Alex: you picked sending it yourself/.test(l2.what) && l2.check === "One catch: the link in it is wrapped in a google.com redirect. Fix that before you send.", l2);
   const l3 = leftToYou("The fixed URL still isn't live. Running tailscale needs sudo, and only you can do that.\n\nOpen a terminal, paste this, and type your password when it asks:\n\n```\nsudo tailscale up\n```\n\nThat gives the URL.");
   ok("…a sudo step: yours, with what to do, but never the command itself (the user doesn't code)", l3 && l3.kind === "step" && /only you can do that/.test(l3.what) && /type your password when it asks\.$/.test(l3.check) && !/sudo tailscale|`/.test(l3.check), l3);
+  // 27 Oct 2026: dailify's last words pointed at its open Workdesk questions, and the card read "They wait on you for."
+  const dfy = "I ticked four items and opened PR #596.\n\nTen items stay `[~]`, and none has anything new to act on. They wait on you for `{#kea-realtime-turns}` and `{#dailify-ns-switch}` on Workdesk, and on the 10 numbers waiting for your verdict on the speech-to-speech re-test.";
+  ok("…pointing at questions already on the Workdesk is no new step (never \"They wait on you for.\")", leftToYou(dfy) === null, leftToYou(dfy));
+  const cut = leftToYou("All done. It needs your sign-in for `https://example.com/login`.");
+  ok("…nor a sentence that's cut off once its code is taken out", cut === null || !/\bfor\.?$/.test(cut.what), cut);
+  ok("…cut off on \"for\" is a fragment, a question that ends on \"with\" isn't", dangles("They wait on you for.") && dangles("It waits on your OK for **") && !dangles("Which account should I sign in with?") && !dangles("Only you can do that."));
   // 24 Oct 2026: "Not checked: … because the membrane blocks me from reading them. To compare them yourself: diff <(jq -S . ~/.config/…)" was the card's check
   const blk = "Changes 7 and 8 are in.\n\n- **Not checked:** the settings and vault files before and after 05:44, because the membrane blocks me from reading them. To compare them yourself: diff <(jq -S . ~/.cfg/a.json.bak) <(jq -S . ~/.cfg/a.json)\n- **Email:** the draft to Dana isn't sent yet.";
   const l4 = leftToYou(blk);
