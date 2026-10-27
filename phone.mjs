@@ -233,7 +233,7 @@ async function handle(req, res) {
   }
   // a phone paired before the link was sealed
   if (u.pathname === "/phone/news" && req.method === "GET") return reply(res, 403, { error: OLD_PHONE });
-  const op = (u.pathname.match(/^\/phone\/(news|state|apply|chat)$/) || [])[1];
+  const op = (u.pathname.match(/^\/phone\/(news|state|apply|chat|report)$/) || [])[1];
   if (op && req.method === "POST") { const r = await answer(await body(req), op, "wifi"); return reply(res, r.status, r.body); }
   reply(res, 404, { error: "not found" });
 }
@@ -286,8 +286,11 @@ function fitRelay(status, body, max) {
   const copy = body && Array.isArray(body.reports) ? body : body && body.state && Array.isArray(body.state.reports) ? body.state : null;
   if (copy) {
     const wrap = (c) => (copy === body ? c : { ...body, state: c });
-    const brief = wrap({ ...copy, reports: copy.reports.map((r) => ({ ...r, text: cutReport(r.text, 1500).text, cut: true })) });
+    const brief = wrap({ ...copy, reports: copy.reports.map((r) => (typeof r.text === "string" ? { ...r, text: cutReport(r.text, 1500).text, cut: true } : r)) });
     if (sealedSize(status, brief) <= max) return { status, body: brief };
+    // the reports listed still, each without its text (the phone asks for one when it's opened), and the Dashboard's newest
+    const listed = wrap({ ...copy, reports: copy.reports.map(({ text: _t, cut: _c, ...r }) => ({ ...r, more: true })), ...(copy.board ? { board: { ...copy.board, cards: copy.board.cards.map((c) => ({ ...c, items: c.items.slice(0, 3) })) } } : {}) });
+    if (sealedSize(status, listed) <= max) return { status, body: listed };
     const none = wrap({ ...copy, reports: [] });
     if (sealedSize(status, none) <= max) return { status, body: none };
     if (copy !== body) { const bare = { ...body, state: null }; if (sealedSize(status, bare) <= max) return { status, body: bare }; } // the results alone: the phone asks for the copy next
@@ -303,6 +306,7 @@ const OPS = {
   // message) nothing starts an agent or stops, redirects or answers a run (15 Oct 2026).
   // The README's "what a phone can do" holds: what's new, a copy, and the four changes.
   chat: async ({ question }) => { const { homeAsk } = await import("./home.mjs"); return homeAsk(String(question || "").slice(0, 2000), { acts: PHONE_ACTS }); },
+  report: (args) => reportText(args), // read only: a report's text, opened on the phone
 };
 const PHONE_ACTS = { agent: () => ({ error: "nothing starts from a phone. Add it as a task here, and it starts from your computer." }), control: undefined };
 
@@ -320,7 +324,12 @@ const askId = (path) => "ask:" + sha(String(path)).slice(0, 12);
 // Reports has them too, to read an audit or a plan away from the desk, offline as well.
 // Each is cut at a paragraph past REPORT_CAP: the copy goes through the relay, which
 // takes 256 KB at most, and the rest is here to read.
-const PHONE_REPORTS = 5, REPORT_CAP = 12000;
+// The list goes further back (PHONE_LIST), each saying whether it's unread here, as the
+// computer's Reports does: they came over as read, so the phone's Reports opened on an empty
+// Unread tab and Garth read "nothing" while 3 waited unread (27 Oct 2026). Those past the
+// first few, and unread ones past PHONE_TEXTS, come without their text: the phone asks for one
+// when it's opened (OPS.report).
+const PHONE_REPORTS = 5, PHONE_TEXTS = 8, PHONE_LIST = 30, REPORT_CAP = 12000;
 function cutReport(text, cap = REPORT_CAP) {
   const t = String(text || ""); if (t.length <= cap) return { text: t, cut: false };
   const head = t.slice(0, cap), k = head.lastIndexOf("\n\n");
@@ -328,11 +337,43 @@ function cutReport(text, cap = REPORT_CAP) {
 }
 async function reportsForPhone({ list } = {}) {
   if (!list) list = (await import("./reports.mjs")).listReports();
-  return list.slice(0, PHONE_REPORTS).map((r) => {
+  let texts = 0;
+  return list.slice(0, PHONE_LIST).map((r, i) => {
+    const meta = { id: r.id, title: plainText(r.title, 140), name: r.name, lane: r.lane || "", run: r.run || "", mtime: r.mtime, size: r.size, ...(r.new ? { new: true } : {}) };
+    if (!(i < PHONE_REPORTS || (r.new && texts < PHONE_TEXTS))) return { ...meta, more: true };
     let t = ""; try { t = readFileSync(r.file, "utf8"); } catch { return null; }
-    const c = cutReport(t);
-    return { id: r.id, title: plainText(r.title, 140), name: r.name, lane: r.lane || "", run: r.run || "", mtime: r.mtime, size: r.size, text: c.text, ...(c.cut ? { cut: true } : {}) };
+    const c = cutReport(t); texts++;
+    return { ...meta, text: c.text, ...(c.cut ? { cut: true } : {}) };
   }).filter(Boolean);
+}
+// One report's text, asked for from the phone when it's opened and the copy came without it.
+const REPORT_READ_CAP = 120000;
+async function reportText({ id }) {
+  const r = (await import("./reports.mjs")).listReports().find((x) => x.id === String(id || ""));
+  if (!r) return { status: 404, body: { error: "That report isn't on your computer any more." } };
+  let t = ""; try { t = readFileSync(r.file, "utf8"); } catch { return { status: 404, body: { error: "That report couldn't be read on your computer." } }; }
+  const c = cutReport(t, REPORT_READ_CAP);
+  return { id: r.id, text: c.text, ...(c.cut ? { cut: true } : {}) };
+}
+// On the phone: a report in the copy that came without its text, from the computer now.
+async function pcReportText(id, { fetchFn = fetch } = {}) {
+  const r = await ask("report", { id: String(id || "").replace(/^pc:/, "") }, { fetchFn });
+  if (r.unreachable) return { error: "Your computer is out of reach, and this report's text stays there until it's back." };
+  if (r.status !== 200 || !r.body || typeof r.body.text !== "string") return { error: (r.body && r.body.error) || "Your computer couldn't send that report." };
+  return { text: r.body.text, ...(r.body.cut ? { cut: true } : {}) };
+}
+// The computer's Dashboard as the phone shows it (server.mjs /api/watch/board there): its
+// cards, in plain words, without what only the computer can act on (a card's chat, the
+// draft buttons). checked is rounded to 10 minutes, so a read with nothing new doesn't
+// change the copy every 2 minutes.
+function boardForPhone(board) {
+  const b = board && Array.isArray(board.cards) ? board : { cards: [] };
+  return { hours: Number(b.hours) || 24, total: Number(b.total) || 0, cards: b.cards.slice(0, 24).map((c) => ({
+    id: String(c.id || ""), name: plainText(c.name, 60), url: String(c.url || "").slice(0, 300), source: c.source || "", count: Number(c.count) || 0, label: plainText(c.label, 60),
+    ...(c.checked ? { checked: Math.floor(c.checked / 600000) * 600000 } : {}), ...(c.via ? { via: c.via } : {}), ...(c.error ? { error: plainText(c.error, 200) } : {}),
+    ...(c.brief && c.brief.text ? { brief: { text: plainText(c.brief.text, 600), ts: c.brief.ts } } : {}),
+    items: (c.items || []).slice(0, 8).map((i) => ({ text: plainText(i.text, 280), ts: i.ts, ...(i.href ? { href: String(i.href).slice(0, 500) } : {}), ...(i.read ? { read: true } : {}) })),
+  })) };
 }
 // On the phone: the copy, and the computer it's from, for its Reports (server.mjs). null on a computer.
 function computerCopy() { const c = loadConfig().computer, copy = c ? loadCopy() : null; return copy ? { copy, from: copy.name || c.name || "your computer" } : null; }
@@ -359,11 +400,14 @@ async function snapshot({ now = Date.now(), fresh = false } = {}) {
   // leftover changes (no ticked task, nothing said finished) aren't waiting on you: home.mjs
   const approves = (await tryOr(() => tasksMod.pendingReview(), [])).filter((r) => r.path && !r.running && !r.shipping && !r.leftover && ((r.tasks || []).length || (r.files || []).length))
     .map((r) => ({ repo: r.repo, tasks: (r.tasks || []).map((t) => ({ id: t.id, text: plainText(t.text, 200) })), files: (r.files || []).length, stat: plainText(r.stat, 120), ...(r.untasked ? { untasked: true } : {}), sum: approveSum(r) }));
+  // an Approve card Home shows that the list above dropped (pendingReview's view of it differs): still
+  // on the phone, as a need, so the phone's "Needs you" holds what Home's "Only the user can do" does
+  for (const y of you.filter((x) => x.kind === "approve" && !approves.some((a) => a.repo && a.repo === (x.repo || x.name)))) needs.push({ id: y.id, title: plainText(y.title, 90), sub: plainText(String(y.sub || "").replace(/ · only you decide$/, ""), 160) });
   const board = watch ? await tryOr(() => watch.watchBoard(24, now), { cards: [] }) : { cards: [] };
   const seen = (board.cards || []).filter((c) => c.count > 0).slice(0, 8).map((c) => ({ name: plainText(c.name, 60), label: plainText(c.label, 60), count: c.count, items: (c.items || []).filter((i) => i.need !== false).slice(0, 3).map((i) => ({ text: plainText(i.text, 140), ts: i.ts })) }));
   const recent = (readJson(PATHS.applied, {}).approvals || []).filter((a) => now - a.at < 24 * 3600000 && a.status !== "gone").slice(-10);
   const reports = await tryOr(() => reportsForPhone(), []);
-  const body = { tasks, needs, asks, approves, proofs, watch: seen, recent, reports, relay: linkCfg().relay && relayAllowed() };
+  const body = { tasks, needs, asks, approves, proofs, watch: seen, board: boardForPhone(board), recent, reports, relay: linkCfg().relay && relayAllowed() };
   const snap = { v: sha(JSON.stringify(body)).slice(0, 16), name: hostname(), at: now, ...body };
   snapCache = { at: now, snap };
   return snap;
@@ -1062,4 +1106,4 @@ const phoneState = () => (PHONE ? computerView() : linkState());
 // While the app runs: the computer listens if it's switched on; the phone asks if it's paired.
 function startPhone() { if (PHONE) startComputerPoll(); else startPhoneLink(); }
 
-export { retryApprovals, BUSY as APPROVE_BUSY, approveSum, applyOps, codeAsk, codeIn, siteKey, parseProof, proofOf, PROOF, codeSites, setCodeRelay, heardCode, computerCopy, reportsForPhone, cutReport, PHONE_REPORTS, REPORT_CAP, PORT, PHONE, ANDROID_APP, PHONE_OPS, lanAddresses, mdnsAddresses, linkState, newCode, unpairPhone, setRelay, startPhoneLink, stopPhoneLink, setPhoneLink, setPhoneApprove, phoneApprovals, snapshot, computerUrl, parsePairLink, pairLink, computerState, computerView, waitingNotice, findComputers, pairComputer, forgetComputer, pollComputer, queueChange, dismissNote, startComputerPoll, phoneState, startPhone, newKeys, linkKey, fingerprint, seal, unseal, relayOf, answer, fitRelay, RELAY_MAX, relaunchEnv, adbLink, freePhonePort, usePhonePort, portHolder, ask };
+export { retryApprovals, BUSY as APPROVE_BUSY, approveSum, applyOps, codeAsk, codeIn, siteKey, parseProof, proofOf, PROOF, codeSites, setCodeRelay, heardCode, computerCopy, reportsForPhone, reportText, pcReportText, boardForPhone, cutReport, PHONE_REPORTS, PHONE_TEXTS, PHONE_LIST, REPORT_CAP, PORT, PHONE, ANDROID_APP, PHONE_OPS, lanAddresses, mdnsAddresses, linkState, newCode, unpairPhone, setRelay, startPhoneLink, stopPhoneLink, setPhoneLink, setPhoneApprove, phoneApprovals, snapshot, computerUrl, parsePairLink, pairLink, computerState, computerView, waitingNotice, findComputers, pairComputer, forgetComputer, pollComputer, queueChange, dismissNote, startComputerPoll, phoneState, startPhone, newKeys, linkKey, fingerprint, seal, unseal, relayOf, answer, fitRelay, RELAY_MAX, relaunchEnv, adbLink, freePhonePort, usePhonePort, portHolder, ask };

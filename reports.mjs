@@ -101,16 +101,24 @@ function withNeeds(list, { seenFile = SEEN_FILE, tasks } = {}) {
 // computerCopy, reportsForPhone), beside the phone's own. Their ids start "pc:", they
 // say where they're from, and one is read from the copy, so it opens offline too.
 // It can't be asked about or ticked into ideas here: that's the computer's (remote).
-function phoneReports(pc) {
+// Unread as it is on the computer, until it's opened here (or Mark all read): read on the
+// phone, it's kept read in the phone's own list of what's been seen.
+function phoneReports(pc, { seenFile = SEEN_FILE } = {}) {
   if (!pc || !pc.copy || !Array.isArray(pc.copy.reports)) return [];
-  return pc.copy.reports.map((r) => ({ id: "pc:" + r.id, title: r.title, name: r.name, lane: r.lane, run: r.run, file: `${pc.from}: ${r.lane ? r.lane + " · " : ""}${r.name}`, folder: "", size: r.size, mtime: r.mtime, new: false, running: false, computer: pc.from }));
+  const s = loadSeen(seenFile).seen;
+  return pc.copy.reports.map((r) => ({ id: "pc:" + r.id, title: r.title, name: r.name, lane: r.lane, run: r.run, file: `${pc.from}: ${r.lane ? r.lane + " · " : ""}${r.name}`, folder: "", size: r.size, mtime: r.mtime, new: !!r.new && s["pc:" + r.id] !== r.mtime, running: false, computer: pc.from }));
 }
-function phoneReport(pc, id) {
-  const r = phoneReports(pc).find((x) => x.id === String(id || "")), raw = r && pc.copy.reports.find((x) => "pc:" + x.id === r.id);
+// fetched: its text from the computer now (phone.mjs pcReportText), for one the copy holds without it
+function phoneReport(pc, id, { fetched = null, mark = true, seenFile = SEEN_FILE } = {}) {
+  const r = phoneReports(pc, { seenFile }).find((x) => x.id === String(id || "")), raw = r && pc.copy.reports.find((x) => "pc:" + x.id === r.id);
   if (!r || !raw) return { error: "That report isn't in the copy from your computer any more: it sends its newest few." };
-  const text = String(raw.text || "");
-  return { ...r, remote: true, text, html: mdHtml(text) + (raw.cut ? mdHtml(`_That's its first part: the rest is on ${pc.from}._`) : ""), draft: false, ideas: [] };
+  const got = typeof raw.text === "string" ? { text: raw.text, cut: !!raw.cut } : fetched && typeof fetched.text === "string" ? { text: fetched.text, cut: !!fetched.cut } : null;
+  if (!got) return { ...r, remote: true, text: "", html: mdHtml(`_${(fetched && fetched.error) || `This report's text is on ${pc.from}: open it again once this phone can reach it.`}_`), draft: false, ideas: [] };
+  if (mark) { const d = loadSeen(seenFile); d.seen[r.id] = r.mtime; saveSeen(d, seenFile); }
+  return { ...r, new: false, remote: true, text: got.text, html: mdHtml(got.text) + (got.cut ? mdHtml(`_That's its first part: the rest is on ${pc.from}._`) : ""), draft: false, ideas: [] };
 }
+// Whether opening one needs the computer: listed in the copy without its text.
+const phoneReportNeedsText = (pc, id) => { const raw = pc && pc.copy && Array.isArray(pc.copy.reports) && pc.copy.reports.find((x) => "pc:" + x.id === String(id || "")); return !!raw && typeof raw.text !== "string"; };
 // Mark them all read (the list's "Mark all read").
 function markAllRead({ list, seenFile = SEEN_FILE } = {}) {
   const d = loadSeen(seenFile); for (const r of list || listReports()) d.seen[r.id] = r.mtime;
@@ -391,4 +399,4 @@ function decide(r, status, file = SEEN_FILE) { const d = loadSeen(file); d.decid
 // How many reports are new, and the newest one's title (Home's droplet).
 function reportsNews(opts) { const l = listReports(opts).filter((r) => r.new); return { count: l.length, latest: l[0] ? l[0].title : "" }; }
 
-export { draftCardsIn, supersededIdeas, sweepSuperseded, supersedeContext, SEEN_FILE, NOT_REPORTS, titleOf, listReports, readReport, phoneReports, phoneReport, reportImage, imagePath, markAllRead, reportsNews, mdHtml, reportIdeas, isDraftReport, decidedOn, decide, withNeeds, IDEAS_MAX, handledIdeas, openIdeas, markIdeas };
+export { draftCardsIn, supersededIdeas, sweepSuperseded, supersedeContext, SEEN_FILE, NOT_REPORTS, titleOf, listReports, readReport, phoneReports, phoneReport, reportImage, imagePath, markAllRead, reportsNews, mdHtml, reportIdeas, isDraftReport, decidedOn, decide, withNeeds, phoneReportNeedsText, IDEAS_MAX, handledIdeas, openIdeas, markIdeas };
