@@ -895,7 +895,7 @@ function homeContext(h, { cards } = {}) {
     ...rest.slice(0, 12).map((y) => `- ${y.text}`), // past the 6 Home shows: from the job record, the same list
     ...(h.you.some((y) => /^ask:/.test(y.id || "")) ? [`Agents asking (to answer for them, "answer" with these ids): ${h.you.filter((y) => /^ask:/.test(y.id || "")).map((y) => `${y.id} (${String(y.title).slice(0, 40)})`).join("; ")}`] : []),
     `New on what they watch:`, ...(h.feeds.length ? h.feeds.map((f) => `- ${f.title}: ${f.sub}${f.latest ? ` (latest: ${f.latest})` : ""}`) : ["- nothing new"]),
-    `Agents working: ${h.working}.`, ...(h.runs || []).map((r) => `- [${r.id}] ${dayMark(r.started, h.at)}${r.name}: ${r.line}${r.eta ? ` (${r.eta})` : ""}${r.quiet ? ` (no progress in ${r.quiet} min)` : ""}${r.looping ? " (repeating the same step)" : ""}`),
+    `Agents working now (the live agent list, the only source for 'is anything running?'; a run in the job record below that isn't here has stopped): ${h.working}${h.working ? "" : ", so nothing is running"}.`, ...(h.runs || []).map((r) => `- [${r.id}] ${dayMark(r.started, h.at)}${r.name}: ${r.line}${r.eta ? ` (${r.eta})` : ""}${r.quiet ? ` (no progress in ${r.quiet} min)` : ""}${r.looping ? " (repeating the same step)" : ""}`),
     ...sentMailLines(),
     ...jobsLines({ now: h.at }),
     ...(() => { try { return intuitionLines({ now: h.at }); } catch { return []; } })(),
@@ -1114,6 +1114,13 @@ function runNow(a, { now = Date.now(), est = estimate } = {}) {
   let eta = null; try { if (l && a.path) eta = est({ path: a.path, kind: l.kind || "brief", type: l.task ? taskType(l.task) : "", typeOf: taskType, elapsed: a.startedAt ? now - a.startedAt : a.elapsed || 0, queued: (a.held || []).length }); } catch {}
   return { line: plain(cmdFree(l ? l.line : todo ? todo.active : w.doing || "working on it"), 140), ...(l && l.step ? { step: l.step, of: l.of } : {}), ...(l && l.quiet ? { quiet: l.quiet } : {}), ...(l && l.looping ? { looping: true } : {}), ...(eta ? { eta: estimateWords(eta), etaLo: eta.lo, etaHi: eta.hi } : {}) };
 }
+// Agent runs' now line: the job at work by name ("Working on: the phone code check · 3h"), and how
+// many more runs are at work beside it.
+function runsNow(a, line, n = 1) {
+  const job = plain(String(a.name || "").replace(/^Agent:\s*/, "").replace(/^New job:\s*/i, ""), 70).replace(/[.\s]+$/, "");
+  const said = !job ? line : /^Working\b/.test(line) ? line.replace(/^Working\b/, `Working on: ${job}`) : `${job}: ${line}`;
+  return n > 1 ? `${said} (and ${n - 1} more at work)` : said;
+}
 // Projects (the lanes) are sorted the way you'd look for them: what needs you
 // first (a question, an Approve), then what's at work, ready, waiting, and the
 // most recent. Ops runs (act-…: no repo of their own) are one "Agent runs" lane,
@@ -1205,11 +1212,16 @@ function workSceneNow({ deps = {}, full = false } = {}) {
       // an ended run's record (agents.mjs runOutcome) is its line and state, as on every other screen
       const o = a.status !== "running" ? a.outcome : null, who = o && (o.waitingOn === "user" ? "you" : o.waitingOn === "lane" ? String(o.what || "").split(":")[0] || "another lane" : o.waitingOn);
       // running: a "now" line ("Checking the Steve server · 4m"), never the command; ended: its summary in plain words, whole (the card has More)
-      if (a.status === "running" && !p.now) p.now = nowLine(t, a.startedAt ? now - a.startedAt : a.elapsed || 0, p.name);
+      // Agent runs is one card for many jobs: its now line names the job at work, and how many more are,
+      // or it read a bare "Working" over another run's last words (27 Oct 2026)
+      if (a.status === "running" && !p.now) p.now = l === RUNS_LANE ? runsNow(a, nowLine(t, a.startedAt ? now - a.startedAt : a.elapsed || 0, p.name), p.runs) : nowLine(t, a.startedAt ? now - a.startedAt : a.elapsed || 0, p.name);
       const line = a.status === "running" ? "" : plain(plainSummary(String(o && o.summary ? o.summary : t).split(/\n\s*\n/)[0], p.name), 900);
       const st = a.status === "running" ? "at work" : o ? (o.state === "waiting" ? (o.waitingOn === "user" && qs.length ? "asks you" : `waiting on ${who || "something"}`) : o.state === "failed" ? "failed" : o.state === "paused" ? "paused" : "done") : qs.length ? "asks you" : a.progress && a.progress.waiting && a.progress.done + a.progress.waiting === a.progress.total ? "waiting on something" : "done"; // no record: nothing open, and what's left is marked [~]
       if (line) lineOf[a.path] = { line, state: st };
-      if (line && !p.summary) { p.summary = line; p.state = lineOf[a.path].state; p.path = a.path; }
+      // a lane with a run at work shows what it's doing now, never an ended run's last words under its
+      // At work pill: Agent runs read "Working" over the Render check's final message while the phone
+      // check ran, and the user was told nothing was running (27 Oct 2026)
+      if (line && !p.summary && !p.running) { p.summary = line; p.state = lineOf[a.path].state; p.path = a.path; }
     }
     // Agent runs are one card for many unrelated jobs: each question says which job it's for
     const job = l === RUNS_LANE ? plain(String(a.name || "").replace(/^Agent:\s*/, "").replace(/^New job:\s*/i, ""), 90) : "";

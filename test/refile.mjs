@@ -28,6 +28,8 @@ try {
   ok("a copy of a repo's folder (symbiot-825733) is that repo's lane", T.laneOfRepo("symbiot-825733", LANES) === "symbiot");
   ok("an ops run's folder is ops", T.laneOfRepo("act-304032d6", LANES) === "ops");
   ok("a name nearly a lane's (a typo) is that lane", T.laneOfRepo("symbio", LANES) === "symbiot");
+  ok("a name that's a lane's folder (old-name living in ~/newdir) is that lane", T.laneOfRepo("newdir", ["old-name", "ops"], { newdir: "old-name" }) === "old-name");
+  ok("…a folder name for a lane that isn't there stands for none", T.laneOfRepo("newdir", LANES, { newdir: "gone" }) === "");
   ok("an ops run's title stands for none: it isn't guessed from a word in it", T.laneOfRepo(AGENT, LANES) === "");
   ok("…nor does a name like no lane", T.laneOfRepo("quokka", LANES) === "" && T.laneOfRepo("", LANES) === "");
 
