@@ -4,7 +4,9 @@ What each Symbiot release brought, newest first. When Approve bumps the version,
 
 ## 0.94.4 — 2026-10-27
 
-- New job: a task for a lane that lives only on the other PC gets run here, in a different lane that happens to have the same name.
+- **Agents can see and press what's inside a page's frames.** A screen map now includes the buttons, links and fields drawn inside a page's frames, including ads and widgets from other sites and frames inside frames, each where it shows on the page with its link. Press reaches them, and a new tab one of them opens is followed in the same tab.
+- **A card that asks for a key, token or login says why.** It says which task needs it, what will be done with it, and what is lost if you skip it, before it reaches you.
+- **A task for a lane that's only on your other computer waits for it.** It's no longer run here in a different lane that happens to have the same name.
 
 ## 0.94.3 — 2026-10-26
 
