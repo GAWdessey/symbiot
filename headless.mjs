@@ -484,7 +484,7 @@ async function openTab(b, who, targetId) {
   if (b.tabUa) await send("Network.setUserAgentOverride", { userAgent: b.tabUa });
   // every `method` event on this tab, until the function it gives is called
   const on = (method, f) => c.on((m) => { if (m && m.sessionId === sessionId && m.method === method) f(m.params || {}); });
-  const tab = { who, targetId, page: { send, until, idle, on }, shown: "", used: Date.now(), unhook: () => { unhookNet(); unauth(); } };
+  const tab = { who, targetId, page: { send, until, idle, on, c, targetId }, shown: "", used: Date.now(), unhook: () => { unhookNet(); unauth(); } };
   b.tabs.set(who, tab);
   return tab;
 }
@@ -840,14 +840,107 @@ async function markClicks(page) {
     await page.send("Runtime.callFunctionOn", { objectId: result.objectId, functionDeclaration: "function (...a) { window.__symbiotClicks = new Set(a); }", arguments: els });
   } catch {} finally { try { await page.send("Runtime.releaseObjectGroup", { objectGroup }); } catch {} }
 }
-// What's on the page now: { url, title, items }.
+// What's on the page now: { url, title, items }. What shows in its frames is in items too
+// (frameItems), after the page's own; on a whole-page map, where it is on the page.
 async function collect(page, expression = COLLECT) {
   await markClicks(page);
   const { result, exceptionDetails } = await page.send("Runtime.evaluate", { expression, returnByValue: true });
   if (exceptionDetails) throw new Error("Couldn't read the page: " + ((exceptionDetails.exception && exceptionDetails.exception.description) || exceptionDetails.text));
   const info = (result && result.value) || { url: "", title: "", items: [] };
+  if (expression === COLLECT || expression === COLLECT_WHOLE) {
+    const more = await frameItems(page, Math.max(0, 200 - info.items.length));
+    if (more.length) {
+      const sc = expression === COLLECT_WHOLE ? (await evaluate(page, "({ x: scrollX, y: scrollY })").catch(() => null)) || { x: 0, y: 0 } : { x: 0, y: 0 };
+      info.items = [...info.items, ...more.map((r) => ({ ...r, x: r.x + Math.round(sc.x), y: r.y + Math.round(sc.y) }))];
+    }
+  }
   const block = await lineBlocked(page, info);
   return block ? { ...info, block } : info;
+}
+
+// What can be clicked or typed in inside the page's frames (iframes), as collectJs gives it,
+// where it shows in the window: an ad box or a form drawn in a frame was in no map, so Press
+// couldn't reach it (LinkedIn's "Claim offer" in its own ad box, 27 Oct 2026). A frame from
+// the page's site is read in a world of its own in it; one from another site runs apart from
+// the page, so it's read through its own session. Frames in frames too, a few deep. Only
+// what shows in the window and isn't covered there; an editor frame is a field already. What's
+// in a frame has no selector (the page's can't reach into it) but `frame`, the frame's
+// address: Press clicks its spot, which a mouse click does reach (pressRegion). At most `room`.
+const FRAMES_DEEP = 3;
+const FRAME_BOX = `function () {
+  const b = this.getBoundingClientRect(), cs = getComputedStyle(this), px = (v) => parseFloat(v) || 0;
+  if (b.width < 4 || b.height < 4 || cs.visibility === 'hidden' || cs.display === 'none' || +cs.opacity === 0) return null;
+  let ed = false; try { const d = this.contentDocument; ed = !!d && (d.designMode === 'on' || !!(d.body && d.body.isContentEditable)); } catch (x) {}
+  return { x: b.left + this.clientLeft + px(cs.paddingLeft), y: b.top + this.clientTop + px(cs.paddingTop),
+    l: Math.max(0, b.left), t: Math.max(0, b.top), r: Math.min(innerWidth, b.right), b: Math.min(innerHeight, b.bottom), ed };
+}`;
+// is the frame what's on top at each point (in its own document's window)?
+const FRAME_ON_TOP = `function (pts) {
+  return pts.map(([x, y]) => { let t = document.elementFromPoint(x, y);
+    while (t && t.shadowRoot) { const i = t.shadowRoot.elementFromPoint(x, y); if (!i || i === t) break; t = i; }
+    return t === this; });
+}`;
+async function frameItems(page, room = 200) {
+  const out = [], G = "symbiot-frames", used = new Set(), attached = [];
+  const call = async (send, objectId, fn, args = []) => ((await send("Runtime.callFunctionOn", { objectId, functionDeclaration: fn, arguments: args.map((value) => ({ value })), returnByValue: true })).result || {}).value;
+  // node: a frame tree's node, its frames in send's session; off: where its window's corner is in the
+  // top window; clip: the part of the top window it shows in
+  // a frame from another site isn't in its page's frame tree: the browser lists it, with its parent frame
+  const apart = page.c ? (((await page.c.send("Target.getTargets").catch(() => null)) || {}).targetInfos || []).filter((t) => t.type === "iframe" && t.parentFrameId) : [];
+  const walk = async (send, node, off, clip, depth) => {
+    const here = node.frame && node.frame.id, known = new Set((node.childFrames || []).map((ch) => ch.frame && ch.frame.id));
+    const kids = [...(node.childFrames || []), ...apart.filter((t) => t.parentFrameId === here && !known.has(t.targetId)).map((t) => ({ frame: { id: t.targetId, url: t.url }, childFrames: [] }))];
+    for (const ch of kids) {
+      if (out.length >= room) return;
+      const f = ch.frame || {};
+      let owner, box;
+      try {
+        const { backendNodeId } = await send("DOM.getFrameOwner", { frameId: f.id });
+        used.add(send); owner = (await send("DOM.resolveNode", { backendNodeId, objectGroup: G })).object.objectId;
+        box = await call(send, owner, FRAME_BOX);
+      } catch { continue; }
+      if (!box || box.ed) continue;
+      const at = { x: off.x + box.x, y: off.y + box.y };
+      const cl = { l: Math.max(clip.l, off.x + box.l), t: Math.max(clip.t, off.y + box.t), r: Math.min(clip.r, off.x + box.r), b: Math.min(clip.b, off.y + box.b) };
+      if (cl.r - cl.l < 4 || cl.b - cl.t < 4) continue;
+      let fsend = send, ctx = 0, sub = ch;
+      try { ctx = (await send("Page.createIsolatedWorld", { frameId: f.id, worldName: G })).executionContextId; } catch {}
+      if (!ctx) {
+        if (!page.c) continue;
+        try {
+          const { sessionId } = await page.c.send("Target.attachToTarget", { targetId: f.id, flatten: true });
+          attached.push(sessionId); fsend = (m, p) => page.c.send(m, p, sessionId);
+          sub = (await fsend("Page.getFrameTree")).frameTree || { childFrames: [] };
+        } catch { continue; }
+      }
+      let info = null;
+      try { const { result } = await fsend("Runtime.evaluate", { expression: COLLECT, returnByValue: true, ...(ctx ? { contextId: ctx } : {}) }); info = result && result.value; } catch {}
+      const items = [];
+      for (const r of (info && info.items) || []) {
+        const x = Math.max(cl.l, at.x + r.x), y = Math.max(cl.t, at.y + r.y), x2 = Math.min(cl.r, at.x + r.x + r.w), y2 = Math.min(cl.b, at.y + r.y + r.h);
+        if (x2 - x >= 4 && y2 - y >= 4) items.push({ r, box: { x, y, w: x2 - x, h: y2 - y } });
+      }
+      // not under something on the page around it (a pop-up over the ad box)
+      let top = [];
+      try { top = await call(send, owner, FRAME_ON_TOP, [items.map(({ box: b }) => [b.x + b.w / 2 - off.x, b.y + b.h / 2 - off.y])]) || []; } catch {}
+      items.forEach(({ r, box: b }, i) => {
+        if (!top[i] || out.length >= room) return;
+        out.push({ label: r.label, kind: r.kind, x: Math.round(b.x), y: Math.round(b.y), w: Math.round(b.w), h: Math.round(b.h), ...(r.text ? { text: r.text } : {}), ...(r.href ? { href: r.href } : {}), frame: String(f.url || (info && info.url) || "frame").slice(0, 500) });
+      });
+      if (depth + 1 < FRAMES_DEEP) await walk(fsend, sub, at, cl, depth + 1);
+    }
+  };
+  try {
+    const { frameTree } = await page.send("Page.getFrameTree");
+    if (frameTree && (frameTree.childFrames || []).length) {
+      const win = (await evaluate(page, "[innerWidth, innerHeight]").catch(() => null)) || [VIEW.w, VIEW.h];
+      await walk(page.send, frameTree, { x: 0, y: 0 }, { l: 0, t: 0, r: win[0], b: win[1] }, 0);
+    }
+  } catch {} finally {
+    for (const send of used) try { await send("Runtime.releaseObjectGroup", { objectGroup: G }); } catch {}
+    for (const sessionId of attached) try { await page.c.send("Target.detachFromTarget", { sessionId }); } catch {}
+  }
+  return out;
 }
 // A page that refuses this computer's connection itself (lineblocks.mjs): recorded for its site,
 // with its own review link if it has one, so cards make the step the user's phone on mobile data.
@@ -920,13 +1013,15 @@ async function snapshotWhole(page, name) {
   if (first.inside) return snapshotList(page, name);
   if (first.h <= VIEW.h + 1) { const s = await snapshot(page, name); return s.error || s.note ? s : { ...s, note: "It all fits in the window, so this map is the whole page." }; }
   // a window at a time, overlapping a little; the page can load more as it goes (up to MAX_TALL)
-  let info = null, h = first.h, end = 0; const shots = [];
+  // what's in frames is read afresh each time (not kept in the page): kept here, once each
+  let info = null, h = first.h, end = 0; const shots = [], framed = [];
+  const keepFramed = (items) => { for (const r of items) if (r.frame && !framed.some((q) => q.label === r.label && q.kind === r.kind && Math.abs(q.x - r.x) < 4 && Math.abs(q.y - r.y) < 4)) framed.push(r); };
   await evaluate(page, "window.__symbiotWhole = null");
   try {
     for (let y = 0, i = 0; i < 60; i++) {
       await evaluate(page, `scrollTo({ top: ${y}, behavior: 'instant' })`); await sleep(150);
       const at = Number(await evaluate(page, "scrollY")) || 0;
-      if (!info || info.items.length < 200) info = await collect(page, COLLECT_WHOLE);
+      if (!info || info.items.length < 200) { info = await collect(page, COLLECT_WHOLE); keepFramed(info.items); }
       const { data } = await page.send("Page.captureScreenshot", { format: "png" });
       shots.push({ png: Buffer.from(data, "base64"), y: at }); end = at + VIEW.h;
       await evaluate(page, HIDE_STUCK);
@@ -937,7 +1032,7 @@ async function snapshotWhole(page, name) {
   } finally { await evaluate(page, UNHIDE).catch(() => {}); }
   const tall = Math.min(MAX_TALL, end), png = stitchPng(shots, tall);
   if (!png) return { error: "Couldn't put the page's screenshots together." };
-  const items = info.items.filter((r) => r.y < tall);
+  const items = [...info.items.filter((r) => !r.frame), ...framed].filter((r) => r.y < tall).slice(0, 200);
   const s = saveScreen(name, png, { url: info.url, title: info.title, full: true, items }, " (whole page)");
   if (s.error || s.note) return s;
   const note = [h > tall + 1 && `The page goes on past ${tall} pixels, so this map stops there.`, items.length >= 200 && "It marks the first 200 buttons, links and fields, from the top."].filter(Boolean).join(" ");
@@ -1164,7 +1259,7 @@ async function scratchPage(fn, { width = 1440, height = 900 } = {}) {
       await send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 1, mobile: false });
       const { userAgent } = await c.send("Browser.getVersion");
       if (userAgent) await send("Network.setUserAgentOverride", { userAgent: userAgent.replace(/HeadlessChrome/g, "Chrome") });
-      return { send, until, idle, on, net };
+      return { send, until, idle, on, net, c, targetId };
     })()]);
     clearTimeout(kill);
     return await fn(page);
@@ -1365,7 +1460,27 @@ const clickAt = async (page, at) => { for (const type of ["mouseMoved", "mousePr
 function pressRegion(id, regionId, { confirmed = false, noSend = false, who = "" } = {}) {
   const s = noSend ? loadScreens().find((x) => x.id === id) : null, host = s && s.page ? hostOf(s.page.url) : "";
   return actOnRegion(id, regionId, "Press", confirmed, (r) => (noSend && isSend(r, host) ? `"${r.label}" sends or posts. This run only drafts: it never presses Send, Post, Comment or Reply. The draft stays for the user to send or post.` : ""),
-    async (page, at, r) => { await clickAt(page, at); return { pressed: r.label }; }, who);
+    async (page, at, r) => { if (r.frame) await clickKeepingTab(page, at); else await clickAt(page, at); return { pressed: r.label }; }, who);
+}
+// Click in a frame, and a tab the click opens is opened in this one instead, so what it leads
+// to is what's mapped next: findRegion keeps a link in the page from opening a new tab, but
+// can't reach into a frame (an ad box's link opens one).
+async function clickKeepingTab(page, at) {
+  const tabs = async () => (page.c && ((await page.c.send("Target.getTargets").catch(() => null)) || {}).targetInfos) || [];
+  const before = new Set((await tabs()).map((t) => t.targetId));
+  await clickAt(page, at);
+  if (!page.c || !page.targetId) return;
+  for (let i = 0; i < 20; i++) {
+    await sleep(150);
+    const t = (await tabs()).find((x) => x.type === "page" && !before.has(x.targetId) && x.openerId === page.targetId);
+    if (!t) { if (i >= 9) return; continue; }
+    // its address shows once it starts loading
+    let url = t.url;
+    for (let j = 0; j < 20 && (!url || url === "about:blank"); j++) { await sleep(150); url = ((await tabs()).find((x) => x.targetId === t.targetId) || {}).url; }
+    try { await page.c.send("Target.closeTarget", { targetId: t.targetId }); } catch {}
+    if (url && /^https?:/.test(url)) await open(page, url);
+    return;
+  }
 }
 
 const typeInto = async (page, at, text) => {

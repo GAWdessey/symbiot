@@ -404,8 +404,9 @@ function importScreen(name, data) {
 }
 // Regions clamped to a w×h image and rounded to whole pixels. A mapped page's
 // regions (headless.mjs) also keep what they are (`kind`: button, link, field…),
-// how to find them again (`selector`) and where a link goes (`href`).
-const EXTRAS = { kind: 20, selector: 1000, href: 500 };
+// how to find them again (`selector`), where a link goes (`href`) and, for one inside a
+// frame (an iframe), that frame's address (`frame`).
+const EXTRAS = { kind: 20, selector: 1000, href: 500, frame: 500 };
 function cleanRegions(size, regions) {
   const out = [];
   for (const r of (Array.isArray(regions) ? regions : []).slice(0, MAX_REGIONS)) {
