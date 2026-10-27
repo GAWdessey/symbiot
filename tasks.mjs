@@ -51,8 +51,8 @@ function leadOf(text) {
 // and Home asks you where it goes (home.mjs unplacedCards). names: the lanes there are (laneNames).
 const OPS_FOLDER = /^act-[0-9a-f]{6,}$/i, OPS_LANE = "ops";
 const laneNames = () => { let m = {}; try { m = laneMap(); } catch {} return [...Object.keys(m), ...(OPS_LANE in m ? [] : [OPS_LANE])]; };
-// Other names a lane answers to: its folder's name (a lane called callforge-ai whose folder is
-// ~/dailify) and a name it had before it was renamed (laneids.mjs noteLanes). { alias: lane }, lower-cased.
+// Other names a lane answers to: its folder's name (a lane called old-name whose folder is
+// ~/newdir) and a name it had before it was renamed (laneids.mjs noteLanes). { alias: lane }, lower-cased.
 function laneAliases() {
   const out = {};
   try {
