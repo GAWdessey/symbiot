@@ -51,5 +51,13 @@ function noteLanes(map, { now = Date.now(), root = rootOf } = {}) {
 }
 const laneIdOf = (name, d = load()) => { const k = String(name || "").toLowerCase(); const e = Object.entries(d.ids).find(([, v]) => String(v.name).toLowerCase() === k); return e ? e[0] : ""; };
 const nameOfId = (id, d = load()) => (d.ids[id] ? d.ids[id].name : "");
+// A task whose lane is on another machine only: its id is a repo's first commit (sync.mjs carries it) that
+// no lane here has, while a lane here has its name and an id of its own. Two marketing goals synced from
+// the other PC were run in this laptop's marketing, another repo, where their code isn't (27 Oct 2026):
+// such a task is left for the machine that has its lane.
+function otherMachine(t, d = load()) {
+  if (!t || !/^g/.test(String(t.laneId || "")) || d.ids[t.laneId]) return false;
+  const here = laneIdOf(t.repo, d); return !!here && here !== t.laneId;
+}
 
-export { rootOf, idsFor, noteLanes, laneIdOf, nameOfId, FILE as LANE_IDS };
+export { rootOf, idsFor, noteLanes, laneIdOf, nameOfId, otherMachine, load as loadLaneIds, FILE as LANE_IDS };
