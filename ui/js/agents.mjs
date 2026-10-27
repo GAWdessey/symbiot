@@ -62,8 +62,10 @@ box.querySelectorAll('button').forEach(function(b){b.disabled=true;});
 api('/api/agents/answer',{path:a.path,answers:ans,rerun:rerun}).then(function(r){
 if(!r||r.error){box.querySelectorAll('button').forEach(function(b){b.disabled=false;});if(given)box.querySelectorAll('.qopt.on').forEach(function(b){pickOpt(b,false);});msg.innerHTML="<div class='note err'>"+esc((r&&r.error)||'failed')+"</div>";return;}
 ans.forEach(function(x){var k=a.path+'|'+x.q;delete QDRAFT[k];bdSet(k,'');}); // sent: its drafts go
-if(r.talk){box.querySelectorAll('button').forEach(function(b){b.disabled=false;});box.querySelectorAll('input.qother').forEach(function(i){i.value='';});msg.innerHTML="<div class='lqblob'>"+blobTalk(r.talk,a.name)+"</div><div class='muted'>The question stays open: answer it when you're ready.</div>";return;}
-msg.innerHTML="<div class='note ok'>&#10003; Saved "+r.saved+" answer"+(r.saved>1?"s":"")+" for <b>"+esc(a.name)+"</b> in .symbiot/ANSWERS.md"+(r.rerun?" &middot; your agent is picking them up now.":".")+(r.yours&&r.yours.length?"<div class='err'><i class=ic-person></i> Still yours to do: "+esc(r.yours.join(' '))+"</div>":"")+(r.note?"<div class='muted'>"+esc(r.note)+"</div>":"")+"</div>";loadAgents();if(current==='asks')loadAsks();});}
+// and its box empties now, or the redraw (loadAgents' saveDrafts) keeps the sent words as a new draft
+box.querySelectorAll('input.qother').forEach(function(i){i.value='';});
+if(r.talk){box.querySelectorAll('button').forEach(function(b){b.disabled=false;});msg.innerHTML="<div class='lqblob'>"+blobTalk(r.talk,a.name)+"</div><div class='muted'>The question stays open: answer it when you're ready.</div>";return;}
+msg.innerHTML="<div class='note ok'>&#10003; Saved "+r.saved+" answer"+(r.saved>1?"s":"")+" for <b>"+esc(a.name)+"</b> in .symbiot/ANSWERS.md"+(r.rerun?" &middot; your agent is picking them up now.":".")+(r.yours&&r.yours.length?"<div class='err'><i class=ic-person></i> Still yours to do: "+esc(r.yours.join(' '))+"</div>":"")+(r.note?"<div class='muted'>"+esc(r.note)+"</div>":"")+"</div>";box.querySelectorAll('.qopt.on').forEach(function(b){pickOpt(b,false);});loadAgents();if(current==='asks')loadAsks();});}
 var s1=box.querySelector('.qsend'),s2=box.querySelector('.qsave');
 if(s1)s1.addEventListener('click',function(){send(true);});if(s2)s2.addEventListener('click',function(){send(false);});
 box.querySelectorAll('.qopt').forEach(function(btn){btn.addEventListener('click',function(){var qe=btn.closest('.q'),q=a.ask.questions[+qe.getAttribute('data-i')];if(!q)return;
