@@ -101,6 +101,13 @@ const NOT_FOUND = /\b(?:can(?:'|’)?t|cannot|couldn(?:'|’)?t|didn(?:'|’)?t|
 const doubtsMade = (t) => (YOU_MADE.test(t) && NOT_FOUND.test(t)) || /\b(?:did|have) you (?:actually |really )?(?:create|make|generate|roll)d?\b[^.?!\n]{0,30}\b(?:token|key)\b/i.test(t);
 const byAgent = (t) => /^\s*🤖|^\s*(?:can|may|shall|should) i\b/i.test(String(t || ""));
 const MADE_KEY_LINE = "\"The token exists, but its value isn't in the vault: roll it in <the site> and paste the value in chat.\"";
+// A card that asks for a key, token or login with no word on what it's for: the user had to ask "why do
+// we want to use this?" of a Render API key for a security check (27 Oct 2026). It says which task needs
+// it, what the agent will check or change with it, and what's lost if they skip it.
+const ASKS_KEY = /\b(?:create|make|generate|roll|paste|give|share|send|get)\b[^.?!\n]{0,50}\b(?:api keys?|access keys?|keys?|tokens?|passwords?|credentials?|logins?)\b|\bneeds? your\s+[\w.-]+(?:\s[\w.-]+)?\s+(?:login|sign-?in|password|api key|token)\b/i;
+const KEY_FOR = /\b(?:so (?:that )?(?:i|we|the agent|it) can|to (?:check|read|scan|look at|see|list|watch|change|update|fix|deploy|rotate|audit|pull|fetch|query|test|verify|confirm|turn|set|send|post|publish|move|back up)|lets? (?:me|us|the agent)|i(?:'|’)?ll use it|(?:used|needed) (?:to|for)|because|for the\b[^.?!\n]{0,50}\b(?:task|check|job|review|audit|deploy|fix))\b/i;
+const KEY_SKIPPED = /\b(?:if you skip|if you (?:don(?:'|’)?t|leave it)|skip(?:ping)? (?:it|this)\b[^.?!\n]{0,40}\b(?:means|leaves|loses|stops|keeps)|without it|otherwise|(?:we|you) lose|is lost|nothing is lost|goes? undone|stays? (?:blocked|undone|unchecked|unknown)|won(?:'|’)?t be (?:checked|done|fixed|deployed|known)|can(?:'|’)?t (?:check|do|run|finish|deploy|see))\b/i;
+const asksKey = (q) => [q.q, ...(q.options || [])].some((t) => !byAgent(t) && ASKS_KEY.test(String(t || ""))) || (ASKS_KEY.test(String(q.context || "")) && (q.options || []).some((o) => /^\s*👤/.test(String(o || ""))));
 const READ_REPORT = /\b(?:read|go through|look over|look through|review|check)\s+(?:the|my|this|that|our)\s+(?:[\w'"“”‘’:-]+\s+){0,8}?(?:report|write-?up|findings)\b/i;
 // A hold Symbiot remembers on a site the card names ("LinkedIn reserved R425.45 on the card when it
 // was added"): the line, so the agent can give the amount. "" when none is.
@@ -121,6 +128,7 @@ function precheck(q, known = "") {
   if ([q.q, ...(q.options || [])].some((t) => READ_REPORT.test(String(t || "")))) return { verdict: "redo", why: "it sends the user to read a report instead of asking them something. First check the report against newer answers in ANSWERS.md and what Symbiot remembers (a newer decision, an account made since) and update it if it's out of date; then put a 2-3 line summary in the card's context and ask only the one question that's left, linking the report for detail" };
   if ([q.q, ...(q.options || [])].some((t) => !byAgent(t) && SAVE_YOURSELF.test(String(t || "")))) return { verdict: "redo", why: `it tells the user to save a key or password to the vault themselves, and a value they paste in chat or on this card is saved there by itself. Ask them to paste it here instead; for one they made whose value never reached the vault, say it in one line: ${MADE_KEY_LINE}` };
   if (/\b(?:token|key|password|secret)s?\b/i.test(all) && doubtsMade(all)) return { verdict: "redo", why: `it questions whether the user made the key. They did: its value just never reached the vault. Say it once, in one line, and nothing more: ${MADE_KEY_LINE} Don't ask for it on another card` };
+  if (asksKey(q) && !(KEY_FOR.test(all) && KEY_SKIPPED.test(all))) return { verdict: "redo", why: "it asks the user for a key, token or login without saying why. Say it in one line in the context: which task needs it, what you'll check or change with it, and what's lost if they skip it" };
   const m = all.match(NEW_ACCOUNT), svc = m && (m[1] || m[2]);
   if (svc && known) {
     const line = String(known).split("\n").find((l) => new RegExp(`\\b${svc.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i").test(l) && /\baccount\b/i.test(l));

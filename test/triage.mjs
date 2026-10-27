@@ -146,8 +146,18 @@ try {
   ok("…the AI isn't asked for it", (await T.judge(doubt, {}, { write: async () => { throw new Error("asked"); } })).verdict === "redo");
   const self = T.precheck({ q: "Can you roll the Cloudflare token?", options: ["👤 You (only you: your Cloudflare sign-in): roll it, then save it to the vault", "Skip this part"] });
   ok("a card that has the user save it to the vault themselves goes back: a pasted value is saved by itself", self && self.verdict === "redo" && /saved there by itself/.test(self.why), self);
-  ok("…while asking them to paste it, the agent's own vault step, and a key the agent can't find on a server are left to judge", T.precheck({ q: "Can you paste the Cloudflare token in chat?", options: ["👤 You (only you: your Cloudflare token): roll it and paste it here"] }) === null && T.precheck({ q: "Shall I use the key you pasted?", options: ["🤖 Agent: I'll put it in the vault"] }) === null && T.precheck({ q: "I can't find the SSH key on the server: which one should I use?", options: ["Skip this part"] }) === null);
+  ok("…while asking them to paste it, the agent's own vault step, and a key the agent can't find on a server are left to judge", T.precheck({ q: "Can you paste the Cloudflare token in chat?", context: "It lets me fix the tunnel for the site move; without it the site stays down.", options: ["👤 You (only you: your Cloudflare token): roll it and paste it here"] }) === null && T.precheck({ q: "Shall I use the key you pasted?", options: ["🤖 Agent: I'll put it in the vault"] }) === null && T.precheck({ q: "I can't find the SSH key on the server: which one should I use?", options: ["Skip this part"] }) === null);
+
+  console.log("A KEY OR LOGIN ASKED FOR SAYS WHY (27 Oct 2026)");
+  const render = { q: "Can you create a Render API key?", context: "Creating one needs your Render login (Account Settings → API Keys at dashboard.render.com). The check stays blocked until a Render API key is in the vault as 'render api key'.", options: ["👤 You (only you: your Render login): create the key and paste it here (recommended)", "Skip this part"] };
+  const pk = T.precheck(render);
+  ok("the Render card as written that day (no word on what the check is for): redo, with the three things to say", pk && pk.verdict === "redo" && /which task needs it/.test(pk.why) && /check or change/.test(pk.why) && /skip it/.test(pk.why), pk);
+  ok("…the AI isn't asked for it", (await T.judge(render, {}, { write: async () => { throw new Error("asked"); } })).verdict === "redo");
+  const keyFor = { ...render, context: "For the security review task: the key lets me list your Render services and check each one's environment variables for leaked secrets. I change nothing. If you skip it, those services stay unchecked." };
+  ok("…the same card saying what it's for and what skipping loses: left to judge", T.precheck(keyFor) === null, T.precheck(keyFor));
+  ok("…and the agent's own key step isn't the user's", T.precheck({ q: "Shall I generate a deploy key for the repo?", options: ["🤖 Agent: generate it (recommended)", "Skip this part"] }) === null);
   const { ONLY_YOU } = await import("../handover.mjs");
+  ok("every brief says a key or login asked for says why", /A card asking for a key, token or login says in one line why/.test(ONLY_YOU));
   ok("every brief says a pasted key saves itself, and the one line for a made key that isn't in the vault", /never ask them to save it there or in a file/.test(ONLY_YOU) && /The token exists, but its value isn't in the vault: roll it in Cloudflare and paste the value in chat/.test(ONLY_YOU) && /never doubting they made it/.test(ONLY_YOU));
 } catch (e) { ok("ran", false, String((e && e.stack) || e)); }
 finally { rmSync(HOME, { recursive: true, force: true }); }
