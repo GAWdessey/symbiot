@@ -17,7 +17,7 @@ import { createServer } from "node:http";
 import { mkdtempSync, rmSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const HOME = mkdtempSync(join(tmpdir(), "symbiot-smoke-"));
@@ -461,7 +461,7 @@ try {
 
   console.log("WEEKLY — isAppRunningWeekly() finds this app and its schedule, with no port or token passed");
   const runningWeekly = (extra = {}) => new Promise((resolve) => {
-    const p = spawn(process.execPath, ["--input-type=module", "-e", `import { isAppRunningWeekly } from ${JSON.stringify(join(HERE, "..", "server.mjs"))}; console.log(JSON.stringify(await isAppRunningWeekly()));`], { env: { ...env, ...extra }, stdio: ["ignore", "pipe", "pipe"] });
+    const p = spawn(process.execPath, ["--input-type=module", "-e", `import { isAppRunningWeekly } from ${JSON.stringify(pathToFileURL(join(HERE, "..", "server.mjs")).href)}; console.log(JSON.stringify(await isAppRunningWeekly()));`], { env: { ...env, ...extra }, stdio: ["ignore", "pipe", "pipe"] });
     let out = ""; p.stdout.on("data", (d) => (out += d)); p.on("exit", () => resolve(out.trim()));
   });
   const setWk = (on) => fetch(base + "/api/desktop/weekly", { method: "POST", headers: H, body: JSON.stringify({ on }) });

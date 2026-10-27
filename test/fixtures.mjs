@@ -9,7 +9,7 @@ import { createServer } from "node:http";
 import { mkdtempSync, writeFileSync, mkdirSync, rmSync, readFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { authorship, repoState, readmeInfo, houseRules, findAllRepos, driftRepo, buildTasksMd, taskType, orcaHandoffCmd, migrateOrcaCmd, fillHandoff, ORCA_CLAUDE_CMD, CLAUDE_CMD, HANDOFF_PROMPT, shipChanges, shipWithBump, bumpOffer, learnNpm, releaseNeeded, withReleases, semverGt, parseQuestions, unreleased, publishesOnMerge } from "../index.mjs";
 import { EMBEDDED_UI } from "../ui.mjs";
 import { updateCmd } from "../server.mjs";
@@ -208,7 +208,7 @@ try {
   const hhome = join(ROOT, "hhome"); mkdirSync(join(hhome, ".config", "symbiot"), { recursive: true });
   writeFileSync(join(hhome, ".config", "symbiot", "config.json"), JSON.stringify({ ide: "code" }));
   const hs = spawnSync(process.execPath, ["--input-type=module", "-e", `
-    import * as m from ${JSON.stringify(INDEX)};
+    import * as m from ${JSON.stringify(pathToFileURL(INDEX).href)};
     const out = { legacy: m.handoffCmd() };
     out.saved = m.setHandoffCmd("  zed {dir}  "); out.afterSave = m.handoffCmd();
     out.cleared = m.setHandoffCmd(""); out.afterClear = m.handoffCmd();
@@ -233,7 +233,7 @@ try {
   const AGENTS = join(dirname(INDEX), "agents.mjs"), busyDir = join(ROOT, "busy");
   mkdirSync(join(busyDir, ".symbiot"), { recursive: true }); writeFileSync(join(busyDir, ".symbiot", "TASKS.md"), "- [ ] Fix the reader\n"); // something to do (runHandoff's nothingToDo)
   const bs = spawnSync(process.execPath, ["--input-type=module", "-e", `
-    import * as a from ${JSON.stringify(AGENTS)};
+    import * as a from ${JSON.stringify(pathToFileURL(AGENTS).href)};
     import { existsSync, readFileSync, writeFileSync } from "node:fs";
     import { spawnSync } from "node:child_process";
     const dir = ${JSON.stringify(busyDir)}, lock = dir + "/.symbiot/agent.pid", out = {};
@@ -288,7 +288,7 @@ try {
   console.log("HANDOFF — a run that stopped on questions isn't started again on the same .env and answers");
   const blkDir = join(ROOT, "blocked"); mkdirSync(join(blkDir, ".symbiot"), { recursive: true });
   const bk = spawnSync(process.execPath, ["--input-type=module", "-e", `
-    import * as a from ${JSON.stringify(AGENTS)};
+    import * as a from ${JSON.stringify(pathToFileURL(AGENTS).href)};
     import { writeFileSync, existsSync, readFileSync } from "node:fs";
     const dir = ${JSON.stringify(blkDir)}, s = dir + "/.symbiot/", out = {};
     const until = async (c) => { for (let i = 0; i < 100 && !c(); i++) await new Promise((r) => setTimeout(r, 100)); };
@@ -316,7 +316,7 @@ try {
   const emDir = join(ROOT, "blocked-empty"); mkdirSync(join(emDir, ".symbiot"), { recursive: true });
   execSync("git init -q && git -c user.email=t@t -c user.name=t commit -q --allow-empty -m init && echo .symbiot > .gitignore && echo a > a.txt", { cwd: emDir });
   const em = spawnSync(process.execPath, ["--input-type=module", "-e", `
-    import * as a from ${JSON.stringify(AGENTS)};
+    import * as a from ${JSON.stringify(pathToFileURL(AGENTS).href)};
     import { writeFileSync, existsSync, readFileSync } from "node:fs";
     const dir = ${JSON.stringify(emDir)}, s = dir + "/.symbiot/", out = {};
     const until = async (c) => { for (let i = 0; i < 100 && !c(); i++) await new Promise((r) => setTimeout(r, 100)); };
@@ -335,7 +335,7 @@ try {
   console.log("HANDOFF — after a restart, a run's questions still show; a step of yours holds the next run");
   const erDir = join(ROOT, "earlier"), erHome = join(ROOT, "erhome"); mkdirSync(join(erDir, ".symbiot"), { recursive: true }); mkdirSync(erHome, { recursive: true });
   const erRun = (code) => { const r = spawnSync(process.execPath, ["--input-type=module", "-e", `
-    import * as a from ${JSON.stringify(AGENTS)};
+    import * as a from ${JSON.stringify(pathToFileURL(AGENTS).href)};
     import { writeFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
     const dir = ${JSON.stringify(erDir)}, s = dir + "/.symbiot/", out = {};
     const until = async (c) => { for (let i = 0; i < 100 && !c(); i++) await new Promise((r) => setTimeout(r, 100)); };
@@ -452,7 +452,7 @@ try {
   console.log("HANDOFF — a send while the agent runs holds the new TASKS.md until it finishes");
   const heldDir = join(ROOT, "held"); mkdirSync(heldDir, { recursive: true });
   const hd = spawnSync(process.execPath, ["--input-type=module", "-e", `
-    import * as a from ${JSON.stringify(AGENTS)};
+    import * as a from ${JSON.stringify(pathToFileURL(AGENTS).href)};
     import { existsSync, readFileSync, writeFileSync } from "node:fs";
     const dir = ${JSON.stringify(heldDir)}, f = dir + "/.symbiot/TASKS.md", next = dir + "/.symbiot/TASKS.next.md", out = {};
     const until = async (c) => { for (let i = 0; i < 100 && !c(); i++) await new Promise((r) => setTimeout(r, 100)); };
@@ -843,7 +843,7 @@ try {
   mkdirSync(proj, { recursive: true });
   execSync(`git init -q -b main && git config user.email ci@symbiot.test && git config user.name "Symbiot CI" && echo a > a.txt && git add . && git commit -qm init`, { cwd: proj, env: gitEnv });
   const cycle = `
-    import * as m from ${JSON.stringify(INDEX)};
+    import * as m from ${JSON.stringify(pathToFileURL(INDEX).href)};
     import { readFileSync, writeFileSync, unlinkSync } from "node:fs";
     const f = ${JSON.stringify(join(proj, ".symbiot", "TASKS.md"))};
     // an agent still running in the repo: its lock, with a live pid (this one)
@@ -1106,14 +1106,14 @@ try {
   mkdirSync(join(aqDir, ".symbiot"), { recursive: true }); mkdirSync(join(aqHome, ".config", "symbiot"), { recursive: true });
   writeFileSync(join(aqDir, ".symbiot", "QUESTIONS.md"), "## Questions\n### Which way?\n- 🤖 Agent: A (recommended)\n- 🤖 Agent: B\n- 🤖 Agent: C\n\n## Suggestions\n- [repo: symbiot] Watch GitHub too\n- [repo: symbiot] Watch Jira too\n- Cache the map scan\n- [Repo:atlas]  Same repo, named\n- [WIP] Not a repo tag\n");
   writeFileSync(join(aqHome, ".config", "symbiot", "tasks.json"), JSON.stringify([{ id: "a", text: "Watch GitHub too", repo: "symbiot", done: false }]));
-  const aq = spawnSync(process.execPath, ["--input-type=module", "-e", `import { agentQuestions } from ${JSON.stringify(join(dirname(INDEX), "agents.mjs"))}; console.log(JSON.stringify(agentQuestions(${JSON.stringify(aqDir)}, "atlas")));`], { encoding: "utf8", env: { ...process.env, HOME: aqHome, USERPROFILE: aqHome } });
+  const aq = spawnSync(process.execPath, ["--input-type=module", "-e", `import { agentQuestions } from ${JSON.stringify(pathToFileURL(join(dirname(INDEX), "agents.mjs")).href)}; console.log(JSON.stringify(agentQuestions(${JSON.stringify(aqDir)}, "atlas")));`], { encoding: "utf8", env: { ...process.env, HOME: aqHome, USERPROFILE: aqHome } });
   let aqr = {}, ideas = []; try { aqr = JSON.parse(aq.stdout); ideas = aqr.suggestions; } catch { console.log(aq.stdout, aq.stderr); }
   ok("an idea starting [repo: symbiot] goes to symbiot's tasks, not the agent's repo's", ideas[0] && ideas[0].text === "Watch Jira too" && ideas[0].repo === "symbiot" && ideas[0].other && !ideas[0].added, ideas[0]);
   ok("...one already in that repo's Tasks leaves the list, so the next moves up; the tab shows 2 at a time", !ideas.some((x) => x.text === "Watch GitHub too") && aqr.ideasShown === 2, [ideas.map((x) => x.text), aqr.ideasShown]);
   ok("a question shows its first 2 options, whatever the agent wrote", ((aqr.questions || [])[0] || {}).options && aqr.questions[0].options.join("|") === "🤖 Agent: A (recommended)|🤖 Agent: B", aqr.questions);
   // Skip: a folder no agent ran in is refused; one that ran keeps the idea in SKIPPED.md, once, and it leaves the list
   writeFileSync(join(aqHome, ".config", "symbiot", "runs.json"), JSON.stringify([{ path: aqDir, name: "atlas", startedAt: 1 }]));
-  const sk = spawnSync(process.execPath, ["--input-type=module", "-e", `import { skipIdea, agentQuestions } from ${JSON.stringify(join(dirname(INDEX), "agents.mjs"))}; const no = skipIdea(${JSON.stringify(join(ROOT, "nowhere"))}, "x"); const a = skipIdea(${JSON.stringify(aqDir)}, "Watch Jira too"), b = skipIdea(${JSON.stringify(aqDir)}, "watch jira too!"); console.log(JSON.stringify({ no, a, b, ideas: agentQuestions(${JSON.stringify(aqDir)}, "atlas").suggestions.map((x) => x.text) }));`], { encoding: "utf8", env: { ...process.env, HOME: aqHome, USERPROFILE: aqHome } });
+  const sk = spawnSync(process.execPath, ["--input-type=module", "-e", `import { skipIdea, agentQuestions } from ${JSON.stringify(pathToFileURL(join(dirname(INDEX), "agents.mjs")).href)}; const no = skipIdea(${JSON.stringify(join(ROOT, "nowhere"))}, "x"); const a = skipIdea(${JSON.stringify(aqDir)}, "Watch Jira too"), b = skipIdea(${JSON.stringify(aqDir)}, "watch jira too!"); console.log(JSON.stringify({ no, a, b, ideas: agentQuestions(${JSON.stringify(aqDir)}, "atlas").suggestions.map((x) => x.text) }));`], { encoding: "utf8", env: { ...process.env, HOME: aqHome, USERPROFILE: aqHome } });
   let skr = {}; try { skr = JSON.parse(sk.stdout); } catch { console.log(sk.stdout, sk.stderr); }
   const skMd = existsSync(join(aqDir, ".symbiot", "SKIPPED.md")) ? readFileSync(join(aqDir, ".symbiot", "SKIPPED.md"), "utf8") : "";
   ok("Skip turns an idea down: kept once in .symbiot/SKIPPED.md, and the next idea moves up", skr.a && skr.a.ok && skr.b && skr.b.ok && (skMd.match(/^- /gm) || []).length === 1 && /^- Watch Jira too$/m.test(skMd) && skr.ideas && skr.ideas[0] === "Cache the map scan" && !skr.ideas.includes("Watch Jira too"), [skr, skMd]);
@@ -1269,7 +1269,7 @@ try {
     const xhome = join(ROOT, "xhome"), xbin = join(ROOT, "xbin"); mkdirSync(xhome, { recursive: true }); mkdirSync(xbin, { recursive: true });
     writeFileSync(join(xbin, "xrandr"), "#!/bin/sh\ncat <<'EOF'\nMonitors: 2\n 0: +*A 3/10x6/10+0+0  A\n 1: +B 5/10x6/10+3+0  B\nEOF\n", { mode: 0o755 });
     const sx = spawnSync(process.execPath, ["--input-type=module", "-e", `
-      import * as s from ${JSON.stringify(join(dirname(INDEX), "screens.mjs"))};
+      import * as s from ${JSON.stringify(pathToFileURL(join(dirname(INDEX), "screens.mjs")).href)};
       import { statSync } from "node:fs";
       const out = {};
       const a = s.importScreen("desk", ${JSON.stringify(big.toString("base64"))});
@@ -1296,7 +1296,7 @@ try {
   // isolated HOME: screens live in Symbiot's config folder
   const shome = join(ROOT, "shome"); mkdirSync(shome, { recursive: true });
   const sc = spawnSync(process.execPath, ["--input-type=module", "-e", `
-    import * as s from ${JSON.stringify(join(dirname(INDEX), "screens.mjs"))};
+    import * as s from ${JSON.stringify(pathToFileURL(join(dirname(INDEX), "screens.mjs")).href)};
     import { existsSync, statSync } from "node:fs";
     const out = {};
     out.bad = s.importScreen("x", Buffer.from("not a png").toString("base64"));
@@ -1338,10 +1338,10 @@ try {
     import { createServer } from "node:http";
     import { statSync } from "node:fs";
     import { execFileSync } from "node:child_process";
-    import { chromeBinary } from ${JSON.stringify(join(dirname(INDEX), "core.mjs"))};
+    import { chromeBinary } from ${JSON.stringify(pathToFileURL(join(dirname(INDEX), "core.mjs")).href)};
     if (!chromeBinary()) { console.log(JSON.stringify({ skip: true })); process.exit(0); }
-    const h = await import(${JSON.stringify(join(dirname(INDEX), "headless.mjs"))});
-    const s = await import(${JSON.stringify(join(dirname(INDEX), "screens.mjs"))});
+    const h = await import(${JSON.stringify(pathToFileURL(join(dirname(INDEX), "headless.mjs")).href)});
+    const s = await import(${JSON.stringify(pathToFileURL(join(dirname(INDEX), "screens.mjs")).href)});
     const page = '<!doctype html><title>Inbox</title><body style="margin:0">' +
       '<a href="/two" target="_blank" style="position:absolute;left:10px;top:10px">Go to two</a>' +
       '<button id="compose" style="position:absolute;left:10px;top:50px">Compose</button>' +
@@ -1392,7 +1392,7 @@ try {
     out.read = await h.readPage("127.0.0.1:" + srv.address().port + "/rows");
     out.readNoScreen = s.loadScreens().length === nScreens; out.readClosed = !h.browserOpen();
     out.chats = await h.readPage("127.0.0.1:" + srv.address().port + "/chats");
-    const wm = await import(${JSON.stringify(join(dirname(INDEX), "watch.mjs"))});
+    const wm = await import(${JSON.stringify(pathToFileURL(join(dirname(INDEX), "watch.mjs")).href)});
     const told = [], notify = (t, b) => told.push([t, b]);
     const w = wm.addWatch({ site: "127.0.0.1:" + srv.address().port + "/rows" });
     out.wFirst = await wm.checkWatch(w.id, { notify });
@@ -1558,7 +1558,7 @@ try {
   ok("newItems: only rows not seen before, once each; remember keeps the newest last", ni.fresh.length === 1 && ni.fresh[0].text === "Sam, Contract" && ni.keys.length === 2 && remember(["a", "b", "c"], ["b", "d"]).join() === "a,c,b,d", ni);
   const whome = join(ROOT, "whome"); mkdirSync(whome, { recursive: true });
   const wx = spawnSync(process.execPath, ["--input-type=module", "-e", `
-    import * as w from ${JSON.stringify(join(dirname(INDEX), "watch.mjs"))};
+    import * as w from ${JSON.stringify(pathToFileURL(join(dirname(INDEX), "watch.mjs")).href)};
     import { statSync } from "node:fs";
     let page = { url: "https://mail.example.com/inbox", items: [{ kind: "row", label: "Ann, Lunch?, 9:05 AM" }, { kind: "row", label: "Bob, Invoice, 8:00 AM" }] };
     const told = [], opts = { read: async () => page, notify: (t, b) => told.push([t, b]) }, out = {};
@@ -1593,7 +1593,7 @@ try {
   console.log("WATCH GMAIL — only unread mail waits on you: Gmail starts an unread row with \"unread\"");
   const gmhome = join(ROOT, "gmhome"); mkdirSync(gmhome, { recursive: true });
   const gmx = spawnSync(process.execPath, ["--input-type=module", "-e", `
-    import * as w from ${JSON.stringify(join(dirname(INDEX), "watch.mjs"))};
+    import * as w from ${JSON.stringify(pathToFileURL(join(dirname(INDEX), "watch.mjs")).href)};
     const row = (label) => ({ kind: "row", label });
     let page = { url: "https://mail.google.com/mail/u/0/#inbox", items: [row("unread, Ann, Lunch?, 9:05 AM"), row("Bob, Invoice, 8:00 AM")] };
     const told = [], opts = { read: async () => page, notify: (t, b) => told.push([t, b]) }, out = {};
@@ -1628,7 +1628,7 @@ try {
   ok("githubItems: keyed by thread and when it changed", gi[1].key === "github 2 2026-10-05T09:00:00Z", gi[1]);
   const ghome = join(ROOT, "ghome"); mkdirSync(join(ghome, ".config", "symbiot"), { recursive: true });
   const gx = spawnSync(process.execPath, ["--input-type=module", "-e", `
-    import * as w from ${JSON.stringify(join(dirname(INDEX), "watch.mjs"))};
+    import * as w from ${JSON.stringify(pathToFileURL(join(dirname(INDEX), "watch.mjs")).href)};
     const n = (id, title, updated) => ({ id, reason: "ci_activity", updated_at: updated, subject: { type: "CheckSuite", title }, repository: { full_name: "pat/app", html_url: "https://github.com/pat/app" } });
     let list = [n("1", "CI workflow run failed for main branch", "a")], gh = true;
     const told = [], briefed = [], out = {};
@@ -1669,7 +1669,7 @@ try {
   ok("itemsOf: a row keeps its unread count and its ticks (what only its icons say)", cits[0].unread === 2 && !cits[0].mine && cits[1].mine === true && !cits[1].unread, cits);
   const whahome = join(ROOT, "whahome"); mkdirSync(whahome, { recursive: true });
   const wax = spawnSync(process.execPath, ["--input-type=module", "-e", `
-    import * as w from ${JSON.stringify(join(dirname(INDEX), "watch.mjs"))};
+    import * as w from ${JSON.stringify(pathToFileURL(join(dirname(INDEX), "watch.mjs")).href)};
     const row = (label, x = {}) => ({ kind: "row", label, ...x });
     let page = { url: "https://web.whatsapp.com/", items: [row("Old chat 07:00 hello")] };
     const told = [], briefed = [], out = {};
@@ -1716,7 +1716,7 @@ try {
   writeFileSync(join(bhome, ".config", "symbiot", "watch.json"), JSON.stringify({ watches: [bw("m", "Inbox", "https://mail.google.com/mail/u/0/#inbox"), bw("g", "GitHub notifications", "https://github.com/notifications"), bw("c", "WhatsApp", "https://web.whatsapp.com/"), bw("j", "Jira", "https://acme.atlassian.net/jira")],
     news: [...bnews].sort((a, b) => b.ts - a.ts), briefs: [{ watch: "c", name: "WhatsApp", ts: bnow - 2 * H1, count: 2, text: "Your mom wants a call." }] }));
   const bx = spawnSync(process.execPath, ["--input-type=module", "-e", `
-    import * as w from ${JSON.stringify(join(dirname(INDEX), "watch.mjs"))};
+    import * as w from ${JSON.stringify(pathToFileURL(join(dirname(INDEX), "watch.mjs")).href)};
     import { execFileSync } from "node:child_process";
     const sym = (...a) => { try { return { code: 0, j: JSON.parse(execFileSync(process.execPath, [${JSON.stringify(INDEX)}, ...a], { encoding: "utf8" })) }; } catch (e) { let j = null; try { j = JSON.parse(e.stdout); } catch {} return { code: e.status, j }; } };
     const out = { day: w.watchBoard(24), week: w.watchBoard(168), waiting: w.waitingOn(24).map((x) => x.label) };
@@ -1793,8 +1793,8 @@ try {
       regions: [{ id: "r1", label: "Send ‪(Ctrl-Enter)‬", kind: "button", x: 10, y: 10, w: 60, h: 30 }, { id: "r2", label: "Ann, Please send the invoice", kind: "row", x: 10, y: 60, w: 600, h: 30 }] },
       { id: "bcdefabcdefa", name: "Chat", w: 1280, h: 800, ts: now, via: "headless", page: { url: "https://web.whatsapp.com/", title: "WhatsApp" }, regions: [{ id: "r3", label: "Type a message", kind: "field", x: 400, y: 740, w: 600, h: 40 }] }]));
     cfg({});
-    const w = await import(${JSON.stringify(join(dirname(INDEX), "watch.mjs"))});
-    const h = await import(${JSON.stringify(join(dirname(INDEX), "headless.mjs"))});
+    const w = await import(${JSON.stringify(pathToFileURL(join(dirname(INDEX), "watch.mjs")).href)});
+    const h = await import(${JSON.stringify(pathToFileURL(join(dirname(INDEX), "headless.mjs")).href)});
     const out = {};
     out.state = w.watchState();
     out.notMail = w.draftReply("n2"); out.gone = w.draftReply("nope"); out.untrusted = w.draftReply("n1");
@@ -1861,7 +1861,7 @@ try {
     const port = await new Promise((r) => { const s = createServer().listen(0, "127.0.0.1", () => { const p = s.address().port; s.close(() => r(p)); }); });
     const dir = join(${JSON.stringify(phome)}, ".config", "symbiot");
     writeFileSync(join(dir, "config.json"), JSON.stringify({ phoneLink: { port } }));
-    const p = await import(${JSON.stringify(join(dirname(INDEX), "phone.mjs"))});
+    const p = await import(${JSON.stringify(pathToFileURL(join(dirname(INDEX), "phone.mjs")).href)});
     const out = {}, told = [];
     const put = (news, briefs = []) => writeFileSync(join(dir, "watch.json"), JSON.stringify({ watches: [], news, briefs }));
     put([{ id: "o", watch: "w1", name: "Inbox", ts: 1, text: "Old mail" }]);
@@ -1908,7 +1908,7 @@ try {
     import { execFile } from "node:child_process";
     const port = await new Promise((r) => { const s = createServer().listen(0, "127.0.0.1", () => { const p = s.address().port; s.close(() => r(p)); }); });
     writeFileSync(join(${JSON.stringify(pchome)}, ".config", "symbiot", "config.json"), JSON.stringify({ phoneLink: { port } }));
-    const p = await import(${JSON.stringify(join(dirname(INDEX), "phone.mjs"))});
+    const p = await import(${JSON.stringify(pathToFileURL(join(dirname(INDEX), "phone.mjs")).href)});
     const code = (await p.setPhoneLink(true)).code;
     const cli = (home, android, ...args) => new Promise((r) => execFile(process.execPath, [...(android ? ["--import", "data:text/javascript,Object.defineProperty(process,'platform',{value:'android'})"] : []), ${JSON.stringify(INDEX)}, "phone", ...args],
       { env: { ...process.env, HOME: home, USERPROFILE: home } }, (err, stdout) => r({ code: err ? err.code : 0, out: stdout })));
@@ -1952,7 +1952,7 @@ try {
   // isolated HOME: these write Symbiot's config and the OS autostart file
   const dhome = join(ROOT, "dhome"); mkdirSync(dhome, { recursive: true });
   const ds = spawnSync(process.execPath, ["--input-type=module", "-e", `
-    import * as d from ${JSON.stringify(join(dirname(INDEX), "desktop.mjs"))};
+    import * as d from ${JSON.stringify(pathToFileURL(join(dirname(INDEX), "desktop.mjs")).href)};
     import { existsSync } from "node:fs";
     const out = {};
     out.on = d.setWeekly({ on: true, day: 3, hour: 9 }); out.dueNow = d.weeklyDue(d.weeklyCfg());
@@ -1969,7 +1969,7 @@ try {
   // runWeekly's notification, seen as the Android app's notify file (no real popup)
   const wkHome = join(ROOT, "wkHome"); mkdirSync(wkHome, { recursive: true });
   const wkr = spawnSync(process.execPath, ["--input-type=module", "-e", `
-    import * as d from ${JSON.stringify(join(dirname(INDEX), "desktop.mjs"))};
+    import * as d from ${JSON.stringify(pathToFileURL(join(dirname(INDEX), "desktop.mjs")).href)};
     import { existsSync, readFileSync, unlinkSync } from "node:fs";
     import { join } from "node:path";
     const nf = join(${JSON.stringify(wkHome)}, ".config", "symbiot", "android-notify.jsonl"), lines = () => existsSync(nf) ? readFileSync(nf, "utf8").trim().split("\\n").length : 0;

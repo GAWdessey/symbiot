@@ -10,6 +10,7 @@
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const HOME = mkdtempSync(join(tmpdir(), "symbiot-codes-"));
 process.env.HOME = HOME; process.env.USERPROFILE = HOME; process.env.SYMBIOT_VAULT = "file"; process.env.SYMBIOT_NO_POLL = "1";
@@ -132,7 +133,7 @@ try {
     // 21 Oct 2026: two or three copies of the check at once, each putting up a card and keeping the phone's Symbiot in front
     const { execFileSync } = await import("node:child_process"), lock = join(CFG, "phone-check.lock");
     writeFileSync(lock, JSON.stringify({ pid: process.pid, at: Date.now() }));
-    let said = ""; try { said = execFileSync(process.execPath, [new URL("../scripts/phone-codes-check.mjs", import.meta.url).pathname], { env: { ...process.env, HOME, PATH: "" }, encoding: "utf8", timeout: 30000 }); } catch (e) { said = String(e.stdout || ""); }
+    let said = ""; try { said = execFileSync(process.execPath, [fileURLToPath(new URL("../scripts/phone-codes-check.mjs", import.meta.url))], { env: { ...process.env, HOME, PATH: "" }, encoding: "utf8", timeout: 30000 }); } catch (e) { said = String(e.stdout || ""); }
     ok("a second check while one runs stops before anything, and leaves the running one's lock", /another phone check is running/.test(said) && !/Step 1/.test(said) && JSON.parse(readFileSync(lock, "utf8")).pid === process.pid, said.slice(0, 300));
     rmSync(lock, { force: true });
   }

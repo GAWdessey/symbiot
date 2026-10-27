@@ -12,6 +12,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createServer } from "node:http";
 import { execFile } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
 const HOME = mkdtempSync(join(tmpdir(), "symbiot-kept-"));
 const CFG = join(HOME, ".config", "symbiot"), SHOTS = join(CFG, "screens"), SOCK = join(SHOTS, "app.sock"); mkdirSync(SHOTS, { recursive: true });
@@ -21,7 +22,7 @@ writeFileSync(join(SHOTS, "screens.json"), JSON.stringify([{ id: "a1b2c3d4e5f6",
 let pass = 0, fail = 0;
 const ok = (n, c, got) => { if (c) { pass++; console.log("  ✓ " + n); } else { fail++; console.log("  ✗ " + n + (got !== undefined ? "  got: " + JSON.stringify(got).slice(0, 600) : "")); } };
 const env = { ...process.env, HOME, USERPROFILE: HOME, SYMBIOT_NO_UPDATE: "1", SYMBIOT_PORT: "1", SYMBIOT_APP_WAIT_MS: "6000" };
-const cli = (...args) => new Promise((done) => { const t0 = Date.now(); execFile(process.execPath, [new URL("../index.mjs", import.meta.url).pathname, "screens", ...args], { env, timeout: 60000 }, (e, out) => { let j = null; try { j = JSON.parse(String(out).slice(String(out).indexOf("{"))); } catch {} done({ j, out: String(out), ms: Date.now() - t0 }); }); });
+const cli = (...args) => new Promise((done) => { const t0 = Date.now(); execFile(process.execPath, [fileURLToPath(new URL("../index.mjs", import.meta.url)), "screens", ...args], { env, timeout: 60000 }, (e, out) => { let j = null; try { j = JSON.parse(String(out).slice(String(out).indexOf("{"))); } catch {} done({ j, out: String(out), ms: Date.now() - t0 }); }); });
 // the app, on its socket: what each command asked it
 const asked = [];
 const app = () => new Promise((up) => { const s = createServer((req, res) => { let b = ""; req.on("data", (d) => { b += d; }); req.on("end", () => { asked.push([req.url, JSON.parse(b || "{}")]); res.writeHead(200, { "content-type": "application/json" }); res.end(JSON.stringify({ id: "b2c3d4e5f6a1", typed: "Text editor for creating content", kept: true, page: { url: "https://www.linkedin.com/feed/" }, regions: [] })); }); }); s.listen(SOCK, () => up(s)); });

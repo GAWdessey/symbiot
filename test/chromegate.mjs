@@ -9,6 +9,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
 const HOME = mkdtempSync(join(tmpdir(), "symbiot-chromegate-"));
 process.env.HOME = HOME; process.env.USERPROFILE = HOME;
@@ -81,7 +82,7 @@ try {
   const cmd = A.withOwnTools('claude -p "{prompt}"', true, () => true), rd = A.withOwnTools('claude -p "{prompt}"', true, () => false);
   ok("with acting switched on somewhere, a run gets the tools that act in their Chrome", /--chrome/.test(cmd) && /mcp__claude-in-chrome__computer/.test(cmd) && /mcp__claude-in-chrome__form_input/.test(cmd), cmd);
   ok("…and none of them when it's on nowhere", /--chrome/.test(rd) && !/mcp__claude-in-chrome__computer/.test(rd), rd);
-  const hook = (ev) => spawnSync(process.execPath, [new URL("../guard.mjs", import.meta.url).pathname], { input: JSON.stringify(ev), encoding: "utf8", env: { ...process.env, HOME } });
+  const hook = (ev) => spawnSync(process.execPath, [fileURLToPath(new URL("../guard.mjs", import.meta.url))], { input: JSON.stringify(ev), encoding: "utf8", env: { ...process.env, HOME } });
   const h1 = hook({ session_id: "s9", tool_name: C + "navigate", tool_input: { tabId: 4, url: "https://www.linkedin.com/feed/" } }), h2 = hook({ session_id: "s9", tool_name: C + "computer", tool_input: { tabId: 4, action: "left_click", coordinate: [1, 1], action_summary: "Posts the update" } });
   // the agent can't give itself the Go: the holds and the tabs are the gate's to write, not the run's
   const holdsF = join(CFG, "chrome-holds.json"), tabsF = join(CFG, "chrome-tabs.json");
@@ -139,7 +140,7 @@ try {
     ok("…another run's aren't", G.openTabs("other", t).length === 0 && G.openTabs("", t).length === 0);
     G.seen(C + "tabs_close_mcp", `Closed tab 41\n\nTab Context:\n- Available tabs:\n${ctx([42])}`, { ...t, input: { tabId: 41 } });
     ok("a tab it closed is gone", G.openTabs("tabs1", t).map((x) => x.tab).join() === "42", G.openTabs("tabs1", t));
-    const hook = (ev) => spawnSync(process.execPath, [new URL("../guard.mjs", import.meta.url).pathname], { input: JSON.stringify(ev), encoding: "utf8", env: { ...process.env, HOME } });
+    const hook = (ev) => spawnSync(process.execPath, [fileURLToPath(new URL("../guard.mjs", import.meta.url))], { input: JSON.stringify(ev), encoding: "utf8", env: { ...process.env, HOME } });
     const stop = hook({ hook_event_name: "Stop", session_id: "tabs1", stop_hook_active: false });
     ok("ending with one open: the Stop hook sends it back to close it, naming the tab", stop.status === 2 && /tabs_close_mcp on tab 42 \(linkedin\.com\)/.test(stop.stderr), [stop.status, stop.stderr]);
     ok("…only once: a tab it can't close never keeps it from ending", hook({ hook_event_name: "Stop", session_id: "tabs1", stop_hook_active: true }).status === 0);

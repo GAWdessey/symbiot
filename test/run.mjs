@@ -8,6 +8,8 @@
 //   node test/run.mjs urgent route    only these (a name, or part of one)
 //   node test/run.mjs -j 1            one at a time (CI's Windows table)
 //   node test/run.mjs --timeout 300   seconds each file may take (default 600)
+//   node test/run.mjs --known f.txt   files listed there (one a line, # notes) may fail
+//                                     here: only another file failing fails the run
 //   SYMBIOT_TEST_RETRY=0              no second try for a failed file
 //
 // Workers: SYMBIOT_TEST_JOBS, else -j, else half the CPUs (at most 8: 245 s at 8 workers
@@ -25,12 +27,13 @@ const NOT_SUITES = new Set(["run.mjs", "uisource.mjs"]); // this runner, and a h
 const TIMES = join(here, ".test-times.json");
 
 function args(argv) {
-  const o = { jobs: 0, timeout: 600, only: [] };
+  const o = { jobs: 0, timeout: 600, only: [], known: "" };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "-j" || a === "--jobs") o.jobs = Number(argv[++i]) || 0;
     else if (/^-j\d+$/.test(a)) o.jobs = Number(a.slice(2));
     else if (a === "--timeout") o.timeout = Number(argv[++i]) || o.timeout;
+    else if (a === "--known") o.known = String(argv[++i] || "");
     else if (a === "--only") o.only.push(...String(argv[++i] || "").split(",").filter(Boolean));
     else o.only.push(a);
   }
@@ -111,4 +114,19 @@ if (bad.length) {
 }
 if (flaky.length) console.log(`\nFlaky: ${flaky.join(", ")} failed alongside the others and passed on its own.`);
 console.log(`\n${bad.length ? `✗ ${bad.map((r) => r.file).join(", ")} failed: ` : "✓ "}${results.length - bad.length} of ${results.length} test files pass on ${process.platform} (${wall}s)`);
+// --known: the files that already fail on this platform (the nightly's Windows list). They
+// still fail in the table above, but only a file off the list fails the run: the nightly
+// failed every night from 20 Oct 2026 for the same 70-odd known files, GitHub mailed "All
+// jobs have failed" each morning, and Symbiot started a run to find the break that wasn't.
+if (opts.known) {
+  let listed = [];
+  try { listed = readFileSync(opts.known, "utf8").split("\n").map((l) => l.replace(/#.*/, "").trim()).filter(Boolean); }
+  catch (e) { console.log(`\n✗ The list of known failures (${opts.known}) can't be read: ${e.message}`); process.exit(1); }
+  const known = new Set(listed), fresh = bad.filter((r) => !known.has(r.file)), fixed = results.filter((r) => r.ok && known.has(r.file)).map((r) => r.file).sort();
+  console.log(`${bad.length - fresh.length} of them ${bad.length - fresh.length === 1 ? "is" : "are"} on ${opts.known}, known to fail here.`);
+  if (fixed.length) console.log(`Passing now, so take ${fixed.length === 1 ? "it" : "them"} off the list: ${fixed.join(", ")}`);
+  if (fresh.length) console.log(`✗ New failures, not on the list: ${fresh.map((r) => r.file).join(", ")}`);
+  else console.log("✓ No new failures.");
+  process.exit(fresh.length ? 1 : 0);
+}
 process.exit(bad.length ? 1 : 0);
