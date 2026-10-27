@@ -54,6 +54,7 @@
     "lanes.mjs",
     "adapt.mjs",
     "home.mjs",
+    "cardwords.mjs",
     "work.mjs",
     "phone.mjs",
     "desktop.mjs",

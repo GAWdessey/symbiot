@@ -685,6 +685,15 @@ try {
     put(wa, "HANDOFF.md", "");
     led.handoffs.length = 0;
     ok("nothing handed over: nothing", handingOf(wa, { map: wmap, ledger: led }).length === 0, "");
+    // symbiot → steve → ops (25 Oct 2026): the chain was hard to follow on Home's card
+    const t0 = Date.now() - 60000, two = { handoffs: [
+      { from: { path: wa }, to: { lane: "atlas", path: atlas }, at: t0, status: "sent", key: "k1", text: "Check the server" },
+      { from: { path: atlas }, to: { lane: "ops", path: wOps }, at: t0 + 1000, status: "sent", key: "k2", text: "Read the server's log" }] };
+    const chain = handingOf(wa, { map: wmap, ledger: two, running: () => false });
+    ok("handed on again by the lane it went to: the row names both lanes, and says the second asks you", chain.length === 1 && chain[0].lane === "atlas" && chain[0].then === "ops" && chain[0].thenAsks && chain[0].askLane === "ops" && /asked you something first/.test(chain[0].why), chain);
+    rmSync(join(wOps, ".symbiot", "QUESTIONS.md"), { force: true });
+    const chain2 = handingOf(wa, { map: wmap, ledger: two, running: () => false });
+    ok("…with no question there: both lanes named, no Answer", chain2.length === 1 && chain2[0].then === "ops" && !chain2[0].askLane, chain2);
   }
   console.log("ONE ANSWER, EVERY AGENT ON THAT WORK — Pat answered orbit_avm's data loss three times (13 Oct 2026)");
   {

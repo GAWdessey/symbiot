@@ -99,7 +99,9 @@ if(VLT.state!=='ok'){if(fl)fl.innerHTML='';if(lg)lg.style.display='none';pv.clas
 if(VLT.state==='load'){box.innerHTML="<div class='vskel'></div><div class='vskel'></div><div class='vskel'></div><div class='vskel'></div>";det.innerHTML="<div class='vskel' style='height:180px'></div>";if(bar)bar.style.display='';}
 else{if(bar)bar.style.display='none';box.innerHTML='';if(VLT.sheet)vaultClose();vaultSay('');det.style.display='';det.innerHTML="<div class='vempty' role='alert'><b>Couldn't open the vault</b>"+(VLT.why?esc(VLT.why):'Symbiot may have stopped. Nothing in the vault has changed.')+"<div class='vsb'><button type='button' class='ghost' data-va='retry'>Try again</button></div></div>";}return;}
 if(bar)bar.style.display='';
-if(!VLT.list.length){if(fl)fl.innerHTML='';if(lg)lg.style.display='none';pv.classList.remove('vone');box.innerHTML='';det.innerHTML="<div class='vempty'><b>Nothing saved yet</b>Passwords, keys and codes you paste into a chat, or that an agent saves for you, are kept here. You can add one yourself too.<div class='vsb'><button type='button' class='act' data-va='add'>Add one</button></div></div>";return;}
+if(!VLT.list.length){if(fl)fl.innerHTML='';if(lg)lg.style.display='none';pv.classList.remove('vone');var emp="<div class='vempty'><b>Nothing saved yet</b>Passwords, keys and codes you paste into a chat, or that an agent saves for you, are kept here. You can add one yourself too.<div class='vsb'><button type='button' class='act' data-va='add'>Add one</button></div></div>";
+// a phone shows the list, not the side pane: the empty state goes where it's seen (critic, 25 Oct 2026: a blank page)
+if(window.innerWidth<=760){box.innerHTML=emp;det.innerHTML='';}else{box.innerHTML='';det.innerHTML=emp;}return;}
 if(fl)fl.innerHTML=vaultFilters();if(lg)lg.style.display='';
 var list=vaultVisible(),phone=window.innerWidth<=760;
 if(!list.length){box.innerHTML="<div class='vempty'><b>Nothing matches</b>"+(VLT.q?'Try part of a name, a service or an email address.':'Nothing of this kind is saved.')+"<div class='vsb'><button type='button' class='ghost' data-va='clear'>Show everything</button></div></div>";}

@@ -527,7 +527,9 @@ const idleWaits = (md, handed = []) => String(md || "").split("\n").filter((l) =
 function runOutcome(path, e = {}, code = 0, { files = null, final = null, questions = null, waiting = undefined, needs = undefined } = {}) {
   const md = readSymbiot(path, "TASKS.md"), lines = md.split("\n");
   const waitLine = lines.find((l) => /^\s*-\s*\[~\]/.test(l)), open = lines.filter((l) => /^\s*-\s*\[ \]/.test(l)).length;
-  let said = final; if (said === null) { try { const w = workOf(path, runSection(readRunLog(e.log), e.startedAt, true)); said = (w.work && w.work.final) || w.tail || ""; } catch { said = ""; } }
+  // An agent that doesn't stream: what it printed, never the log's own "$ <command>" line, which holds
+  // the run's brief (Home's cards showed "nd carry on with the next: a question never ends the run…", 25 Oct 2026).
+  let said = final; if (said === null) { try { const sec = runSection(readRunLog(e.log), e.startedAt, true), w = workOf(path, sec); said = w.work ? (w.work.final || w.tail || "") : parseRun(lastRunText(sec)).final; } catch { said = ""; } }
   const summary = clipWords(String(said || "").split(/\n\s*\n/)[0].replace(/[*_`#>]/g, "").replace(/\s+/g, " ").trim(), 400);
   const ch = files !== null ? files : (() => { try { return (loadRunFiles(path).find((r) => r.id === e.id) || { files: [] }).files.length; } catch { return 0; } })();
   const outBase = (state, waitingOn = "", what = "", note = "") => ({ state, waitingOn, what: clipWords(what, 200), summary, note }), out = outBase;

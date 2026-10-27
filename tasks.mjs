@@ -20,7 +20,7 @@ import { QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, isUrgent, handoffCmd, runHan
 import { gitDefaultBranch } from "./drift.mjs";
 import { publicItems, leaksIn, privateIn, addedLines, denyList } from "./outward.mjs";
 import { readRunLog, briefPlan } from "./work.mjs";
-import { changesBy, originLine } from "./origin.mjs";
+import { changesBy, originLine, goesWith, diffLine } from "./origin.mjs";
 import { repoPathMap, laneMap, nearLane, openWork, detectRepo } from "./scan.mjs";
 import { afterShip } from "./deploy.mjs";
 import { ruleLines } from "./overrides.mjs";
@@ -774,13 +774,17 @@ function pendingReview() {
     const path = map[repo]; if (!path || !existsSync(join(path, ".symbiot", "TASKS.md"))) continue;
     const wc = shippable(path, reviewGit(path)); if (!wc.files.length) continue;
     const still = t.filter((x) => x.repo === repo && !x.done && !x.archived && !x.review), round = roundOf(path, still);
-    const open = finishedOffer(path, still, round), st = state(repo, path, wc.files);
+    // open: only the ones matched to these changes (the round, the ones the run says it finished):
+    // the card never asks the user which task a change finished (kaggle-squares-in-squares, 25 Oct
+    // 2026). goes: tasks ticked while the run that left them was going, its own or a parallel one's.
+    const open = finishedOffer(path, still, round).filter((x) => x.round || x.finished), st = state(repo, path, wc.files);
+    const o = st.atWork ? {} : originOf(path, wc.files), goes = st.atWork ? [] : goesWith(o, t.filter((x) => x.repo === repo));
     const handed = (() => { try { return HANDED_LOOKUP(path, wc); } catch { return null; } })();
     // leftover: no ticked task, no finished round, and no run saying it finished one. Still the
     // Workdesk's to approve or leave, with a line on where it came from (origin), but not waiting
     // on the user: Home's ember balls and "Only the user can do" leave it out (home.mjs)
-    const leftover = !round && !open.some((x) => x.finished);
-    out.push({ repo, path, tasks: [], untasked: true, open, ...(round ? { round } : {}), ...(handed ? { handed } : {}), ...(leftover ? { leftover: true } : {}), ...st, ...(st.atWork ? {} : { origin: originLine(originOf(path, wc.files), { open: open.some((x) => !x.round) }) }), ...wc });
+    const leftover = !round && !open.some((x) => x.finished) && !goes.length;
+    out.push({ repo, path, tasks: [], untasked: true, open, ...(goes.length ? { goes } : {}), ...(round ? { round } : {}), ...(handed ? { handed } : {}), ...(leftover ? { leftover: true } : {}), ...st, ...(st.atWork ? {} : { origin: originLine(o, { goes, said: open.filter((x) => x.finished) }), summary: diffLine(wc) }), ...wc });
   }
   // approved and committed, but it never got as far as a PR: its card stays, saying why, with a retry (sendAgain)
   for (const [repo, path] of Object.entries(map)) {
@@ -1431,7 +1435,9 @@ async function approveChanges(repo, opts = {}) {
   const ids = new Set(Array.isArray(opts.tick) ? opts.tick.map(String) : []);
   const open = (t) => t.filter((x) => x.repo === repo && !x.done && !x.archived && !x.review), ticked = (t) => open(t).filter((x) => ids.has(x.id));
   const t0 = loadTasks(), r0 = roundOf(path, open(t0)), round = r0 && !ids.has(r0.id) ? r0 : null; // ticked: it's finished, not a round
-  const r = startFix(path, repo, await shipWithBump(path, uniqueTasks([...(round ? ["A round of: " + round.text] : []), ...ticked(t0).map((x) => x.text)]), { ...opts, repo, autoMerge: opts.autoMerge !== undefined ? opts.autoMerge : autoMergeRepos().includes(repo) }));
+  // the tasks a run ticked while it left these (origin.mjs goesWith): they go out under its name
+  let goes = []; try { goes = goesWith(originOf(path, (await workingChangesAsync(path)).files), t0.filter((x) => x.repo === repo)); } catch {}
+  const r = startFix(path, repo, await shipWithBump(path, uniqueTasks([...(round ? ["A round of: " + round.text] : []), ...ticked(t0).map((x) => x.text), ...goes.map((x) => x.text)]), { ...opts, repo, autoMerge: opts.autoMerge !== undefined ? opts.autoMerge : autoMergeRepos().includes(repo) }));
   if (r.error) return r;
   // read again: the ship took a while, and the list may have changed meanwhile
   const t = loadTasks(), items = ticked(t), now = Date.now();
@@ -1441,6 +1447,26 @@ async function approveChanges(repo, opts = {}) {
   const removed = items.length ? applyRemovals(t) : 0, carried = r.pr ? prFor(t, repo, r) : 0;
   if (items.length || going || carried) saveTasks(t);
   return { ...r, approved: items.length, ...liveOf(path, repo, r), ...(round ? { round: { id: round.id, text: round.text } } : {}), ...(removed ? { removed } : {}) };
+}
+// Drop, the other half of the card's approve/drop: changes no task is ticked for, put aside in
+// git's stash (named, so `git stash list` shows what and when) rather than deleted, so a drop
+// can be undone. Only what Approve would ship (shippable): a running run's files stay.
+async function dropChanges(repo) {
+  forgetReview();
+  const path = laneMap()[repo]; if (!path) return { error: "Repo not found: " + (repo || "(no repo)") };
+  if (loadTasks().some((x) => x.repo === repo && x.review && !x.done && !x.archived)) return { error: `${repo} has ticked tasks waiting: approve or send those back instead.` };
+  const busy = stillWorking(repo, path); if (busy) return busy;
+  const hold = holdShip(path); if (hold.error) return hold;
+  try {
+    const wc = await workingChangesAsync(path); if (wc.error) return { error: wc.error };
+    const keep = new Set(taskPaths(path, wc.files).files), files = wc.files.filter((f) => keep.has(f.file)); if (!files.length) return { error: "No uncommitted changes in " + repo + "." };
+    const paths = files.flatMap((f) => (f.from ? [f.file, f.from] : [f.file]));
+    const msg = `Dropped in Symbiot ${new Date().toISOString().slice(0, 16).replace("T", " ")}: ${files.length} file${files.length > 1 ? "s" : ""}`;
+    const r = await gitAsync(path, ["stash", "push", "--include-untracked", "-m", msg, "--pathspec-from-file=-", "--pathspec-file-nul"], gitTimeout(paths.length), { input: paths.join("\0"), env: { GIT_LITERAL_PATHSPECS: "1" } });
+    if (!r.ok) return { error: gitFailed("git stash", r, paths.length) };
+    forgetReview();
+    return { ok: true, dropped: files.length, stash: msg };
+  } finally { hold.release(); }
 }
 // Send again, the review card's retry: what Approves committed in a repo and didn't get
 // as far as a PR (sendUnsent), sent now. opts.verify false: not tested here first (the
@@ -1585,4 +1611,4 @@ function pushTasks(filter) {
   return { empty: false, written, unresolved, handoff: handoffCmd() };
 }
 
-export { noteLaneIds, closeUnchanged, applyMove, readMove, moveCheckout, laneOfRepo, laneNames, refileTask, unplacedTasks, placeTasks, unsentHeadline, setHandedLookup, setTaskModel, MODEL_PICKS, holdShip, SHIP_STALE, shipping, shippingPaths, shipJob, shipJobOf, SHIP_WAIT, workingChangesAsync, rebaseTask, sendAgain, forgetUnsent, unsentOf, readUnsent, unsentCard, repoTests, localRefused, forgetReview, gitFailed, taskPaths, addTask, toggleTask, setTaskDone, removeTask, cancelTask, restoreTask, FINDING_NOTE, completedInRepo, removalOf, applyRemovals, applyDrops, syncTasks, workingChanges, workingDiff, publishesOnMerge, unreleased, bumpOffer, learnNpm, releaseNeeded, releaseNotIn, withReleases, setVersion, changelogEntry, changelogSection, noteChangelog, releaseInput, shipWithBump, runSummary, saidFinished, pendingReview, commitSubject, shipChanges, autoMergeRepos, setAutoMerge, approveRepo, approveChanges, sendBack, TASK_ORDER, taskType, buildTasksMd, pushTasks, mergeWhenGreen, changelogItems, changelogLeaks, commitText };
+export { noteLaneIds, closeUnchanged, applyMove, readMove, moveCheckout, laneOfRepo, laneNames, refileTask, unplacedTasks, placeTasks, unsentHeadline, setHandedLookup, setTaskModel, MODEL_PICKS, holdShip, SHIP_STALE, shipping, shippingPaths, shipJob, shipJobOf, SHIP_WAIT, workingChangesAsync, rebaseTask, sendAgain, forgetUnsent, unsentOf, readUnsent, unsentCard, repoTests, localRefused, forgetReview, gitFailed, taskPaths, addTask, toggleTask, setTaskDone, removeTask, cancelTask, restoreTask, FINDING_NOTE, completedInRepo, removalOf, applyRemovals, applyDrops, syncTasks, workingChanges, workingDiff, publishesOnMerge, unreleased, bumpOffer, learnNpm, releaseNeeded, releaseNotIn, withReleases, setVersion, changelogEntry, changelogSection, noteChangelog, releaseInput, shipWithBump, runSummary, saidFinished, pendingReview, commitSubject, shipChanges, autoMergeRepos, setAutoMerge, approveRepo, approveChanges, sendBack, TASK_ORDER, taskType, buildTasksMd, pushTasks, mergeWhenGreen, changelogItems, changelogLeaks, commitText, dropChanges };

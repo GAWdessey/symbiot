@@ -12,6 +12,8 @@
 import { claudeSetup } from "./claudesetup.mjs";
 import { heldAsks } from "./handover.mjs";
 import { plainAsk } from "./plain.mjs";
+import { pillOf, nowLine, plainSummary, handWords, laneName, looksShell } from "./cardwords.mjs";
+const cmdFree = (s) => (looksShell(s) ? nowLine(s) : s); // a running agent's step, never its command: "Ran ssh -i ~/.ssh/…" read on Home's spheres too
 import { join, basename, isAbsolute } from "node:path";
 import { homedir } from "node:os";
 import { readFileSync, writeFileSync, mkdirSync, statSync } from "node:fs";
@@ -1103,7 +1105,7 @@ const plain = (s, n = 64) => { s = String(s || "").replace(/[\`*_#>]/g, "").repl
 function runNow(a, { now = Date.now(), est = estimate } = {}) {
   const l = a.line, w = a.work || {}, todo = (w.todos || []).find((t) => t.status === "in_progress");
   let eta = null; try { if (l && a.path) eta = est({ path: a.path, kind: l.kind || "brief", type: l.task ? taskType(l.task) : "", typeOf: taskType, elapsed: a.startedAt ? now - a.startedAt : a.elapsed || 0, queued: (a.held || []).length }); } catch {}
-  return { line: plain(l ? l.line : todo ? todo.active : w.doing || "working on it", 140), ...(l && l.step ? { step: l.step, of: l.of } : {}), ...(l && l.quiet ? { quiet: l.quiet } : {}), ...(l && l.looping ? { looping: true } : {}), ...(eta ? { eta: estimateWords(eta), etaLo: eta.lo, etaHi: eta.hi } : {}) };
+  return { line: plain(cmdFree(l ? l.line : todo ? todo.active : w.doing || "working on it"), 140), ...(l && l.step ? { step: l.step, of: l.of } : {}), ...(l && l.quiet ? { quiet: l.quiet } : {}), ...(l && l.looping ? { looping: true } : {}), ...(eta ? { eta: estimateWords(eta), etaLo: eta.lo, etaHi: eta.hi } : {}) };
 }
 // Projects (the lanes) are sorted the way you'd look for them: what needs you
 // first (a question, an Approve), then what's at work, ready, waiting, and the
@@ -1140,7 +1142,7 @@ function workSceneNow({ deps = {}, full = false } = {}) {
     if (nq) asks[laneOf(a)] = (asks[laneOf(a)] || 0) + nq;
     if (a.status !== "running") continue;
     const w = a.work || {}, todo = (w.todos || []).find((t) => t.status === "in_progress"), pg = a.progress;
-    running.push({ id: "run:" + a.path, path: a.path, name: a.name, lane: laneOf(a), ...(parallelLane(a.path) ? { par: true } : {}), doing: plain(todo ? todo.active : w.doing || "Working on it", 120), progress: pg || null, ...runNow(a), waiting: !!nq, started: a.startedAt || (a.elapsed ? Date.now() - a.elapsed : 0) });
+    running.push({ id: "run:" + a.path, path: a.path, name: a.name, lane: laneOf(a), ...(parallelLane(a.path) ? { par: true } : {}), doing: plain(cmdFree(todo ? todo.active : w.doing || "Working on it"), 120), progress: pg || null, ...runNow(a), waiting: !!nq, started: a.startedAt || (a.elapsed ? Date.now() - a.elapsed : 0) });
   }
   const pend = pending(), ready = pend.filter((r) => r.path && !r.running && !r.shipping && !r.leftover && ((r.tasks || []).length || (r.files || []).length)).map((r) => ({ id: "ready:" + r.repo, repo: r.repo, count: (r.tasks || []).length }));
   const busy = new Set(running.map((r) => r.lane)), open = tasks().filter((t) => !t.done && !t.archived && !t.review && t.repo);
@@ -1172,7 +1174,7 @@ function workSceneNow({ deps = {}, full = false } = {}) {
   { const nowT = deps.now || Date.now(), st = startable(waiting, nowT); if (peakHeld((deps.config || loadConfig)(), nowT, st.lanes.size + st.ops.length)) for (const x of st.items) if (x.why.kind === "next") x.why = { kind: "peak", peak: true, text: PEAK_TEXT }; }
   try { const sync = deps.syncTasks || (deps.agents ? null : syncTasks); if (sync) sync(waiting, { now: deps.now || Date.now() }); } catch {} // the job record: running or queued is this list's word, not the chat's guess
   // Projects: each lane with work on it, what's going on there in one line's worth
-  const by = {}, at = (name) => (by[name] = by[name] || { repo: name, name: name === RUNS_LANE ? "Agent runs" : named(map[name], name), waiting: 0, ready: 0, asks: 0, running: null, last: 0, ...(name === RUNS_LANE ? { runs: 0 } : {}) });
+  const by = {}, at = (name) => (by[name] = by[name] || { repo: name, name: name === RUNS_LANE ? "Agent runs" : laneName(named(map[name], name)), waiting: 0, ready: 0, asks: 0, running: null, last: 0, ...(name === RUNS_LANE ? { runs: 0 } : {}) });
   running.forEach((r) => { const p = at(r.lane); if (r.lane === RUNS_LANE) p.runs++; if (!p.running) p.running = { doing: r.doing, progress: r.progress, ask: r.waiting, ...(r.line ? { line: r.line } : {}), ...(r.eta ? { eta: r.eta } : {}), ...(r.quiet ? { quiet: r.quiet } : {}), ...(r.looping ? { looping: true } : {}) }; p.last = Math.max(p.last, r.started || 0); });
   ready.forEach((r) => { at(r.repo).ready = r.count || 1; });
   pend.forEach((r) => { if (r.shipping) at(r.repo).shipping = r.shipping.step || "starting"; }); // Approve at work there: says so, not "ready for your OK"
@@ -1190,11 +1192,15 @@ function workSceneNow({ deps = {}, full = false } = {}) {
     if (!by[l] && !qs.length && !ideas.length && !away.length && !recent) continue;
     const p = at(l);
     if (recent || qs.length) {
-      const w = a.work || {}, todo = (w.todos || []).find((x) => x.status === "in_progress"), t = a.status === "running" ? ((todo && todo.active) || w.doing || "Working on it") : (w.final || a.tail || "");
+      // An ended run's words are its final message: another agent's raw log isn't, and the card showed
+      // the tail of a run's own brief ("nd carry on with the next: a question never ends the run…", 25 Oct 2026).
+      const w = a.work || {}, todo = (w.todos || []).find((x) => x.status === "in_progress"), t = a.status === "running" ? ((todo && todo.active) || w.doing || "Working on it") : (w.final || (a.work ? a.tail : "") || "");
       // an ended run's record (agents.mjs runOutcome) is its line and state, as on every other screen
       const o = a.status !== "running" ? a.outcome : null, who = o && (o.waitingOn === "user" ? "you" : o.waitingOn === "lane" ? String(o.what || "").split(":")[0] || "another lane" : o.waitingOn);
-      const line = plain(String(o && o.summary ? o.summary : t).split(/\n\s*\n/)[0], 220);
-      const st = a.status === "running" ? "at work" : o ? (o.state === "waiting" ? (o.waitingOn === "user" && qs.length ? "asks you" : `waiting on ${who || "something"}`) : o.state === "failed" ? "failed" : o.state === "paused" ? "paused" : "done") : qs.length ? "asks you" : "done";
+      // running: a "now" line ("Checking the Steve server · 4m"), never the command; ended: its summary in plain words, whole (the card has More)
+      if (a.status === "running" && !p.now) p.now = nowLine(t, a.startedAt ? now - a.startedAt : a.elapsed || 0, p.name);
+      const line = a.status === "running" ? "" : plain(plainSummary(String(o && o.summary ? o.summary : t).split(/\n\s*\n/)[0], p.name), 900);
+      const st = a.status === "running" ? "at work" : o ? (o.state === "waiting" ? (o.waitingOn === "user" && qs.length ? "asks you" : `waiting on ${who || "something"}`) : o.state === "failed" ? "failed" : o.state === "paused" ? "paused" : "done") : qs.length ? "asks you" : a.progress && a.progress.waiting && a.progress.done + a.progress.waiting === a.progress.total ? "waiting on something" : "done"; // no record: nothing open, and what's left is marked [~]
       if (line) lineOf[a.path] = { line, state: st };
       if (line && !p.summary) { p.summary = line; p.state = lineOf[a.path].state; p.path = a.path; }
     }
@@ -1221,7 +1227,11 @@ function workSceneNow({ deps = {}, full = false } = {}) {
     const p = at(t.repo || RUNS_LANE); p.asks++; p.qs = p.qs || [];
     if (p.qs.length < 3) p.qs.unshift({ q: t.q, options: t.options, path: t.path, fix: t.fix, id: t.id, sub: t.sub, ...(t.draft ? { draft: t.draft } : {}), ...(t.signInTo ? { signInTo: t.signInTo } : {}) });
   }
-  for (const p of Object.values(by)) { p.lit = !!(p.asks || p.ready); if (isParked(p.repo)) p.parked = true; }
+  for (const p of Object.values(by)) {
+    p.lit = !!(p.asks || p.ready); if (isParked(p.repo)) p.parked = true;
+    p.pill = pillOf(p); // one of the 7 (cardwords.mjs): never a raw state
+    if (p.handing) p.handing = p.handing.map((x) => ({ ...x, words: handWords(x), ...(/asked you something first/.test(x.why || "") ? { ask: x.askLane || x.lane } : {}) }));
+  }
   const projects = Object.values(by).sort((a, b) => (b.lit ? 1 : 0) - (a.lit ? 1 : 0) || (a.parked ? 1 : 0) - (b.parked ? 1 : 0) || (b.running ? 1 : 0) - (a.running ? 1 : 0) || b.ready - a.ready || b.waiting - a.waiting || b.last - a.last || (a.repo < b.repo ? -1 : 1));
   const stuckN = waiting.filter((w) => w.why.stuck).length, parkedList = (deps.parkedJobs || (() => { try { return parkedJobs({ now: deps.now || Date.now() }); } catch { return []; } }))();
   return { running, ready, waiting: waiting.slice(0, 12), ...(full ? { all: waiting } : {}), waitingCount: waiting.length, parked: parkedList.slice(0, 4), parkedCount: parkedList.length, canGo: waiting.filter((w) => !w.busy && !w.parked && !w.why.noGo).length, ...(stuckN ? { stuckCount: stuckN } : {}), projects: projects.slice(0, 24), projectCount: projects.length };

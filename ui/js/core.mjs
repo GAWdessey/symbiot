@@ -170,7 +170,7 @@ var tabPicked=false;
 // the Map, unless you've picked a tab already. The Map still loads behind it.
 // A link to a screen (#reports, #board…) opens on it: how symbiot post's picture of
 // "the new Reports view" shows that view, not home.
-function lqDeep(){var h=String(location.hash||'').slice(1);if(!h||!LQNAMES[h])return;setTimeout(function(){tabPicked=true;lqPool(h);},400);}
+function lqDeep(){var h=String(location.hash||'').slice(1);if(h==='archive'){setTimeout(function(){tabPicked=true;lqArchive();},400);return;}if(!h||!LQNAMES[h])return;setTimeout(function(){tabPicked=true;lqPool(h);},400);}
 function firstTab(){api('/api/watch/board').then(function(b){var own=((b&&b.cards)||[]).filter(function(c){return c.source!=='status'||c.count;});if(own.length&&!tabPicked&&current==='map')lqPool('board');}).catch(function(){});} // Symbiot's own Status watch, with nothing new, doesn't make the Dashboard the first page // lqPool: setTab alone showed nothing in the liquid (main stays hidden until pooled) and left current wrong (15 Oct 2026)
 // The AI in use isn't shown while it works (it's noise); only when none is
 // connected, as an urgent line that opens its part of Settings. Home has it out

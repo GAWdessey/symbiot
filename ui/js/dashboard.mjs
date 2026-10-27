@@ -36,7 +36,7 @@ var REPS=[],REPOPEN='',REPTAB='unread';
 function kb(n){return n<1024?n+' B':Math.round(n/1024)+' KB';}
 function loadReports(){api('/api/reports').then(function(d){REPS=(d&&d.reports)||[];if(!REPOPEN)renderReports();}).catch(function(e){$('reportslist').innerHTML="<div class='note err'>"+esc(String((e&&e.message)||e))+"</div>";});}
 function renderReports(){var el=$('reportslist');$('reportview').innerHTML='';REPOPEN='';
-if(!REPS.length){el.innerHTML="<div class='muted' style='margin-top:12px'>No reports yet. When an agent writes up findings, an audit or a plan, it leaves it as a .md file in its folder&#39;s .symbiot, and it shows up here.</div>";return;}
+if(!REPS.length){el.innerHTML="<div class='muted' style='margin-top:12px'>No reports yet. When an agent writes up findings or a plan, it shows here.</div>";return;}
 var row=function(r,i){var where=r.source?esc(r.lane)+' &middot; '+esc(r.source):!r.run||r.run===r.lane?esc(r.lane):r.run.indexOf(r.lane+':')===0?esc(r.run):esc(r.lane)+' &middot; '+esc(r.run);
 var steps=(r.steps||[]).map(function(t,j){return "<div class='task repidea rstep' data-i='"+i+"' data-s='"+j+"'><span class='t'>"+esc(t)+"</span><button class='act rsgo' title='hand just this step to "+escQ(r.lane)+"&#39;s agent'>Hand to agent</button><button class='ghost rsdone' title='already done: take it off this list'>Done</button><button class='ghost rsdrop' title='not worth doing: take it off this list'>Drop</button></div>";}).join('');
 var ok=r.draft&&r.needs==='draft'&&!r.computer?"<div class='row' style='margin:2px 0 6px 12px'><button class='act rsapprove' data-i='"+i+"'>Approve</button></div>":'';

@@ -2,6 +2,10 @@
 // Part of the app page: ui.mjs joins the parts in order. Plain text in a template literal,
 // as ui.mjs was: no backticks or dollar-brace inside.
 export default `// A web page, mapped by itself in the hidden browser (headless.mjs): no capture,
+// When, as people say it: "today at 11:46", "yesterday at 09:05", "24 Oct at 18:30" (24-hour, day first): never
+// a US "10/25/2026, 11:46:48 AM" (critic, 25 Oct 2026).
+function whenWords(t){var d=new Date(t);if(isNaN(d))return '';var p=function(n){return (n<10?'0':'')+n;},hm=p(d.getHours())+':'+p(d.getMinutes()),now=new Date(),day=function(x){return new Date(x.getFullYear(),x.getMonth(),x.getDate()).getTime();},diff=Math.round((day(now)-day(d))/86400000),M=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+return diff===0?'today at '+hm:diff===1?'yesterday at '+hm:d.getDate()+' '+M[d.getMonth()]+(d.getFullYear()!==now.getFullYear()?' '+d.getFullYear():'')+' at '+hm;}
 // no dragging. It takes a few seconds, so the button says so meanwhile.
 function mapUI(site,b){site=(site||'').trim();if(!site){screenErr('Type a site to map first: gmail, github.com/pulls or a web address.');return;}b.disabled=true;
 $('screenmsg').innerHTML="<div class='note muted'>Opening "+esc(site)+" in the hidden browser and mapping it&hellip;</div>";
@@ -54,7 +58,7 @@ var rd=new FileReader();rd.onload=function(){api('/api/screens/import',{name:$('
 function renderDesktop(d){if(!d)return;var w=d.weekly||{},a=d.autostart||{};$('weeklyon').checked=!!w.on;$('weeklyday').value=String(w.day);$('weeklyhour').value=String(w.hour);$('autostart').checked=!!a.on;
 if(a.phone)$('autostartlbl').textContent=a.phone==='app'?'Start Symbiot in the background when the phone starts':'Start Symbiot in the background when the phone starts (needs the Termux:Boot app)';
 var n=[];if(d.error)n.push("<span class='err'>"+esc(d.error)+"</span>");
-if(w.latest)n.push("Latest write-up: "+esc(new Date(w.latest.at).toLocaleString())+" &middot; <span style='font-family:ui-monospace,monospace'>"+esc(w.latest.file)+"</span> (also in the Week tab)");
+if(w.latest)n.push("Latest write-up: written "+esc(whenWords(w.latest.at))+" (it's on the Week page)");
 n.push(a.on&&a.phone==='app'?"Symbiot starts in the background when the phone starts, and keeps running with its window closed (Stop it from its notification).":a.on&&a.phone?"Termux:Boot starts it from <span style='font-family:ui-monospace,monospace'>"+esc(a.file)+"</span> when the phone starts. Open Termux:Boot once after installing it, so Android lets it run.":a.on?"Starts at login from <span style='font-family:ui-monospace,monospace'>"+esc(a.file)+"</span>. Run <b>symbiot app</b> to open its window.":"The weekly write-up happens while Symbiot is running, so start it at login to have it every week. A week missed while the computer was off is written when Symbiot next starts.");
 $('desktopnote').innerHTML=n.join('<br>');}
 function loadDesktop(err){api('/api/desktop').then(function(d){if(d&&err)d.error=err;renderDesktop(d);});}
@@ -63,7 +67,7 @@ function saveAutostart(){api('/api/desktop/autostart',{on:$('autostart').checked
 function weeklyNow(){var b=$('weeklynow');b.disabled=true;b.textContent='Writing...';
 api('/api/desktop/weekly/run',{}).then(function(r){b.disabled=false;b.textContent='Write it now';loadDesktop(r&&r.error?(r.error==='not-connected'?'Connect an AI above first.':r.error):'');});}
 function showLatestWeek(){api('/api/desktop').then(function(d){var l=d&&d.weekly&&d.weekly.latest;if(!l||current!=='week'||$('out').textContent!==WUEMPTY)return;
-WUTEXT=l.text;$('out').innerHTML=mdLite(l.text);$('out').classList.remove('muted');$('copy').classList.remove('hidden');var f=$('outfoot');f.textContent='Written automatically '+new Date(l.at).toLocaleString()+' · '+l.file+(l.footer?' · '+l.footer:'');f.style.display='block';});}
+WUTEXT=l.text;$('out').innerHTML=mdLite(l.text);$('out').classList.remove('muted');$('copy').classList.remove('hidden');var f=$('outfoot');f.textContent='Written '+whenWords(l.at)+(l.footer?' · '+l.footer:'');f.style.display='block';});}
 function fitBadge(m){return m.fits?"<span class='tag'>fits your RAM</span>":"<span class='tag' style='background:#3a2a12;border-color:#6b4a1f;color:#F2A541'>needs more RAM</span>";}
 function loadRec(){var out=document.getElementById('recout');out.innerHTML="<div class='muted'>Reading your hardware...</div>";
 api('/api/models').then(function(d){var hw=d.hardware,rec=d.rec;
@@ -155,7 +159,9 @@ function heartbeat(fresh){
       var nb=document.getElementById('updnew');if(nb)nb.onclick=function(){api('/api/whatsnew?latest=1').then(function(r){showNews(r,"What Symbiot "+(r.version||p.latest)+" brings",false);});};
     }else{b.className='updatebar';}
   }).catch(function(e){var b=ubar();if(e&&e.name==='TimeoutError'){if(!srvDown&&!updBusy){b.className='updatebar show';b.textContent='Symbiot is busy… (no answer for 5 seconds; it catches up by itself)';}return;}
-    srvDown=true;b.className='updatebar reconnect show';b.textContent='Reconnecting to Symbiot…';});
+    srvDown=true;b.className='updatebar reconnect show';b.textContent='Reconnecting to Symbiot…';
+    // the cards keep their last state, dimmed, with when that was (Home's work scene, lqRelay)
+    if(document.body&&document.body.classList&&!document.body.classList.contains('lq-offline')){document.body.classList.add('lq-offline');try{if(typeof lqRelay==='function'&&LQ.scene==='work')lqRelay();}catch(e2){}}});
 }
 // Symbiot in Termux, open in the phone's browser: offer Symbiot's Android app,
 // which shows this same Symbiot full screen (Chrome hands an intent:// link to it)

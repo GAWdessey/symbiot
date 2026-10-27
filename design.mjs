@@ -30,8 +30,13 @@ const CLI = join(fileURLToPath(new URL(".", import.meta.url)), "index.mjs");
 const UI_NOUN = /\b(ui|ux|user interface|front ?-?end|landing page|dashboard|mock-?up|wireframe|design system|stylesheet|look and feel|(?<!symbiot )screens?|screenshots?|css|styling|layouts?|components?|responsive|dark mode|light mode|tap targets?|(?:mobile|android|ios|desktop|phone|apk|electron) (?:app )?(?:ui|screens?|layouts?|design)|app ui|web ?pages?|home ?pages?|sign-?in page|login page|modal|navbar|nav bar|sidebar|widget|empty state|buttons?)\b/i;
 const UI_ACT = /\b(build|make|create|design|redesign|restyle|style|polish|improve|rework|lay ?out|mock|prototype|tidy|fix|update)\w*\b[^.\n]{0,60}?\b(app|website|web app|ui|page|screen|dashboard|console|demo|view|form|panel|look|card|menu|header|footer|theme|button|modal|screenshot|component|layout|mobile app|android app|phone app|desktop app)s?\b/i;
 const UI_FILE = /\.(html?|css|scss|sass|less|jsx|tsx|vue|svelte|astro|hbs|handlebars|ejs|njk|liquid|erb)$|(^|\/)(templates?|views|components|pages|public|styles)\//i;
+// A picture to look at isn't a screen to build: "Take a look at this screenshot. (The user attached 1
+// screenshot: you can see it.)" (25 Oct 2026) was read as UI work, and its written description got
+// the design critic's brief, shoot commands and all, twice.
+const LOOK = /\b(?:(?:take a )?look at|describe|read|explain|transcribe|summari[sz]e|what(?:'s| is) (?:in|on))\b[^.\n]{0,30}?\b(?:this|that|the|my|attached|these|those)\s+(?:screenshots?|images?|pictures?|photos?|screen ?grabs?)\b|\((?:the user )?attached [^)]*\)|\bscreenshots? the user attached\b[^\n]*/gi;
+const looksAt = (t) => { LOOK.lastIndex = 0; const r = LOOK.test(String(t || "")); LOOK.lastIndex = 0; return r; };
 function isUiWork(text = "", files = []) {
-  const t = String(text || "");
+  const t = String(text || "").replace(LOOK, " ");
   if (UI_NOUN.test(t) || UI_ACT.test(t)) return true;
   return (Array.isArray(files) ? files : []).some((f) => UI_FILE.test(String(f && f.file ? f.file : f || "")));
 }
@@ -108,7 +113,10 @@ function holdsMerge(slug, { now = Date.now(), home = homedir(), branch = "" } = 
 // A step works from the task it's for: a brief's "The job: …", or nothing when it names none.
 const BRIEF = /^(?:new job:\s*)?(?:(?:act as|you are)\s+(?:symbiot'?s\s+|the\s+|a\s+)?(?:design critic|product designer|ui designer|designer|critic|ui specialist)\b|(?:design critic|design first)\s*:)/i;
 const isBrief = (t) => BRIEF.test(String(t || "").trim());
-const taskOf = (t) => { t = String(t || "").trim(); if (!isBrief(t)) return t; const m = t.match(/\bthe job(?: is)?:\s*(.+)$/i); return m ? m[1].trim() : ""; };
+// A goal's own follow-up brief (goals.mjs: "What's left on this, and do it: X Done when: Y") is the
+// job X: on 25 Oct 2026 the critic's "What to judge" listed the whole brief, done-when and all.
+const GOAL_BRIEF = /^(?:what'?s left on this, and do it|look into this and finish it):\s*([\s\S]+?)(?:\s+done when:[\s\S]*)?$/i;
+const taskOf = (t) => { t = String(t || "").trim(); const g = t.match(GOAL_BRIEF); if (g) return g[1].trim(); if (!isBrief(t)) return t; const m = t.match(/\bthe job(?: is)?:\s*(.+)$/i); return m ? m[1].trim() : ""; };
 // The same job in other words' clothing: "New job: X…" and a brief's "The job: X…", cut at 200.
 const jobNorm = (t) => taskOf(t).replace(/^new job:\s*/i, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 function sameJob(a, b) { const x = jobNorm(a), y = jobNorm(b), n = Math.min(x.length, y.length, 60); return n >= 20 && x.slice(0, n) === y.slice(0, n); }
@@ -144,17 +152,41 @@ function heldMergeCard(y, holds) {
     options: pick(opts), ...(y.labels ? { labels: pick(y.labels) } : {}), ...(y.tips ? { tips: pick(y.tips) } : {}), ...(rec >= 0 ? { rec } : {}) };
 }
 const itemKey = (t) => String(t || "").replace(/^\s*[-*+]\s*\[[ xX~]\]\s*/, "").replace(/\s+—\s+UI review \(round \d\).*$/, "").trim().slice(0, 200);
-// Ticked UI items the critic hasn't passed: [{ item }]. files: what the run touched (a task that
-// doesn't name its UI still is one when it changed a page or a stylesheet).
+// A run that changed only writing (a report, notes, a description) built no screens, whatever its task said.
+const DOC_FILE = /\.(md|markdown|txt|rst|pdf|docx?|odt|rtf)$/i;
+const wroteOnly = (files = []) => files.length > 0 && files.every((f) => DOC_FILE.test(String(f && f.file ? f.file : f || "")));
+// Ticked items the critic hasn't passed: [{ item, rounds, kind }]. kind "ui": the job built screens
+// (its words say so, or, for a run's one item, the files it touched: a page or a stylesheet), and it
+// gets the design critic. kind "written": a written answer about a source (a screenshot to describe)
+// or a UI-sounding job that only wrote documents, and it gets a plain check against its source.
 function toReview(md, files = [], review = {}) {
   const ticked = String(md || "").split("\n").filter((l) => /^\s*[-*+]\s*\[[xX]\]/.test(l)).map(itemKey).filter(Boolean);
-  const ui = ticked.filter((t) => isUiWork(t) || (files.length && isUiWork("", files) && ticked.length === 1));
-  return ui.filter((t) => taskOf(t) && !(review[t] && (review[t].passed || review[t].rounds >= MAX_ROUNDS))).map((item) => ({ item, rounds: (review[item] && review[item].rounds) || 0 }));
+  const kindOf = (t) => { const job = taskOf(t);
+    if ((isUiWork(job) && !wroteOnly(files)) || (files.length && isUiWork("", files) && ticked.length === 1)) return "ui";
+    return looksAt(job) || isUiWork(job) ? "written" : ""; };
+  return ticked.map((item) => ({ item, kind: kindOf(item) })).filter((x) => x.kind && taskOf(x.item) && !(review[x.item] && (review[x.item].passed || review[x.item].rounds >= MAX_ROUNDS))).map((x) => ({ ...x, rounds: (review[x.item] && review[x.item].rounds) || 0 }));
 }
 // The critic's instructions, written to .symbiot/UI-CRITIC.md: the run's own prompt passes through
 // two shells (agents.mjs HANDOFF_PROMPT), so it only says to read this file.
-const CRITIC_PROMPT = "You are the design critic of Symbiot, a UI specialist: read .symbiot/UI-CRITIC.md and do exactly what it says. You review the finished UI work of another agent; you did not build it."; // no quotes, $ or backticks: like HANDOFF_PROMPT it may pass through two shells
+const CRITIC_PROMPT = "You are the reviewer of Symbiot: read .symbiot/UI-CRITIC.md and do exactly what it says. You review the finished work of another agent; you did not build it."; // no quotes, $ or backticks: like HANDOFF_PROMPT it may pass through two shells
+// Written work gets a plain brief: no screens, no shoot commands, no UI standard. It's checked
+// against what it was written from.
+const writtenHow = (items, h = "##") => [`${h} What to check`, ...items.map((x) => `- ${taskOf(x.item)}`), "",
+  `${h} How to check it`,
+  "1. Find what it was written from: the image, page, file or data the task names. A screenshot the user attached is a file whose path is in the task or in the run's brief (\"Screenshots the user attached\"): open it with your Read tool.",
+  "2. Find what was written (a report or document in .symbiot/ or the repo, or the run's last message) and read it.",
+  "3. Judge it against the source: is everything it says there, is anything important in the source missing, and does it answer what was asked? If you can't find the source, say so and judge it against the task's words alone.", ""];
+function writtenBrief(items) {
+  return ["# Check the finished written work", "",
+    "Another agent wrote this and ticked it; you check it, you don't rewrite it: change no files and tick nothing.", "",
+    ...writtenHow(items),
+    "## Your verdict",
+    `Write \`.symbiot/${VERDICT}\`:`, "```json", '{"items":[{"item":"<the item, exactly as listed above>","pass":false,"fixes":["what is wrong or missing, and what it should say"]}]}', "```",
+    "and a short report `.symbiot/UI-REVIEW.md` (a `# ` title first: passed, or what must change). Symbiot sends failed items back to their writer with your fixes.", ""].join("\n");
+}
 function criticBrief(items, { cli = CLI, specs = [] } = {}) {
+  const written = items.filter((x) => x.kind === "written"); items = items.filter((x) => x.kind !== "written");
+  if (!items.length) return writtenBrief(written);
   const sp = specs.filter((x) => items.some((i) => i.item === x.item || sameJob(i.item, x.item)));
   return ["# Design critic: review the finished UI work", "",
     "You are Symbiot's design critic. Another agent built this and ticked it; you judge it, you don't polish it: change no code and tick nothing.", "",
@@ -167,7 +199,8 @@ function criticBrief(items, { cli = CLI, specs = [] } = {}) {
     ...(sp.length ? ["## The spec it was built to", "Symbiot's designer wrote what this should be before it was built. Judge each item against its spec as well as the standard: a flow, a screen, a state or an acceptance point in the spec that's missing or wrong fails it.", ...sp.map((x) => `- ${x.item}: \`${x.spec}\``), ""] : []),
     "## Your verdict",
     `Write \`.symbiot/${VERDICT}\`:`, "```json", '{"items":[{"item":"<the item, exactly as listed above>","pass":false,"fixes":["which screen, what is wrong, what it should be"],"shots":[".symbiot/shots/review/…png"]}]}', "```",
-    "and a short report `.symbiot/UI-REVIEW.md` (a `# ` title first: passed, or what must change), listing the screenshots. Symbiot sends failed items back to their builder with your fixes.", ""].join("\n");
+    "and a short report `.symbiot/UI-REVIEW.md` (a `# ` title first: passed, or what must change), listing the screenshots. Symbiot sends failed items back to their builder with your fixes.", "",
+    ...(written.length ? ["## Also: written work, checked against its source", "These built no screens: don't screenshot them or hold them to the standard above. Give each its own entry in the same verdict and report.", ...writtenHow(written, "###")] : [])].join("\n");
 }
 // After the critic: each item passes, or goes back to its builder with the fixes (round 1), or, after
 // round 2, is left waiting [~] on the user with what still fails, never silently passed.
@@ -178,7 +211,7 @@ function settleVerdict(path, { md = null, now = Date.now() } = {}) {
   const out = { passed: [], reopened: [], failed: [] };
   for (const x of v.items) {
     let item = itemKey(x.item); if (!item) continue;
-    if (!review[item]) item = Object.keys(review).find((k) => isBrief(k) && sameJob(k, item)) || item; // it was listed by its task
+    if (!review[item]) item = Object.keys(review).find((k) => taskOf(k) !== k && sameJob(k, item)) || item; // it was listed by its task
     const r = review[item] || { rounds: 1 }, fixes = (Array.isArray(x.fixes) ? x.fixes : []).map((s) => String(s).trim()).filter(Boolean).slice(0, 12);
     const line = text.split("\n").findIndex((l) => /^\s*[-*+]\s*\[[xX]\]/.test(l) && itemKey(l) === item);
     if (x.pass) { review[item] = { ...r, passed: true, at: now, shots: x.shots || [] }; out.passed.push(item); continue; }
@@ -343,4 +376,4 @@ async function shoot(url, { out, sizes = "1440x900,390x844", full = false, bin, 
   return { shots, ...(failed.length ? { failed } : {}), ...(Object.keys(late).length ? { late } : {}), ...(bad.length ? { broken: bad } : {}), ...(note ? { note } : {}) };
 }
 
-export { isBrief, taskOf, sameJob, dropDesign, designWorthy, toDesign, designerBrief, settleDesign, specsFor, startDesign, designOf, DESIGNER_PROMPT, DESIGN, MIN_SPEC, slugOf, folderSlug, noteOpen, holdsMerge, reviewHolds, heldMergeCard, MERGE_ASK, OPEN_MS, isUiWork, designBrief, CHECKLIST, toReview, criticBrief, CRITIC_PROMPT, settleVerdict, reviewOf, saveReview, itemKey, shoot, shootNote, SHOOT_MS, REVIEW, VERDICT, MAX_ROUNDS };
+export { isBrief, taskOf, sameJob, dropDesign, designWorthy, toDesign, designerBrief, settleDesign, specsFor, startDesign, designOf, DESIGNER_PROMPT, DESIGN, MIN_SPEC, slugOf, folderSlug, noteOpen, holdsMerge, reviewHolds, heldMergeCard, MERGE_ASK, OPEN_MS, isUiWork, designBrief, CHECKLIST, toReview, criticBrief, CRITIC_PROMPT, settleVerdict, reviewOf, saveReview, itemKey, shoot, shootNote, SHOOT_MS, REVIEW, VERDICT, MAX_ROUNDS, looksAt, wroteOnly, writtenBrief };

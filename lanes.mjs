@@ -385,7 +385,11 @@ function handingOf(path, { ledger, map, running = runningHandoff, now = Date.now
     else row(`Not sent after ${ago(age)}: Symbiot only sends handovers while its app is open`);
   }
   for (const e of mine.slice().reverse()) {
-    const row = (gone, why, more = {}) => out.push({ lane: e.to.lane, text: short(e.text), gone, why, ...more });
+    // Handed on again by the lane it went to (symbiot → steve → ops): the row names both lanes, and
+    // says where the second stands when that's a question for you (spec of 25 Oct 2026: the chain was hard to follow).
+    const on = e.to.path ? ledger.handoffs.filter((x) => x.from.path === e.to.path && (x.at || 0) >= (e.at || 0) && !x.skipped && !x.reportedAt && x.status !== "done" && x.status !== "error").pop() : null;
+    const then = on && on.to && on.to.lane && on.to.lane !== e.to.lane ? { then: on.to.lane, ...(on.to.path && openQuestions(on.to.path) ? { askLane: on.to.lane, thenAsks: true } : {}) } : {};
+    const row = (gone, why, more = {}) => out.push({ lane: e.to.lane, text: short(e.text), gone, why: then.thenAsks ? "Sent: its agent asked you something first" : why, ...more, ...then });
     if (e.status === "error") { row(false, `Couldn't hand it over: ${e.error || "it didn't start"}`); continue; }
     const p = e.to.path, going = !!(p && running(p)), began = p ? lastRunStart(p) : 0;
     if (began < e.at && going) row(true, e.added ? `Sent: ${runName(p)} is on it now, and does what you added when it's through` : e.superseded ? `Sent: ${e.to.lane} is on the earlier version now (its run started ${ago(now - began)} ago), and gets this one when that run ends` : `Sent, and queued: ${e.to.lane}'s agent is busy, and starts on it when that run ends`);

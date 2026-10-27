@@ -120,7 +120,7 @@ body.lq-light #lqlook button{color:#5A6470}
 body.lq-light #lqlook button[aria-checked='true']{background:#151A21;color:#FFFFFF}
 body.lq-touch #lqlook button{min-height:40px}
 /* a phone's width: the version and the three looks on one line, none cut off. The name and the status line went past the screen's edge there (the status, wrapped, made the header 116px tall), and what the status says is on Home. Low GPU goes too: it ran off the edge, under an open panel's Close (15 Oct 2026) */
-@media (max-width:520px){body.lq-liquid header .brand,body.lq-liquid header .status,body.lq-liquid #lqlow{display:none}body.lq-liquid header .ver{white-space:nowrap;padding:2px 6px}body.lq-liquid #lqlook{margin-left:6px}#lqlook button{padding:0 8px;font-size:12px}}
+@media (max-width:520px){body.lq-liquid header .brand,body.lq-liquid header .status,body.lq-liquid #lqlow,body.lq-liquid header .ver{display:none}body.lq-liquid #lqlook{margin-left:6px}#lqlook button{padding:0 8px;font-size:12px}}
 body.lq-liquid header .brand{letter-spacing:.38em;font-weight:500;text-transform:uppercase}
 body.lq-liquid main{display:none}
 body.lq-liquid.lq-pooled main{display:block;position:fixed;top:64px;left:max(12px,4vw);right:max(12px,4vw);bottom:88px;z-index:5;border-radius:24px;background:var(--ink);border:1px solid rgba(220,228,240,.25);box-shadow:0 30px 80px -30px rgba(0,0,0,.8)}
@@ -402,6 +402,7 @@ body.lq-pooled #lqnext,body.lq-work #lqnext{display:none}
 #firststeps .fst b{color:var(--bone);font-weight:600}
 #firststeps li.done .fst b{color:var(--text)}
 #firststeps .fst span{font-size:12.5px;color:var(--faint);overflow-wrap:anywhere}
+@media (max-width:560px){#firststeps li{flex-wrap:wrap}#firststeps .fst{flex-basis:calc(100% - 38px)}#firststeps li .fsgo{margin-left:38px}#firststeps li :is(.fsgo,.fsskip){min-height:44px}} /* a phone: the buttons go under the words, not squeezing them into a 60 px column (critic, 25 Oct 2026) */
 #firststeps li button{flex:none;padding:5px 12px;font-size:12.5px}
 #needsbox:empty{display:none}
 #pushout .pushed{margin-top:6px;padding:10px 14px}#pushout .pushed .dh{flex-wrap:wrap;row-gap:2px}#pushout .pushed .dd{font-size:12.5px;line-height:1.5}#pushout>.dd{margin-top:4px}
@@ -986,6 +987,7 @@ body.lq-liquid .sset{border:1px solid rgba(255,255,255,.07);background:rgba(255,
 body.lq-liquid.lq-light .sset{border-color:rgba(21,26,33,.07);background:rgba(255,255,255,.55)}
 body.lq-liquid .sset.hidden,body.lq-liquid #panel-settings.hidden{display:none}
 #quota{position:fixed;right:14px;bottom:14px;z-index:70;font:500 12px/1 var(--sans)}
+@media (max-width:899px){body.lq-liquid #quota{bottom:84px;right:16px}body.lq-liquid.lq-pooled #quota{display:none}} /* a page fills the phone: the meter stays on Home, not over the page's last row */
 #quota .qpill{display:flex;align-items:center;gap:7px;padding:8px 12px;border-radius:999px;cursor:pointer;color:#ECE9E4;background:rgba(10,11,14,.88);border:1px solid rgba(220,228,240,.18);backdrop-filter:blur(10px);max-width:calc(100vw - 28px);white-space:nowrap}
 #quota .qdot{width:8px;height:8px;border-radius:50%;background:#46C282;flex:none}
 #quota.near .qpill{border-color:#F2A541;color:#F2A541}#quota.near .qdot{background:#F2A541}
@@ -1157,22 +1159,56 @@ body.lq-liquid.lq-light.lq-pooled #lqsinkrow{background:#F6F8FB}
 #lqline,#lqrelay{display:none}
 body.lq-work:not(.lq-pooled) #lqline{display:block;position:absolute;left:50%;top:84px;transform:translateX(-50%);z-index:3;max-width:calc(100% - 32px);text-align:center;font:400 13.5px/1.4 var(--sans);color:#A1A8B1;text-shadow:0 1px 10px rgba(0,0,0,.7)}
 #lqline b{color:#F2A541;font-weight:600}
-body.lq-light #lqline{color:#2E3743;text-shadow:none}body.lq-light #lqline b{color:#9A5200}
+body.lq-light #lqline,body.lq-light.lq-work:not(.lq-pooled) #lqline{color:#2E3743;text-shadow:none}body.lq-light #lqline b{color:#9A5200} /* the work scene's own rule outranked it: a dark halo on Pearl (critic, 25 Oct 2026) */
 body.lq-work:not(.lq-pooled) #lqrelay:not(:empty){display:flex;flex-direction:column;gap:12px;position:absolute;right:16px;top:116px;bottom:96px;width:min(420px,32vw);overflow-y:auto;scrollbar-width:none;z-index:4;padding:2px 2px 24px;-webkit-mask-image:linear-gradient(to bottom,#000 calc(100% - 28px),transparent);mask-image:linear-gradient(to bottom,#000 calc(100% - 28px),transparent)}
 #lqrelay::-webkit-scrollbar{display:none}
-@media (max-width:899px){body.lq-work:not(.lq-pooled) #lqrelay:not(:empty){display:none}}
-.rly{flex:none;display:flex;flex-direction:column;gap:8px;padding:14px 16px;border-radius:20px;background:rgba(14,16,19,.86);border:1px solid rgba(255,255,255,.08);backdrop-filter:blur(14px);box-shadow:0 22px 50px -28px rgba(0,0,0,.9);color:#ECE9E4}
+#lqprojects{display:none}
+@media (max-width:899px){body.lq-work:not(.lq-pooled) #lqrelay:not(:empty){display:none}
+body.lq-work:not(.lq-pooled) #lqprojects{display:flex;align-items:center;justify-content:space-between;position:absolute;left:16px;right:16px;bottom:84px;z-index:5;min-height:44px;padding:0 16px;border-radius:14px;border:1px solid rgba(220,228,240,.22);background:rgba(14,16,19,.86);backdrop-filter:blur(14px);color:#ECE9E4;font:600 14px var(--sans);cursor:pointer}
+body.lq-work:not(.lq-pooled) #lqprojects::after{content:'';width:7px;height:7px;border-right:2px solid currentColor;border-bottom:2px solid currentColor;transform:rotate(45deg) translateY(-2px);transition:transform .2s ease}
+body.lq-work.lq-projopen:not(.lq-pooled) #lqprojects::after{transform:rotate(-135deg) translateY(-2px)}
+body.lq-light.lq-work #lqprojects{background:rgba(255,255,255,.94);color:#151A21;border-color:rgba(21,26,33,.14)}
+body.lq-work.lq-projopen:not(.lq-pooled) #lqrelay:not(:empty){display:flex;left:16px;right:16px;width:auto;top:128px;bottom:140px;padding:0 0 24px}
+body.lq-work:not(.lq-pooled) #lqtalk{bottom:max(136px,calc(64px + var(--lqfh,56px)));z-index:6} /* what it said sits above Projects · N (84 + 44 + 8), never under it (critic, 25 Oct 2026) */
+body.lq-work.lq-projopen:not(.lq-pooled) :is(#lqorbits,#lqdrops,#lqnext,#lqgroups){visibility:hidden}
+body.lq-projopen .rly{background:rgba(14,16,19,.98)}body.lq-light.lq-projopen .rly{background:rgba(255,255,255,.99)}
+body.lq-work:not(.lq-pooled) #quota{bottom:140px}body.lq-work.lq-projopen:not(.lq-pooled) #quota{display:none}
+#lqrelay .rly button.rlmore,#lqrelay .rly button.rlans,#lqrelay .rly button.rlundo,#lqrelay .rly button.rlok,#lqrelay .rlia button,#lqrelay .rlf button{min-height:44px;display:inline-flex;align-items:center}#lqrelay .rly button.rlmore[hidden]{display:none}#lqrelay .rly .lqblob button{min-height:44px}
+#lqrelay .rly .lqblob .bx{width:44px;height:44px;top:0;right:0}}
+.rly{flex:none;display:flex;flex-direction:column;gap:8px;padding:16px;border-radius:20px;background:rgba(14,16,19,.86);border:1px solid rgba(255,255,255,.08);backdrop-filter:blur(14px);box-shadow:0 22px 50px -28px rgba(0,0,0,.9);color:#ECE9E4}
 .rly.lit{border-color:rgba(242,165,65,.35)}
 body.lq-light .rly{background:rgba(255,255,255,.92);border-color:rgba(21,26,33,.08);color:#151A21;box-shadow:0 22px 50px -30px rgba(30,45,60,.45)}
 body.lq-light .rly.lit{border-color:rgba(154,82,0,.3)}
 .rlh{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
 .rlh b{font:600 15px var(--sans);letter-spacing:-.01em}
-.rls{font:500 11.5px var(--sans);color:#8A919B;white-space:nowrap}
-.rly.lit .rls{color:#F2A541}body.lq-light .rly.lit .rls{color:#9A5200}
+.rls{flex:none;font:500 12px/1 var(--sans);color:#A1A8B1;white-space:nowrap;padding:5px 9px;border-radius:999px;background:rgba(255,255,255,.07)}
+.rly.lit .rls{color:#F2A541;background:rgba(242,165,65,.14)}body.lq-light .rly.lit .rls{color:#9A5200;background:rgba(154,82,0,.1)}
+.rls.rlgo{color:#46C282;background:rgba(70,194,130,.14)}body.lq-light .rls.rlgo{color:#1D7A4C;background:rgba(29,122,76,.1)}
+body.lq-light .rls{color:#4A5563;background:rgba(21,26,33,.06)}
+.rlh{align-items:center}
+.rlnow{margin:0;font:500 13.5px/1.4 var(--sans);color:#ECE9E4}body.lq-light .rlnow{color:#151A21}
+.rlsum.open{display:block;-webkit-line-clamp:unset;overflow:visible}
+.rly button.rlmore,.rly button.rlans,.rly button.rlundo{all:unset;box-sizing:border-box;cursor:pointer;align-self:flex-start;padding:2px 0;border-radius:6px;font:600 12.5px var(--sans);color:#F2A541}
+.rly button.rlans,.rly button.rlundo{display:inline-flex;align-items:center;padding:2px 4px}
+.rly button.rlmore[hidden]{display:none}
+body.lq-light .rly button.rlmore,body.lq-light .rly button.rlans,body.lq-light .rly button.rlundo{color:#9A5200}
+.rlhand{margin:0;font-size:13px;line-height:1.45;color:#C9CDD3}.rlhand b{font-weight:600;color:#ECE9E4}
+body.lq-light .rlhand{color:#2B3644}body.lq-light .rlhand b{color:#151A21}
+.rly button:focus-visible{outline:2px solid #F2A541 !important;outline-offset:2px}body.lq-light .rly button:focus-visible{outline-color:#9A5200 !important}
+.rli.skipped > span:first-child{opacity:.45;text-decoration:line-through}
+.rlempty b{font:600 15px var(--sans)}
+.rlskel i{display:block;height:12px;border-radius:6px;background:rgba(255,255,255,.08)}.rlskel i:first-child{width:40%;height:14px}.rlskel i:last-child{width:70%}
+body.lq-light .rlskel i{background:rgba(21,26,33,.08)}
+.rlsr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+body.lq-offline #lqrelay .rly{opacity:.6;pointer-events:none}
+.rlwhen{color:#A1A8B1;white-space:nowrap}body.lq-light .rlwhen{color:#4A5563}
 .rlsum{margin:0;font-size:13.5px;line-height:1.45;color:#C9CDD3;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
 body.lq-light .rlsum{color:#2B3644}
-.lqblob.rlask{position:static;display:flex;flex-direction:column;gap:7px;padding:10px 12px;border-radius:14px;background:rgba(242,165,65,.06);border:1px solid rgba(242,165,65,.22)}
-.lqblob.rlask .nhead{font-size:12px;color:#8A919B}.lqblob.rlask .nhead b{font-weight:600;color:inherit}
+.lqblob.askcard{position:relative;display:flex;flex-direction:column;gap:7px;margin-top:8px;padding:12px 14px;border-radius:14px;background:rgba(242,165,65,.06);border:1px solid rgba(242,165,65,.22)}
+body.lq-light .lqblob.askcard{background:rgba(154,82,0,.05);border-color:rgba(154,82,0,.2)}
+.askcard .bwait,.rlask .bwait{display:none}
+.lqblob.rlask{position:relative;display:flex;flex-direction:column;gap:7px;padding:10px 12px;border-radius:14px;background:rgba(242,165,65,.06);border:1px solid rgba(242,165,65,.22)}
+.lqblob.rlask .nhead{font-size:12px;color:#8A919B;padding-right:28px}.lqblob.rlask .nhead b{font-weight:600;color:inherit}
 .lqblob.rlask .bq{font-size:13px}
 body.lq-light .lqblob.rlask{background:rgba(154,82,0,.05);border-color:rgba(154,82,0,.2)}
 .rly .rlok{align-self:flex-start}
@@ -1184,12 +1220,11 @@ body.lq-light .lqblob.rlask{background:rgba(154,82,0,.05);border-color:rgba(154,
 .rlsent{font-size:12px;color:#8A919B}
 body.lq-light .rlsent{color:#5B6573}
 body.lq-light .rli{border-top-color:rgba(21,26,33,.07);color:#2B3644}
-.rlia{flex:none;display:flex;gap:2px}
+.rlia{flex:none;display:flex;gap:2px}.rli.skipped .rlia{gap:8px;align-items:center}
 .rlia button,.rlf button{all:unset;box-sizing:border-box;cursor:pointer;padding:3px 7px;border-radius:8px;font:500 12px var(--sans);color:#8A919B}
 .rlia button:hover,.rlf button:hover{color:#ECE9E4;background:rgba(255,255,255,.06)}
 body.lq-light .rlia button:hover,body.lq-light .rlf button:hover{color:#151A21;background:rgba(21,26,33,.05)}
 .rlia .rladd{color:#ECE9E4}body.lq-light .rlia .rladd{color:#151A21}
-.rlia button:focus-visible,.rlf button:focus-visible{outline:2px solid currentColor;outline-offset:1px}
 .rldone{font-size:12px;color:#8A919B}
 .rlf{display:flex;justify-content:space-between;margin:2px -7px -4px}
 

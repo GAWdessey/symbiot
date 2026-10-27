@@ -6,6 +6,14 @@ import { CONFIG_DIR, sh, runOut, gitOut, gitOk, hasCmd, repoState } from "./core
 import { SCAN, scanBegin, scanPhase, scanTick, scanExpired, scanEnd, scanBase, findAllRepos } from "./scan.mjs";
 
 // ---- drift: what's out of sync / stuck / at risk (deterministic git facts) -
+// Work not saved to git, in words: "1 new file not saved to git", "3 changed and 1 new file not saved to
+// git" (the Drift page read "1 uncommitted (0 mod / 0 del / 1 new)", critic of 25 Oct 2026).
+function unsavedWords(st = {}) {
+  const parts = [[st.mod, "changed"], [st.del, "deleted"], [st.add, "new"]].filter(([n]) => n > 0), total = Number(st.dirty) || parts.reduce((a, [n]) => a + n, 0);
+  if (!parts.length) return `${total} file${total === 1 ? "" : "s"} not saved to git`;
+  const words = parts.map(([n, w]) => `${n} ${w}`), last = words.pop();
+  return `${words.length ? words.join(", ") + " and " : ""}${last} file${(parts[parts.length - 1][0]) === 1 ? "" : "s"} not saved to git`;
+}
 function gitDefaultBranch(repo) {
   const d = gitOut(repo, ["symbolic-ref", "--short", "refs/remotes/origin/HEAD"]).trim();
   if (d) return d.replace(/^origin\//, "");
@@ -98,7 +106,7 @@ function driftRepo(p, opts = {}) {
   const stale = fa != null && fa > 1 ? ` (as of ${fa}d ago)` : "";
 
   if (st.stale) flags.push({ level: "warn", text: `checkout is stale — working tree ≈ ${st.staleBy ? "HEAD~" + st.staleBy : "an older commit"}, not new work` });
-  else if (st.dirty) flags.push({ level: "info", text: `${st.dirty} uncommitted (${st.mod} mod / ${st.del} del / ${st.add} new)` });
+  else if (st.dirty) flags.push({ level: "info", unsaved: true, text: unsavedWords(st) });
   if (st.behind) flags.push({ level: "warn", text: `${st.behind} behind upstream on ${st.branch}${stale}` });
   const wc = worktreeCount(p); if (wc > 1) flags.push({ level: "info", text: `${wc} checkouts of this repo` });
   if (originDef) {
@@ -142,4 +150,4 @@ function computeDrift(opts = {}) {
   } finally { scanEnd(own); }
 }
 
-export { gitDefaultBranch, loadDeploys, driftRepo, computeDrift };
+export { gitDefaultBranch, loadDeploys, driftRepo, computeDrift, unsavedWords };
