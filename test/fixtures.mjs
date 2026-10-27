@@ -1092,6 +1092,9 @@ try {
   const wh = whoHtml("👤 You: allow it <b>. 🤖 Agent: the next run adds it");
   ok("the card shows the markers as You / Agent badges (drawn icons, not emoji), escaped, and leaves 'Your' and plain options alone", /class='who you'><i class=ic-person><\/i> You</.test(wh) && /class='who agent'><i class=ic-bot><\/i> Agent</.test(wh) && /&lt;b&gt;/.test(wh) && !/👤|🤖/.test(wh) && /You<\/span> Your call/.test(whoHtml("👤 Your call")) && whoHtml("Plain") === "Plain", [wh, whoHtml("👤 Your call")]);
 
+  // 27 Oct 2026 UI review: "(only you: your Render login):" showed as raw text after the You chip
+  const wOnly = whoHtml("👤 You (only you: your Render login): create a key at dashboard.render.com and paste it here");
+  ok("an only-you reason goes in the chip (You · your Render login) and the button keeps just the action, capitalised", /class='who you'><i class=ic-person><\/i> You &middot; your Render login<\/span> Create a key at/.test(wOnly) && !/only you/.test(wOnly), wOnly);
   console.log("QUESTIONS — any agent's .symbiot/QUESTIONS.md parses into questions, options and ideas");
   const pq = parseQuestions("# Questions for you\n\n## Questions\n### Keep the old config format?\nReading both costs ~40 lines.\n- Yes, read both (recommended)\n- No, migrate once\n\n### Which port?\n1. 7391\n2. random\n\n## Suggestions\n- Add a --json flag to drift\n- [ ] Cache the map scan\n");
   ok("two questions, in order", pq.questions.length === 2 && pq.questions[0].q === "Keep the old config format?" && pq.questions[1].q === "Which port?", pq.questions);

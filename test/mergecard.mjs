@@ -50,6 +50,12 @@ try {
   const gHtml = draw({ ...goal, name: "app" }, true), sHtml = draw({ ...stale, name: "app" }, true);
   ok("drawn: a goal's card says what its run has done, and nowhere 'undefined'", !/undefined/.test(gHtml) && !/bdone/.test(gHtml) && /So far: I built the Vault page/.test(gHtml), gHtml.slice(0, 600));
   ok("drawn: a done-already line names who did it and what they did", /<div class='bdone'[^>]*>Already done by ops&#39;s agent: merged PR 251 and published 0\.81\.0<\/div>/.test(sHtml) && !/undefined/.test(sHtml), sHtml.slice(0, 900));
+  // 27 Oct 2026 UI review: a card asking for a key said why only on the Workdesk, and opened "I'm on it: …" while waiting on the user
+  const keyAsk = { ...asker, ask: { questions: [{ q: "Can you make a Render API key for the security check?", task: "Check the Render services for leaked secrets", context: "Lets me list your Render services and check their environment variables for leaked secrets. I change nothing. Skip it and they stay unchecked.", options: ["👤 You (only you: your Render login): create a key at dashboard.render.com and paste it here (recommended)", "Skip this part"] }] } };
+  const ky = home({ agents: () => [keyAsk] }).find((y) => y.path === lane), kHtml = ky && draw({ ...ky, name: "render-site" }, true);
+  ok("a key card on Home carries its why from the question's context", ky && /^Lets me list your Render services/.test(ky.why) && /stay unchecked\.$/.test(ky.why), ky);
+  ok("drawn: it opens with what it's for, not 'I'm on it', and shows the why under the question", kHtml && /<div class='bdoing bfor2'[^>]*><b>For:<\/b> Check the Render services for leaked secrets\.<\/div>/.test(kHtml) && !/I&#39;m on it|I'm on it/.test(kHtml) && /<div class='bwhy'[^>]*>Lets me list/.test(kHtml), kHtml && kHtml.slice(0, 900));
+  ok("drawn: the only-you reason sits in the chip, the button says the action, recommended is a sub-line", kHtml && /You &middot; your Render login<\/span> Create a key/.test(kHtml) && !/only you:/.test(kHtml.replace(/title='[^']*'/g, "")) && /<i class='brec'>recommended<\/i>/.test(kHtml), kHtml);
   ok("drawn: a doneBy missing its lane or words draws no line", !/bdone/.test(draw({ ...stale, name: "app", doneBy: { text: "x" } }, true)) && !/bdone/.test(draw({ ...stale, name: "app", doneBy: { lane: "ops" } }, true)));
 
   console.log("2) NO MERGE CARD WHILE THE DESIGN REVIEW FAILS IT");
