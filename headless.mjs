@@ -871,7 +871,9 @@ const FRAME_BOX = `function () {
   const b = this.getBoundingClientRect(), cs = getComputedStyle(this), px = (v) => parseFloat(v) || 0;
   if (b.width < 4 || b.height < 4 || cs.visibility === 'hidden' || cs.display === 'none' || +cs.opacity === 0) return null;
   let ed = false; try { const d = this.contentDocument; ed = !!d && (d.designMode === 'on' || !!(d.body && d.body.isContentEditable)); } catch (x) {}
-  return { x: b.left + this.clientLeft + px(cs.paddingLeft), y: b.top + this.clientTop + px(cs.paddingTop),
+  // in a scaled box (transform, zoom) the frame shows at sx, sy of its own size: what's in it too
+  const sx = this.offsetWidth ? b.width / this.offsetWidth : 1, sy = this.offsetHeight ? b.height / this.offsetHeight : 1;
+  return { x: b.left + (this.clientLeft + px(cs.paddingLeft)) * sx, y: b.top + (this.clientTop + px(cs.paddingTop)) * sy, sx, sy,
     l: Math.max(0, b.left), t: Math.max(0, b.top), r: Math.min(innerWidth, b.right), b: Math.min(innerHeight, b.bottom), ed };
 }`;
 // is the frame what's on top at each point (in its own document's window)?
@@ -884,7 +886,7 @@ async function frameItems(page, room = 200) {
   const out = [], G = "symbiot-frames", used = new Set(), attached = [];
   const call = async (send, objectId, fn, args = []) => ((await send("Runtime.callFunctionOn", { objectId, functionDeclaration: fn, arguments: args.map((value) => ({ value })), returnByValue: true })).result || {}).value;
   // node: a frame tree's node, its frames in send's session; off: where its window's corner is in the
-  // top window; clip: the part of the top window it shows in
+  // top window, and the scale it shows at there (sx, sy); clip: the part of the top window it shows in
   // a frame from another site isn't in its page's frame tree: the browser lists it, with its parent frame
   const apart = page.c ? (((await page.c.send("Target.getTargets").catch(() => null)) || {}).targetInfos || []).filter((t) => t.type === "iframe" && t.parentFrameId) : [];
   const walk = async (send, node, off, clip, depth) => {
@@ -900,8 +902,8 @@ async function frameItems(page, room = 200) {
         box = await call(send, owner, FRAME_BOX);
       } catch { continue; }
       if (!box || box.ed) continue;
-      const at = { x: off.x + box.x, y: off.y + box.y };
-      const cl = { l: Math.max(clip.l, off.x + box.l), t: Math.max(clip.t, off.y + box.t), r: Math.min(clip.r, off.x + box.r), b: Math.min(clip.b, off.y + box.b) };
+      const at = { x: off.x + box.x * off.sx, y: off.y + box.y * off.sy, sx: off.sx * (box.sx || 1), sy: off.sy * (box.sy || 1) };
+      const cl = { l: Math.max(clip.l, off.x + box.l * off.sx), t: Math.max(clip.t, off.y + box.t * off.sy), r: Math.min(clip.r, off.x + box.r * off.sx), b: Math.min(clip.b, off.y + box.b * off.sy) };
       if (cl.r - cl.l < 4 || cl.b - cl.t < 4) continue;
       let fsend = send, ctx = 0, sub = ch;
       try { ctx = (await send("Page.createIsolatedWorld", { frameId: f.id, worldName: G })).executionContextId; } catch {}
@@ -917,12 +919,12 @@ async function frameItems(page, room = 200) {
       try { const { result } = await fsend("Runtime.evaluate", { expression: COLLECT, returnByValue: true, ...(ctx ? { contextId: ctx } : {}) }); info = result && result.value; } catch {}
       const items = [];
       for (const r of (info && info.items) || []) {
-        const x = Math.max(cl.l, at.x + r.x), y = Math.max(cl.t, at.y + r.y), x2 = Math.min(cl.r, at.x + r.x + r.w), y2 = Math.min(cl.b, at.y + r.y + r.h);
+        const x = Math.max(cl.l, at.x + r.x * at.sx), y = Math.max(cl.t, at.y + r.y * at.sy), x2 = Math.min(cl.r, at.x + (r.x + r.w) * at.sx), y2 = Math.min(cl.b, at.y + (r.y + r.h) * at.sy);
         if (x2 - x >= 4 && y2 - y >= 4) items.push({ r, box: { x, y, w: x2 - x, h: y2 - y } });
       }
       // not under something on the page around it (a pop-up over the ad box)
       let top = [];
-      try { top = await call(send, owner, FRAME_ON_TOP, [items.map(({ box: b }) => [b.x + b.w / 2 - off.x, b.y + b.h / 2 - off.y])]) || []; } catch {}
+      try { top = await call(send, owner, FRAME_ON_TOP, [items.map(({ box: b }) => [(b.x + b.w / 2 - off.x) / off.sx, (b.y + b.h / 2 - off.y) / off.sy])]) || []; } catch {}
       items.forEach(({ r, box: b }, i) => {
         if (!top[i] || out.length >= room) return;
         out.push({ label: r.label, kind: r.kind, x: Math.round(b.x), y: Math.round(b.y), w: Math.round(b.w), h: Math.round(b.h), ...(r.text ? { text: r.text } : {}), ...(r.href ? { href: r.href } : {}), frame: String(f.url || (info && info.url) || "frame").slice(0, 500) });
@@ -934,7 +936,7 @@ async function frameItems(page, room = 200) {
     const { frameTree } = await page.send("Page.getFrameTree");
     if (frameTree && (frameTree.childFrames || []).length) {
       const win = (await evaluate(page, "[innerWidth, innerHeight]").catch(() => null)) || [VIEW.w, VIEW.h];
-      await walk(page.send, frameTree, { x: 0, y: 0 }, { l: 0, t: 0, r: win[0], b: win[1] }, 0);
+      await walk(page.send, frameTree, { x: 0, y: 0, sx: 1, sy: 1 }, { l: 0, t: 0, r: win[0], b: win[1] }, 0);
     }
   } catch {} finally {
     for (const send of used) try { await send("Runtime.releaseObjectGroup", { objectGroup: G }); } catch {}

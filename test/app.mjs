@@ -423,5 +423,14 @@ try {
   ok("three tasks shown, one line each, the rest folded", /RTASKS/.test(lp) && /rmore hidden/.test(lp) && /\.rcard \.rtask \.t\{-webkit-line-clamp:1\}/.test(EMBEDDED_UI));
   ok("the Approve button comes right under the card's head", /h=top\+bsel\+act\+body/.test(lp));
 }
+{
+  console.log("A SENT ANSWER LEAVES ITS BOX — the Workdesk redraw doesn't keep it as a draft");
+  const { EMBEDDED_UI } = await import("../ui.mjs");
+  const wa = EMBEDDED_UI.slice(EMBEDDED_UI.indexOf("function wireAsks("), EMBEDDED_UI.indexOf("var s1=box.querySelector('.qsend')"));
+  const sent = wa.indexOf("// sent: its drafts go"), empty = wa.indexOf("box.querySelectorAll('input.qother').forEach(function(i){i.value='';});", sent), redraw = wa.indexOf("loadAgents();", sent);
+  ok("the page has its answer send to test", wa.length > 200 && sent > 0 && redraw > 0, wa.slice(0, 80));
+  ok("once sent, its box empties before the redraw saves drafts, on both the saved and the talk path", empty > sent && empty < wa.indexOf("if(r.talk)", sent) && empty < redraw, [sent, empty, redraw]);
+  ok("and the picked option is let go before the redraw", wa.lastIndexOf("pickOpt(b,false);});loadAgents();") > sent);
+}
 console.log(`\n${fail ? "✗" : "✓"} app: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

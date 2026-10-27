@@ -3,7 +3,8 @@
 // the page's own site, one from another site (its own process), and a frame in a frame are
 // all mapped where they show, links with their href, and Press reaches them; a link in a
 // frame that opens a new tab is followed in this one. A frame scrolled out of the window
-// isn't mapped by the window's map, but is by the whole page's.
+// isn't mapped by the window's map, but is by the whole page's. A frame in a scaled box
+// (transform: scale) is mapped where it shows, at its scale, and so is a frame in it.
 // Needs a Chromium-family browser (CI has Chrome); without one it says so and passes.
 //
 //   node test/frames.mjs
@@ -29,12 +30,16 @@ const pages = {
 <div style="display:flex;gap:20px;padding:20px"><main style="width:600px"><button>Mark all as read</button></main>
 <aside><iframe id="ad" title="advertisement" src="/ad" style="width:300px;height:160px;border:0"></iframe>
 <iframe id="other" src="http://localhost:${port}/other" style="width:300px;height:200px;border:1px solid #ccc"></iframe></aside></div>
+<div style="position:absolute;left:20px;top:300px;transform:scale(0.5);transform-origin:0 0"><iframe id="scaled" src="/scaled" style="width:400px;height:240px;border:0"></iframe></div>
 <div style="height:2400px"></div><iframe id="low" src="/low" style="width:300px;height:100px;border:0"></iframe></body>`,
   "/ad": () => `<!doctype html><body style="margin:8px"><p>Sam, don't forget to claim your Ads credits</p>
 <button onclick="fetch('/hit?claim')">Claim offer</button><iframe src="/inner" style="width:260px;height:50px;border:0"></iframe></body>`,
   "/inner": () => `<!doctype html><body style="margin:4px"><a href="/landing?inner">Learn more</a></body>`,
   "/other": () => `<!doctype html><body style="margin:8px"><button onclick="fetch('/hit?other')">Try it free</button><br>
 <a href="http://localhost:${port}/landing?other" target="_blank">See plans</a></body>`,
+  "/scaled": () => `<!doctype html><body style="margin:20px;font:20px sans-serif"><button style="font:20px sans-serif;padding:10px" onclick="fetch('/hit?scaled')">Scaled</button>
+<iframe src="/scaledinner" style="width:300px;height:80px;border:0;margin-top:20px"></iframe></body>`,
+  "/scaledinner": () => `<!doctype html><body style="margin:0;font:20px sans-serif"><button style="font:20px sans-serif;padding:10px">Deeper</button></body>`,
   "/low": () => `<!doctype html><body><button>Far down</button></body>`,
   "/landing": () => `<!doctype html><title>Landing</title><body>Welcome</body>`,
 };
@@ -62,10 +67,17 @@ else {
     ok("a button in a frame from another site is mapped", !!other && /localhost/.test(other.frame || ""), other || rs.map((r) => r.label));
     ok("a link there has its href", !!plans && /\/landing\?other$/.test(plans.href || ""), plans);
     ok("a frame scrolled out of the window isn't in the window's map", !by("Far down"));
+    const sc = by("Scaled"), deep = by("Deeper");
+    ok("a button in a frame in a scaled box is mapped", !!sc && /\/scaled$/.test(sc.frame || ""), rs.map((r) => r.label));
+    // the half-size box is at 20,300; the button is 20 px into its frame, so 10 there, and half its size (about 46 px high)
+    ok("…where it shows, at half its size", !!sc && sc.x >= 28 && sc.x <= 32 && sc.y >= 308 && sc.y <= 312 && sc.h >= 18 && sc.h <= 28, sc);
+    ok("…and so is one in a frame in it, inside the scaled box", !!deep && deep.x >= 28 && deep.x <= 32 && deep.y > (sc ? sc.y + sc.h : 0) && deep.y < 420 && deep.h >= 18 && deep.h <= 28, deep);
     ok("nothing in a frame has a selector (the page's can't reach in)", rs.filter((r) => r.frame).every((r) => !r.selector), rs.filter((r) => r.frame));
 
     const p1 = await h.pressRegion(s.id, claim && claim.id, { confirmed: true });
     ok("Press reaches the same-site frame's button", !p1.error && await wait(() => hits.includes("claim")), { p1: p1.error, hits });
+    const ps = await h.pressRegion(s.id, sc && sc.id, { confirmed: true });
+    ok("Press reaches the scaled frame's button", !ps.error && await wait(() => hits.includes("scaled")), { ps: ps.error, hits });
     const s2 = await h.mapPage(`127.0.0.1:${port}/`, "Notifications");
     const other2 = ((s2 && s2.regions) || []).find((r) => r.label === "Try it free");
     const p2 = await h.pressRegion(s2.id, other2 && other2.id, { confirmed: true });
