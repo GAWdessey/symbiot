@@ -511,6 +511,12 @@ try {
       { name: "Agent: New job: the Bookly broker test on Pat's own phone", path: join(RUNDIR, "act-83eb4b9c"), status: "done", startedAt: Date.now() - 600000, work: { final: "Waiting on your press of Set up a meeting." }, ask: { questions: [{ q: "Press Set up a meeting on WhatsApp?" }] } }] } });
   const om = wm.projects.find((p) => p.repo === "ops");
   ok("Agent runs' card: its line is from the run whose question it shows, and the question says which job (not the newest run's line over another's question)", om && om.summary === "Waiting on your press of Set up a meeting." && om.qs[0].task === "the Bookly broker test on Pat's own phone" && om.path === join(RUNDIR, "act-83eb4b9c"), om);
+  const wk = workScene({ deps: { repos: () => ({}), pending: () => [], tasks: () => [],
+    agents: () => [{ name: "Agent: New job: the Render security check", path: join(RUNDIR, "act-cae4cbb3"), status: "done", startedAt: Date.now() - 60000, work: { final: "The Render check is still blocked." } },
+      { name: "Agent: New job: the phone code check", path: join(RUNDIR, "act-1014d60a"), status: "running", startedAt: Date.now() - 3 * 3600e3, work: {} },
+      { name: "Agent: tidy ~/Company", path: join(RUNDIR, "act-1d727d7f"), status: "running", startedAt: Date.now() - 60000, work: {} }] } });
+  const ok2 = wk.projects.find((p) => p.repo === "ops");
+  ok("Agent runs' card at work: what the running run is doing by name, never a finished run's last words under Working (27 Oct 2026)", ok2 && ok2.pill === "At work" && !ok2.summary && ok2.now === "Working on: the phone code check · 3h (and 1 more at work)", ok2);
   const wh = workScene({ deps: { repos: () => ({ whatsapp_module: "/w", atlas: "/c" }), pending: () => [], tasks: () => [], agents: () => [],
     handing: (p) => (p === "/w" ? [{ lane: "ops", text: "set up a WhatsApp test number", gone: false, why: "Not sent yet: ops is still on the earlier version (its run started 5 min ago), and gets this one when that run ends" }] : []) } });
   const whp = wh.projects.find((p) => p.repo === "whatsapp_module");

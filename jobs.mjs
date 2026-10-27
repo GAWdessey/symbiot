@@ -108,7 +108,7 @@ function jobsLines({ now = Date.now(), jobs } = {}) {
   const all = jobs || loadJobs(), gs = all.filter((j) => j.kind === "goal" && (!ENDED.has(j.state) || now - j.changed < 3 * DAY)).sort((a, b) => b.at - a.at);
   const goalHead = gs.length ? ["Goals the user asked for (each owned until it's done; answer 'where are we' from these first):", ...gs.slice(0, 12).map((g) => `- ${goalLine(g, now)}`)] : [];
   const { open, ended } = jobsNow({ now, jobs: all.filter((j) => j.kind !== "goal") });
-  const head = "Job record (one row per job, written when its state changed; answer 'where are we / is it merged / is it live / is it running' from this ONLY, and say you have no record of a job that isn't here, never infer one. 'merged' is not 'live'; 'asked' and 'queued' are not 'running'):";
+  const head = "Job record (one row per job, written when its state changed; answer 'where are we / is it merged / is it live' from this ONLY, and say you have no record of a job that isn't here, never infer one. 'merged' is not 'live'; 'asked' and 'queued' are not 'running'. Whether an agent is running now comes from the live 'Agents working now' list, not from here):";
   return [...goalHead, head, ...(open.length ? open.slice(0, 15).map((j) => `- ${jobLine(j, now)}`) : ["- nothing open"]), ...(ended.length ? ["Ended in the last 24h:", ...ended.slice(0, 8).map((j) => `- ${jobLine(j, now)}`)] : [])];
 }
 // `symbiot status`: the same record, for a terminal.
