@@ -47,6 +47,26 @@ try {
   ok("stopped on purpose (SIGTERM: a stall, Stop, an update): not failed", end("- [ ] a\n", {}, 143).state === "paused" && end("- [x] a\n", {}, null).state === "done");
   ok("its summary: the first paragraph of its own last words, plain", end("- [x] a\n", { final: "**The fix is live.** All 46 cases passed.\n\nDetails here." }).summary === "The fix is live. All 46 cases passed.");
 
+  console.log("OUTCOME — a question it says it waits on, that no one is asked");
+  // 27 Oct 2026: a lane's items waited on "the user's yes on {#deploy-and-call}", but that question had left its
+  // QUESTIONS.md, so Home said nothing needed him while the run said it waited on him
+  const wait = "- [x] a\n- [~] Deploy the caller (waits on: Garth's yes on {#deploy-and-call}, then ops's deploy)\n";
+  put("QUESTIONS.md", ""); put("ANSWERS.md", "# Answers\n\n### Handed over to ops: WAIT for the user's yes on {#deploy-and-call} in…\nIt stopped: the user hasn't answered `{#deploy-and-call}`.\n");
+  ok("no question with that id anywhere: it's lost (a report quoting the id is no question and no answer)", A.lostAsks(lane, { md: wait, elsewhere: () => "" }).join() === "deploy-and-call");
+  const lostRun = end(wait, { final: "The deploy waits on your yes on {#deploy-and-call}." });
+  ok("…so the run isn't waiting on the user, who has no card for it: paused, to ask it again", lostRun.state === "paused" && !lostRun.waitingOn && /deploy-and-call/.test(lostRun.note), lostRun);
+  put("QUESTIONS.md", "## Questions\n### Put main live, then one test call? {#deploy-and-call}\nWhy.\n- 🤖 Agent: go ahead\n- Skip\n");
+  ok("asked in its QUESTIONS.md: not lost, and the run waits as it said", A.lostAsks(lane, { md: wait, elsewhere: () => "" }).length === 0 && end(wait).state === "waiting");
+  put("QUESTIONS.md", ""); put("ANSWERS.md", "# Answers\n\n### Put main live? {#deploy-and-call}\nDeploy only\n_answered 2026-10-27_\n");
+  ok("answered: not lost", A.lostAsks(lane, { md: wait, elsewhere: () => "" }).length === 0);
+  put("ANSWERS.md", "");
+  ok("open in an ops folder (it handed the ask on): not lost", A.lostAsks(lane, { md: wait, elsewhere: () => "### May I deploy it? {#deploy-and-call}\n" }).length === 0);
+  ok("the run's told once, in its ANSWERS.md, under a heading that's no answer", A.noteLostAsks(lane, ["deploy-and-call"]) && !A.noteLostAsks(lane, ["deploy-and-call"]) && A.lostAsks(lane, { md: wait, elsewhere: () => "" }).length === 1, A.lostAsks(lane, { md: wait, elsewhere: () => "" }));
+  put("TASKS.md", wait); put("agent.log", ""); { const old = new Date(Date.now() - 3600e3); utimesSync(join(lane, ".symbiot", "agent.log"), old, old); }
+  const lostGo = [];
+  ok("…and the lane is started again for it, as open work", A.continueLanes({ run: (x) => (lostGo.push(x), { id: "k1" }), runs: () => [{ path: lane }] }).length === 1, lostGo);
+  put("ANSWERS.md", ""); put("TASKS.md", ""); rmSync(A.CONTINUED_FILE, { force: true });
+
   console.log("OUTCOME — the record, and what reads it");
   J.track("run:r1", { kind: "agent", lane: "bookly", path: lane, text: "bookly", state: "running" }, { now: 1000 });
   J.track("run:r1", { ...l, outcome: true }, { now: 2000 });

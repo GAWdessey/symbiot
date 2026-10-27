@@ -20,7 +20,7 @@ import { readFileSync, writeFileSync, mkdirSync, statSync } from "node:fs";
 import { watchBoard, draftReply, draftCards, draftAnswer } from "./watch.mjs";
 import { pendingReview, pushTasks, addTask, taskType, releaseNotIn, unplacedTasks } from "./tasks.mjs";
 import { estimate, estimateWords } from "./estimate.mjs";
-import { launchFault, ensureRunnable, agentQuestions, answerQuestions, heldAsk, grantCard, cardIsPermission, onCardGone, setHandoffCmd, agentsList, agentsNow, forgetAgents, runHandoff, runningHandoff, handoffCmd, loadRuns, connectorsInfo, parkedPaths, agentMissing, settleNeeds, closeAsk, sameSubject, pickAgent, detectHandoffs, linkReach, unchangedStep, whereOf, claudePause, parkLane, waitingTask, namedBlocker, autoStart } from "./agents.mjs";
+import { handoffsSig, launchFault, ensureRunnable, agentQuestions, answerQuestions, heldAsk, grantCard, cardIsPermission, onCardGone, setHandoffCmd, agentsList, agentsNow, forgetAgents, runHandoff, runningHandoff, handoffCmd, loadRuns, connectorsInfo, parkedPaths, agentMissing, settleNeeds, closeAsk, sameSubject, pickAgent, detectHandoffs, linkReach, unchangedStep, whereOf, claudePause, parkLane, waitingTask, namedBlocker, autoStart } from "./agents.mjs";
 import { stallCards, loadStall, saveStall } from "./stall.mjs";
 import { isDone, recordDone, doneList, asksBack, askBackNote, wantsReport, closesAsk, heldBy, reportsSince, talkOf, addTalk, talkText, YES, asksQ, saysDone, wantsToRead } from "./asksdone.mjs";
 import { captureSecrets } from "./vault.mjs";
@@ -52,7 +52,7 @@ import { draftPreview, MARKETING, MARKETING_DIR, aboutMarketing, displayName, pr
 import { noteCardWords } from "./triage.mjs";
 
 const KEEP = 15000; // the slower reads (git per repo awaiting review) are cached this long
-let cached = null;
+let cached = null, cachedSig = ""; // cachedSig: the runs it was built with (agents.mjs handoffsSig)
 const RUNS = join(CONFIG_DIR, "drafts"); // an ops run's folder (mind.mjs actNow): its own lane, not a repo
 const RUNS_LANE = "ops"; // what the work scene calls them all, together
 
@@ -413,7 +413,10 @@ const slugs = new Map(), slugFor = (f) => { if (!slugs.has(f)) slugs.set(f, fold
 function homeTick({ now = Date.now() } = {}) { if (now - looked < HOME_LOOKED) try { homeState({ now, fresh: true, tick: true }); } catch {} }
 function homeState({ now = Date.now(), fresh = false, deps = {}, tick = false } = {}) {
   if (!tick && !Object.keys(deps).length) looked = now;
-  if (!fresh && !deps.board && cached && now - cached.at < KEEP) return cached;
+  // a run started or ended since it was built: built again, so the count of agents working is the one running
+  // now. A symbiot run 14 s old wasn't in "2 agents working" while 3 ran (27 Oct 2026)
+  const sig = deps.agents ? "" : (() => { try { return handoffsSig(); } catch { return ""; } })();
+  if (!fresh && !deps.board && cached && now - cached.at < KEEP && cachedSig === sig) return cached;
   const board = deps.board || (() => { try { return watchBoard(24, now); } catch { return { cards: [] }; } });
   const pending = deps.pending || (() => { try { return pendingReview({ kept: true }); } catch { return []; } });
   const agents = deps.agents || (() => { try { return agentsNow(); } catch { return []; } });
@@ -566,7 +569,7 @@ function homeState({ now = Date.now(), fresh = false, deps = {}, tick = false } 
   // how long the Symbiot Browser has been open, said on Home (headless.mjs windowSince)
   let browserSince = 0; try { browserSince = (deps.browserSince || windowSince)(); } catch {}
   const out = { ...(browserSince ? { browserSince, browserIdle: Number(loadConfig().browserIdleMin) || BROWSER_IDLE_MIN } : {}), you: you.slice(0, 6), youCount: you.length, ...(updates.length ? { updates: updates.slice(0, 8) } : {}), feeds: feeds.slice(0, 6), lanes: hs, working, runs: runs.slice(0, 4), next, nextAll, marketing: marketing({ list, map, named, pend }), ...(deps.phone || phoneBits)(now), at: now };
-  if (!deps.board) cached = out;
+  if (!deps.board) { cached = out; cachedSig = sig; }
   return out;
 }
 

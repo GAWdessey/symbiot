@@ -141,6 +141,15 @@ try {
   ok("a delete newer than every change wins", m.k.del === 7);
   const n = U.mergeRecords({ k: { f: { a: ["changed", 9] } } }, { k: { del: 7, f: { a: ["old", 5] } } });
   ok("…a change newer than the delete keeps the record", n.k.f.a[0] === "changed" && n.k.f.a[1] > n.k.del);
+
+  console.log("10) TWO IDS FOR ONE FOLDER");
+  // a lane's old id was left naming the folder of a copy of its repo (the same first commit), so the sync
+  // put its questions there and they left its own (27 Oct 2026): one key per folder, the newest
+  const H = home("stale"), forge = join(H, "work", "forge"), daily = join(H, "work", "daily");
+  for (const [p, q] of [[forge, "### Forge's own question? {#forge}\n"], [daily, "### Put main live? {#deploy-and-call}\n"]]) { mkdirSync(join(p, ".symbiot"), { recursive: true }); writeFileSync(join(p, ".symbiot", "QUESTIONS.md"), q); }
+  put(H, "lane-ids.json", { ids: { g67de65ad23ce: { name: "forge", path: forge, at: 1 }, pf0: { name: "forge", path: forge, at: 2 }, pd0: { name: "daily", path: daily, at: 2 } }, renamed: [] });
+  const st = as(H, `const s = await S.stamped(); return Object.fromEntries(Object.entries(s.lanes).map(([k, r]) => [k, r.f.text[0]]));`);
+  ok("a folder's questions go under one key, its id now; the stale id carries nothing", st["n:forge/QUESTIONS.md"] && /\{#forge\}/.test(st["n:forge/QUESTIONS.md"]) && !("g67de65ad23ce/QUESTIONS.md" in st) && /deploy-and-call/.test(st["n:daily/QUESTIONS.md"] || ""), st);
 } catch (e) { fail++; console.log("  ✗ threw: " + (e && e.stack || e)); }
 
 console.log(`\n${fail ? "✗" : "✓"} sync: ${pass} passed, ${fail} failed`);
