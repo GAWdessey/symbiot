@@ -39,9 +39,9 @@ try {
   ok("…no setting is offered for it", !/no setting allows/.test(r1.why));
   ok("an unknown hold, or one Go'd already, can't be Go'd", !P.goAhead("nope", { home: HOME }));
   ok("the user's Go lets that one command through", P.goAhead(r1.held, { home: HOME }) && sh(LAUNCH) === null);
-  const again = sh(LAUNCH);
-  ok("…once: running it again needs a new yes (no relaunch in a loop)", again && again.held && again.held !== r1.held, again);
-  ok("…and a Go for one command doesn't open another", P.goAhead(again.held, { home: HOME }) && !!sh("adb shell am start -n co.other.app/.Main"));
+  ok("…and the same job's next steps go through too, without a new card (one yes per job)", sh(LAUNCH) === null && sh("adb shell am start -n co.other.app/.Main") === null);
+  const later = P.judgePhone(LAUNCH, { session: "s1", cwd: lane, home: HOME, now: Date.now() + P.GRANT_MS + 1000 });
+  ok("…for a while only: after it, a new yes is needed (no relaunch in a loop)", later && later.held, later);
 
   console.log("ONE RUN ON THE PHONE AT A TIME");
   const busy = sh("adb shell getprop ro.product.model", "s2", other);
@@ -68,22 +68,23 @@ try {
   ok("before the user answers, it's still held", !!s4(MONKEY));
   A.answerQuestions(folder, [{ q: Q4, id: `phone-go-${h4.held}`, a: "🤖 Agent: go ahead, I'm at the phone" }]);
   ok("their Go on the card lets that command through", s4(MONKEY) === null);
-  ok("…once: the next is held again, on a new card", (s4(MONKEY) || {}).held && s4(MONKEY).held !== h4.held);
-  const h5 = s4("adb shell input tap 1 1"), Q5 = "Can I tap the card's switch on your phone?";
+  ok("…and so do the job's next phone steps, in its window", s4(MONKEY) === null && s4("adb shell input tap 1 1") === null);
+  const late = { session: "s4", cwd: folder, home: HOME, now: Date.now() + P.GRANT_MS + 1000 };
+  const h5 = P.judgePhone("adb shell input tap 1 1", late), Q5 = "Can I tap the card's switch on your phone?";
   writeFileSync(join(folder, ".symbiot", "QUESTIONS.md"), `## Questions\n### ${Q5} {#phone-go-${h5.held}}\n- 🤖 Agent: go ahead, I'm at the phone\n`);
   A.answerQuestions(folder, [{ q: Q5, id: `phone-go-${h5.held}`, a: "no, not now" }]);
-  ok("a no lets nothing through", !!s4("adb shell input tap 1 1"));
+  ok("a no lets nothing through (once the window is over)", !!P.judgePhone("adb shell input tap 1 1", late));
 
   console.log("A LAUNCH INSIDE ANOTHER PROGRAM OR A SCRIPT — held too (23 Oct 2026: only adb typed on the line was seen)");
   P.letGo("s4", { home: HOME }); // (that run has ended)
   const wrapped = ["bash -c \"adb -s R5X shell am start -n co.example.app/.Main\"", "node -e \"require('child_process').execFileSync('adb', ['shell', 'am', 'start', '-n', 'co.example.app/.Main'])\"", "sh -c 'adb shell input keyevent KEYCODE_WAKEUP'"];
-  ok("bash -c, node -e, sh -c around adb's am start or a key: each held for a yes", wrapped.every((c) => (P.judgePhone(c, { session: "s9", cwd: folder, home: HOME }) || {}).held), wrapped.map((c) => { const r = P.judgePhone(c, { session: "s9", cwd: folder, home: HOME }); return r && (r.held || r.why.slice(0, 60)); }));
+  ok("bash -c, node -e, sh -c around adb's am start or a key: each held for a yes", wrapped.every((c) => (P.judgePhone(c, { session: "s9", cwd: folder, home: HOME, now: Date.now() + P.GRANT_MS + 1000 }) || {}).held), wrapped.map((c) => { const r = P.judgePhone(c, { session: "s9", cwd: folder, home: HOME, now: Date.now() + P.GRANT_MS + 1000 }); return r && (r.held || r.why.slice(0, 60)); }));
   writeFileSync(join(folder, "open-it.mjs"), "import { execFileSync } from 'node:child_process';\nexecFileSync('adb', ['-s', 'R5X', 'shell', 'am', 'start', '-n', 'co.example.app/.Main']);\n");
   writeFileSync(join(folder, "read-it.sh"), "adb shell getprop ro.product.model\n");
-  const viaScript = P.judgePhone("node open-it.mjs", { session: "s9", cwd: folder, home: HOME });
+  const viaScript = P.judgePhone("node open-it.mjs", { session: "s9", cwd: folder, home: HOME, now: Date.now() + P.GRANT_MS + 1000 });
   ok("a script in the run's folder that opens an app over adb: held", (viaScript || {}).held, [viaScript, P.adbCalls("node open-it.mjs", { cwd: folder })]);
-  ok("…one that only reads the phone goes ahead", P.judgePhone("bash read-it.sh", { session: "s9", cwd: folder, home: HOME }) === null);
-  ok("…and words that only mention it reach no phone", P.judgePhone("echo am start", { session: "s9", cwd: folder, home: HOME }) === null && P.judgePhone("node test/phone.mjs", { session: "s9", cwd: folder, home: HOME }) === null);
+  ok("…one that only reads the phone goes ahead", P.judgePhone("bash read-it.sh", { session: "s9", cwd: folder, home: HOME, now: Date.now() + P.GRANT_MS + 1000 }) === null);
+  ok("…and words that only mention it reach no phone", P.judgePhone("echo am start", { session: "s9", cwd: folder, home: HOME, now: Date.now() + P.GRANT_MS + 1000 }) === null && P.judgePhone("node test/phone.mjs", { session: "s9", cwd: folder, home: HOME, now: Date.now() + P.GRANT_MS + 1000 }) === null);
   P.letGo("s9", { home: HOME });
 
   console.log("NOTHING SYMBIOT SHIPS OPENS AN APP ON THE PHONE BY ITSELF");

@@ -4,8 +4,8 @@
 // phone"), until they uninstalled the app. So the membrane (guard.mjs) now:
 // - holds an adb command that opens an app or acts on what's on the screen (am start, monkey, input,
 //   cmd activity start-activity): the run asks the user with {#phone-go-<id>} and one option, and stops.
-//   Their Go (agents.mjs answerQuestions, goAhead) lets that one command through once, so a launch is
-//   never repeated in a loop without a new yes;
+//   Their Go (agents.mjs answerQuestions, goAhead) lets that command through, and the run's other phone
+//   steps for GRANT_MS, so one job asks once, not at each step; after the window a new yes is needed;
 // - lets one run use the phone at a time (phone-lock.json): another run's adb command is refused while
 //   the phone was used by a run in the last LOCK_MS, and a run that ends lets it go (the hook's Stop).
 // adb's own housekeeping (devices, connect, pair, mdns, version) reaches no phone and is never held.
@@ -18,7 +18,10 @@ const dir = (home) => join(home, ".config", "symbiot");
 const HOLDS = (home = homedir()) => join(dir(home), "phone-holds.json"), LOCK = (home = homedir()) => join(dir(home), "phone-lock.json");
 const readJson = (f, d) => { try { return JSON.parse(readFileSync(f, "utf8")); } catch { return d; } };
 const writeJson = (f, v) => { try { mkdirSync(join(f, ".."), { recursive: true, mode: 0o700 }); const t = `${f}.${process.pid}.tmp`; writeFileSync(t, JSON.stringify(v), { mode: 0o600 }); renameSync(t, f); } catch {} };
-const LOCK_MS = 10 * 60000, HOLD_MS = 86400000;
+// A Go covers the run's folder for GRANT_MS: the phone check opens its card, taps its switch and checks it in
+// several steps, and asking again at each one made the user say they'd uninstall (27 Oct 2026). One yes, one
+// bounded window, then a new yes.
+const LOCK_MS = 10 * 60000, HOLD_MS = 86400000, GRANT_MS = 20 * 60000;
 const WRAP = /^(timeout|nice|nohup|env|time|command|exec)$/, GLOBAL_VALUE = /^-[stHPL]$/, HOUSEKEEPING = /^(devices|connect|disconnect|pair|mdns|version|help|start-server|kill-server|reconnect|keygen|get-serialno|get-state|wait-for-\S+)$/;
 // what on a phone's shell opens an app or acts on its screen
 const FRONTS = /\b(?:am\s+(?:start\b|start-activity\b)|cmd\s+activity\s+start-activity\b|monkey\b|input\s+(?:tap|swipe|text|keyevent|press|roll|draganddrop|motionevent|keycombination)\b)/;
@@ -78,11 +81,13 @@ function judgePhone(cmd, { session = "", cwd = "", home = homedir(), now = Date.
   if (!fronts(calls)) return null;
   const holds = readJson(HOLDS(home), []).filter((h) => now - (h.at || 0) < HOLD_MS), what = String(cmd).trim().slice(0, 300);
   const go = holds.find((h) => h.who === mine && h.go && !h.used && h.cmd === what);
-  if (go) { go.used = now; writeJson(HOLDS(home), holds); return null; } // the user's Go: this once
+  if (go) { go.used = now; writeJson(HOLDS(home), holds); return null; } // the user's Go: this command
+  // …and a Go on any card from this run's folder (or session) still stands for the rest of its window
+  if (holds.some((h) => h.go && now - h.go < GRANT_MS && (h.who === mine || (cwd && h.cwd === String(cwd))))) return null;
   let h = holds.find((x) => x.who === mine && x.cmd === what && !x.go);
   if (!h) { h = { id: randomBytes(4).toString("hex"), who: mine, cwd: String(cwd || ""), cmd: what, at: now }; holds.push(h); }
   writeJson(HOLDS(home), holds.slice(-100));
-  return { held: h.id, why: `that opens an app, or acts on whatever is on the screen, on the user's phone, which they may be using right now: it's never done without their yes, and never again in a loop. Ask in .symbiot/QUESTIONS.md: a ### heading saying plainly what it does on their phone and why (e.g. "Can I open Symbiot on your phone now, to put the check's card up?"), ending {#phone-go-${h.id}}, a line saying they should be at the phone and not in the middle of something, and one option, "🤖 Agent: go ahead, I'm at the phone". Stop there. Their Go lets this same command through once; run it again exactly as it is. Reading the phone (dumpsys, getprop, settings get, logcat) needs no yes` };
+  return { held: h.id, why: `that opens an app, or acts on whatever is on the screen, on the user's phone, which they may be using right now: it's never done without their yes, and never again in a loop. Ask in .symbiot/QUESTIONS.md: a ### heading saying plainly what it does on their phone and why (e.g. "Can I open Symbiot on your phone now, to put the check's card up?"), ending {#phone-go-${h.id}}, a line saying they should be at the phone and not in the middle of something, and one option, "🤖 Agent: go ahead, I'm at the phone". Stop there. Their Go lets this same command through, and this job's other phone steps for a while; run it again exactly as it is. Reading the phone (dumpsys, getprop, settings get, logcat) needs no yes` };
 }
 // The user's Go on a phone-go card: that held command may go through once.
 function goAhead(id, { home = homedir(), now = Date.now() } = {}) {
@@ -106,4 +111,4 @@ function letGo(session, { home = homedir() } = {}) {
   writeJson(LOCK(home), {}); return true;
 }
 
-export { judgePhone, goAhead, letGo, phoneAsked, adbCalls, HOLDS, LOCK, LOCK_MS };
+export { judgePhone, goAhead, letGo, phoneAsked, adbCalls, HOLDS, LOCK, LOCK_MS, GRANT_MS };
