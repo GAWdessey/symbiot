@@ -27,10 +27,10 @@
 // Its cards are questions on Home like any other (path "goal:<id>"), answered through
 // agents.mjs answerQuestions (onGoalAnswer, set by server.mjs).
 import { join } from "node:path";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync, readFileSync, existsSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { CONFIG_DIR, loadTasks, clipWords, jobWords, readState, writeJsonAtomic, sameTask } from "./core.mjs";
-import { goalRows, putGoal, loadJobs, ENDED } from "./jobs.mjs";
+import { goalRows, putGoal, loadJobs, ENDED, FINISHED } from "./jobs.mjs";
 import { sentAt } from "./handback.mjs";
 
 const DAY = 86400e3, H = 3600e3, DEAD_RUN = 3 * H; // runs that hang are stopped after 45 minutes (agents.mjs runsTick)
@@ -140,6 +140,22 @@ async function doneWhenFor(g, { write } = {}) {
 }
 
 // ---- where each child stands ---------------------------------------------------------
+// A run left waiting or paused is over once a later run in its folder finished, or once the folder's
+// TASKS.md has nothing open left: runs end that way from 0.94.1 (jobs.mjs supersede), and these read
+// the records from before it the same. Goal 440329bc asked "Can I redeploy the server now…" five times
+// on 26 Oct 2026 from a run whose next run had done the redeploy and ticked the item.
+const laterFinished = (j, ctx) => ctx.jobs.find((x) => x.outcome && String(x.key).startsWith("run:") && x.path === j.path && (x.at || 0) > (j.at || 0) && FINISHED.has(x.state));
+function openItemsIn(path) { // the [ ] and [~] items in its folder's TASKS.md, or null with none to read
+  let md; try { md = readFileSync(join(path, ".symbiot", "TASKS.md"), "utf8"); } catch { return null; }
+  return md.trim() ? md.split("\n").filter((l) => /^\s*-\s*\[[ ~]\]/.test(l)).length : null;
+}
+function superseded(j, ctx) {
+  if (!j.path || (j.state !== "waiting" && j.state !== "paused")) return null;
+  const later = laterFinished(j, ctx); if (later) return { state: "ended", ok: true, path: j.path, at: later.changed, what: "a later run in the same folder finished it", superseded: later.key };
+  // only a wait its [~] item made (task, bare): one on a question or a need isn't in TASKS.md
+  if ((j.state === "paused" || j.task || j.bare) && (ctx.openItems || openItemsIn)(j.path) === 0) return { state: "ended", ok: true, path: j.path, at: j.changed, what: "its folder has no open items left" };
+  return null;
+}
 // { at, state: active | waiting | ended, waitingOn, what, path, ok (ended done, not failed or stopped), summary }
 function childState(key, ctx) {
   const [kind, id] = [key.slice(0, key.indexOf(":")), key.slice(key.indexOf(":") + 1)];
@@ -153,6 +169,7 @@ function childState(key, ctx) {
   if (kind === "run") {
     const j = ctx.jobs.find((x) => x.key === key); if (!j) return { state: "active" };
     if (ctx.running(j.path)) return { state: "active", path: j.path };
+    const over = superseded(j, ctx); if (over) return over; // never its summary: that asked for what's done now
     if (j.state === "running" && (ctx.now || Date.now()) - (j.changed || j.at || 0) > DEAD_RUN) return { state: "ended", path: j.path, at: j.changed, summary: "its end wasn't recorded: nothing has run there since" }; // a record still "running" with nothing running there held its goal open for good
     if (j.state === "waiting") { // the job it's on (its [~] item, or an ops run's own request), for the card's "I'm on it: …"
       const job = jobWords(j.task || (j.lane === "agent" || /^act-/.test(String(j.lane || "")) ? j.text : ""));
@@ -278,6 +295,15 @@ function close(g, kind, v, ctx, deps, now) {
   try { (deps.notify || (() => {}))(kind === "done" ? "Done" : "Not finished", clip(g.text, 120)); } catch {}
 }
 
+// A note for a run, in its ANSWERS.md, read when it starts.
+function tellRun(path, text) {
+  try {
+    const file = join(path, ".symbiot", "ANSWERS.md"), had = existsSync(file) ? readFileSync(file, "utf8") : "# Answers from the user\n";
+    if (had.includes(text)) return;
+    mkdirSync(join(path, ".symbiot"), { recursive: true });
+    writeFileSync(file, `${had.replace(/\s*$/, "")}\n\n### Symbiot: your step for the user\n${text}\n(Symbiot's card check; the user wasn't asked.)\n_${new Date().toISOString().slice(0, 10)}_\n`);
+  } catch {}
+}
 // The sentence of a run's last words that says what it needs from the user ("…creating the account
 // and sending the ticket need your yes."), so a card's one ask isn't lost after "The move isn't done.".
 const NEEDS_USER = /\b(?:you|your|the user|garth(?:'s)?)\b|\byes\b|\bok\b|approv|go-?ahead|sign[- ]?in|password|\bcode\b/i, YES_ASK = /\byes\b|\bok\b|approv|go-?ahead/i;
@@ -288,9 +314,10 @@ function askIn(said) {
 // ---- the tick ----------------------------------------------------------------------
 // deps: { write (ai.mjs), running(path), start(path) → run entry, autoStart(path) → bool,
 //   ops(request, opts) → { job, dir } (mind.mjs actNow), notify(title, body), settle(path, note),
+//   notTheirs(card), unclear(card) (the card writer's verdicts, needs.mjs),
 //   tasks, ledger, waits, jobs, map }. Returns what it did, for the log and the tests.
 async function goalsTick(deps = {}, { now = Date.now() } = {}) {
-  const ctx = { tasks: deps.tasks || loadTasks(), ledger: deps.ledger || { handoffs: [] }, waits: deps.waits || [], jobs: deps.jobs || loadJobs(), map: deps.map || {}, running: deps.running || (() => false), now };
+  const ctx = { tasks: deps.tasks || loadTasks(), ledger: deps.ledger || { handoffs: [] }, waits: deps.waits || [], jobs: deps.jobs || loadJobs(), map: deps.map || {}, running: deps.running || (() => false), openItems: deps.openItems, now };
   const did = [];
   if (!deps.jobs) { try { tidyGoals({ now }); ctx.jobs = loadJobs(); } catch {} }
   for (const g0 of goalRows({ jobs: ctx.jobs })) {
@@ -302,7 +329,7 @@ async function goalsTick(deps = {}, { now = Date.now() } = {}) {
     if (sig !== g.sig) { g.sig = sig; g.moved = now; if (g.card && g.card.kind === "stalled") g.card = null; }
     g.state = r.state === "ended" ? "running" : r.state; g.waitingOn = r.waitingOn; g.what = r.what;
     if (r.state === "waiting") g.since = g.since && g.sinceOn === r.waitingOn ? g.since : (r.since || now), g.sinceOn = r.waitingOn; else { g.since = 0; g.sinceOn = ""; }
-    const start = (path, why) => { if (!path || ctx.running(path)) return false; if (deps.autoStart && !deps.autoStart(path)) return false; const e = deps.start ? deps.start(path) : null; if (e && e.id) { did.push({ goal: g.key, started: path, why }); return true; } return false; };
+    const start = (path, why) => { if (!path || ctx.running(path)) return false; if (deps.autoStart && !deps.autoStart(path, { key: g.key })) return false; const e = deps.start ? deps.start(path) : null; if (e && e.id) { did.push({ goal: g.key, started: path, why }); return true; } return false; };
     if (r.state === "ended") {
       const v = await judgeDone(g, r.kids, deps);
       if (!v && !deps.write) { const ok = r.kids.every((c) => c.ok !== false); close(g, ok ? "done" : "not", { kids: r.kids, left: ok ? "" : "some of its work didn't finish" }, ctx, deps, now); did.push({ goal: g.key, closed: ok ? "done" : "not" }); } // no AI to judge: closed as its parts ended, and the breakdown says it isn't verified
@@ -312,7 +339,16 @@ async function goalsTick(deps = {}, { now = Date.now() } = {}) {
         const e = deps.ops(`What's left on this, and do it: ${g.asked}\n\nDone when: ${doneOf(g)}\n\nWhat was found missing: ${(v && v.left) || "nothing judged it done"}. Check the earlier runs' reports first and don't redo what they finished. If something only the user can do is all that's left, ask it in QUESTIONS.md.`, { title: `What's left on: ${clip(g.text, 60)}` });
         if (e && (e.job || e.dir)) { if (e.job) g.children.push("run:" + e.job); if (e.dir) g.paths.push(e.dir); did.push({ goal: g.key, whatsLeft: e.job || e.dir }); }
       } else { close(g, "not", v ? { ...v, kids: r.kids } : { left: "every part of it ended, and nothing shows it's done", kids: r.kids }, ctx, deps, now); did.push({ goal: g.key, closed: "not" }); }
-    } else if (r.state === "waiting") {
+    }
+    // A card on the user's step goes once that step isn't what the work waits on: the run carried on, Home
+    // has the run's own card for it, or the run now waits on something else. "Can I use Workdesk and Chrome
+    // to open console.cloud.google.com?" stayed on Home, built from the run's first note, while five later
+    // runs on the same move asked their own, exact steps (26 Oct 2026).
+    if (g.card && g.card.kind === "user") {
+      const c = r.state === "waiting" && r.waitingOn === "user" ? r.kids.find((x) => x.state === "waiting" && x.waitingOn === "user") || {} : null;
+      if (!c || (c.path && (deps.cardPaths || new Set()).has(c.path)) || g.card.q !== clip(c.bare && c.summary ? askIn(c.summary) : r.what, 300)) g.card = null;
+    }
+    if (r.state === "waiting") {
       const c = r.kids.find((x) => x.state === "waiting" && x.waitingOn === r.waitingOn) || {};
       if (r.waitingOn === "user") {
         const carded = (deps.cardPaths || new Set()); // Home has a card for that work already: one card, not two
@@ -331,6 +367,13 @@ async function goalsTick(deps = {}, { now = Date.now() } = {}) {
         if (g.card && g.card.kind === "user" && deps.notTheirs && deps.notTheirs(g.card) && c.path && !ctx.running(c.path)) {
           if (deps.settle) { try { deps.settle(c.path, "not the user's: find it yourself (Symbiot's vault, the linked mailboxes and connectors, the user's files) and carry on"); } catch {} }
           if (start(c.path, "the card for this asked for something you can find or check yourself: look in Symbiot's vault, the linked mailboxes and connectors and the user's files first, carry on, and ask the user only for what none of them has") !== false) { g.card = null; did.push({ goal: g.key, checking: c.path }); }
+        }
+        // a card the writer found too vague to act on (needs.mjs unclear: no site, account or next step, or a
+        // Symbiot page to "grant") goes back to the run with what's missing, and the user never sees it
+        if (g.card && g.card.kind === "user" && deps.unclear && deps.unclear(g.card) && c.path && !ctx.running(c.path)) {
+          tellRun(c.path, `Symbiot didn't show the user your step: "${clip(g.card.q, 200)}" doesn't say what they'd do. If a step is still theirs, ask it in .symbiot/QUESTIONS.md naming the site's exact address, the account to sign in as (its email address) and what you do there once they have, with an option saying what it confirms ("I'm signed in"). A Symbiot page (Workdesk, Home) is never something to grant. If it isn't theirs, carry on.`);
+          if (deps.settle) { try { deps.settle(c.path, "the user's step was too vague to show: ask it again, exactly"); } catch {} }
+          if (start(c.path, "the card for your step didn't say which site, which account or what you do next: ask it again, exactly") !== false) { g.card = null; did.push({ goal: g.key, unclear: c.path }); }
         }
       } else if (r.waitingOn === "lane" && c.handoff && c.path && now - (c.at || now) > H) {
         start(c.path, `${c.handoff.to.lane} hadn't started on it`);
@@ -382,7 +425,7 @@ function goalAnswer(path, answers = [], deps = {}, { now = Date.now() } = {}) {
     return { ok: true, said: "Kept waiting; it'll come up again in a week." };
   }
   const g = goalById(path); if (!g) return { error: "That goal isn't on record any more." };
-  const ctx = { tasks: deps.tasks || loadTasks(), ledger: deps.ledger || { handoffs: [] }, waits: deps.waits || [], jobs: deps.jobs || loadJobs(), map: deps.map || {}, running: deps.running || (() => false), now };
+  const ctx = { tasks: deps.tasks || loadTasks(), ledger: deps.ledger || { handoffs: [] }, waits: deps.waits || [], jobs: deps.jobs || loadJobs(), map: deps.map || {}, running: deps.running || (() => false), openItems: deps.openItems, now };
   const kind = g.card && g.card.kind; let said = "Noted.";
   if (is("Drop it")) { close(g, "dropped", { left: "Dropped by the user." }, ctx, deps, now); g.dropped = true; said = "Dropped. Its breakdown is under Reports."; }
   else if (kind === "done" || is("Got it")) { if (g.card) g.card = { ...g.card, seen: now }; said = "Done and closed."; }
@@ -397,8 +440,12 @@ function goalAnswer(path, answers = [], deps = {}, { now = Date.now() } = {}) {
     for (const c of rollUp(g, ctx).kids.filter((x) => x.state === "waiting" && x.waitingOn === "user" && x.path)) { try { deps.settle && deps.settle(c.path, why); } catch {} try { deps.start && deps.start(c.path); } catch {} }
     g.card = null; g.moved = now; said = "Thanks: its work carries on.";
   } else if (is("Try again") || is("Look into it now")) {
-    g.leftTries = 0; g.card = null; g.moved = now;
+    // their retry is the one more try: it no longer also gave the tick a "What's left" run of its own, and
+    // one already at work on the goal is left to it (steve's size alarm took 5 runs, 25 Oct 2026)
+    g.leftTries = LEFT_TRIES; g.card = null; g.moved = now;
     if (g.state === "done") { g.state = "running"; g.closed = null; }
+    const busy = (() => { try { return rollUp(g, ctx).kids.some((c) => c.state === "active" && c.path && ctx.running(c.path)); } catch { return false; } })();
+    if (busy) { putGoal(g, { now }); return { ok: true, saved: 1, said: "An agent is on it already: it carries on from there." }; }
     const e = deps.ops ? deps.ops(`Look into this and finish it: ${g.asked}\n\nDone when: ${doneOf(g)}\n\nRead the earlier runs' reports first (its breakdown is in Reports) and don't redo what they finished. If something only the user can do is all that's left, ask it in QUESTIONS.md.`, { title: `Finish: ${clip(g.text, 60)}` }) : null;
     if (e && e.job) g.children.push("run:" + e.job); if (e && e.dir) g.paths.push(e.dir);
     said = e && (e.job || e.dir) ? "An agent is on it now." : `It didn't start: ${(e && e.error) || "no agent"}`;

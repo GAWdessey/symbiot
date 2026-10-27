@@ -25,7 +25,7 @@ import { join } from "node:path";
 import { homedir } from "node:os";
 import { readFileSync, writeFileSync, mkdirSync, renameSync } from "node:fs";
 import { randomBytes } from "node:crypto";
-import { heldFor } from "./sends.mjs";
+import { heldFor, addsPayment } from "./sends.mjs";
 
 const PREFIX = "mcp__claude-in-chrome__";
 const READS = new Set(["tabs_context_mcp", "tabs_create_mcp", "tabs_close_mcp", "navigate", "get_page_text", "read_page", "find", "read_console_messages", "read_network_requests", "gif_creator", "resize_window", "list_connected_browsers", "select_browser", "switch_browser", "shortcuts_list"]);
@@ -81,14 +81,60 @@ function judgeChrome(tool, input = {}, { session = "", home = homedir(), now = D
   const tagged = (String(input.action_summary || "").match(/\[go:([0-9a-f]{6,})\]/i) || [])[1] || "", summary = String(input.action_summary || "").replace(/\s*\[go:[0-9a-f]+\]\s*/gi, " ").trim();
   if (!summary) return { why: "say what this action does (action_summary) on every click, key, type and fill in the user's own Chrome: the membrane holds sends, payments and deletes for the user's Go" };
   const kind = name === "computer" && enterIn(input) ? "send" : heldFor(summary, host); if (!kind) return go();
-  // held: let it through once if the user said Go to this very action; else hold it and say how to ask
+  return holdOrGo(host, summary, kind, { tagged, session, home, now }) || go();
+}
+// Held: let it through once if the user said Go to this very action (null); else hold it and say how
+// to ask for their Go ({ why, held }). Claude in Chrome's actions (judgeChrome) and Symbiot's own
+// extension in the user's Chrome (ownchrome.mjs) share the holds and the Go cards. retry: how the
+// agent tries it again after the Go, said at the end.
+// onUse(id): told which hold a Go went through on, so its outcome can be noted (settleHold).
+function holdOrGo(host, summary, kind, { tagged = "", session = "", home = homedir(), now = Date.now(), retry = "", onUse = null } = {}) {
   const holds = readJson(HOLDS(home), []), live = (h) => h.go && !h.used && now - h.go < GO_FOR;
   const mine = (tagged && holds.find((h) => h.id === tagged && h.host === host && live(h))) || holds.find((h) => h.host === host && key(h.summary) === key(summary) && live(h));
-  if (mine) { mine.used = now; writeJson(HOLDS(home), holds); return go(); }
-  let h = holds.find((x) => x.host === host && key(x.summary) === key(summary) && !x.go && now - x.at < 86400000);
+  if (mine) { mine.used = now; writeJson(HOLDS(home), holds); if (onUse) onUse(mine.id); return null; }
+  // one the user said Don't to is closed: asked again, it's a new card (its answered id would hide it)
+  let h = holds.find((x) => x.host === host && key(x.summary) === key(summary) && !x.go && !x.no && now - x.at < 86400000);
   if (!h) { h = { id: randomBytes(4).toString("hex"), host, summary: summary.slice(0, 200), kind, at: now, session }; holds.push(h); writeJson(HOLDS(home), holds.slice(-200)); }
-  const word = { send: "sends", pay: "pays", delete: "deletes" }[kind];
-  return { why: `this ${word} as the user, on ${host} ("${h.summary}"), so it waits for their Go. Ask in .symbiot/QUESTIONS.md: a ### heading saying plainly what it ${word}, ending {#chrome-go-${h.id}}, and one option, "🤖 Agent: go ahead: ${h.summary}". Stop there; once they say Go, the same action goes through, once: when you retry it, start its action_summary with [go:${h.id}]`, held: h.id };
+  const word = { send: "sends", pay: "pays", delete: "deletes", fill: "fills a saved sign-in" }[kind];
+  return { why: `this ${word} as the user, on ${host} ("${h.summary}"), so it waits for their Go. Ask in .symbiot/QUESTIONS.md: a ### heading saying plainly ${kind === "fill" ? "which saved sign-in it fills, and on which site" : `what it ${word}`}, ending {#chrome-go-${h.id}}, ${kind === "pay" && addsPayment(h.summary) ? "a context line saying first that the site may hold or charge money on the card once it's added, with roughly how much if known, " : ""}and one option, "🤖 Agent: go ahead: ${h.summary}". Stop there; once they say Go, ${retry || `the same action goes through, once: when you retry it, start its action_summary with [go:${h.id}]`}`, held: h.id };
+}
+// A connector that sends as the user (mail's send, reply and forward, a calendar invite or reply, a
+// shared file): held for their Go like a send in their Chrome, on the same kind of card. The guard
+// never saw these, and a guide went out by email to someone the user's rule said hears nothing before
+// the user has seen it on WhatsApp (23 Oct 2026). A standing rule that names who it goes to is on the card.
+const CONNECTOR_SENDS = /^mcp__.+?__(send_message|send_email|send_draft|reply|reply_all|forward|share_file|respond_to_event|create_event|update_event)$/;
+const SAYS = { send_message: "Sends", send_email: "Sends", send_draft: "Sends", reply: "Replies", reply_all: "Replies to all", forward: "Forwards", share_file: "Shares", respond_to_event: "Answers the invite", create_event: "Invites", update_event: "Updates the invite" };
+const RECIPIENT = /^(?:to|cc|bcc|recipients?|emails?|email_?address|attendees?|guests?|people|addresses|share_?with|role_?email)$/i;
+function recipients(input) {
+  const out = new Set();
+  // a value under a recipients' key, or inside one ({ attendees: [{ email }] }): each address or name
+  const walk = (v, k = "", d = 0) => {
+    if (d > 4 || out.size > 20) return;
+    if (typeof v === "string") { if (RECIPIENT.test(k)) for (const x of v.split(/[,;]\s*/)) if (x.trim()) out.add(x.trim().slice(0, 80)); return; }
+    if (Array.isArray(v)) { for (const x of v) walk(x, k, d + 1); return; }
+    if (v && typeof v === "object") for (const [kk, x] of Object.entries(v)) walk(x, RECIPIENT.test(kk) || !RECIPIENT.test(k) ? kk : /^(?:email|address|value)$/i.test(kk) ? k : "", d + 1);
+  };
+  walk(input); return [...out];
+}
+function judgeConnector(tool, input = {}, { session = "", home = homedir(), now = Date.now() } = {}) {
+  const m = String(tool || "").match(CONNECTOR_SENDS); if (!m) return null;
+  const op = m[1], to = recipients(input || {});
+  if (/^(?:create|update)_event$/.test(op) && !to.length) return null; // no guests: nothing goes to anyone
+  const service = String(tool).slice(5, String(tool).length - op.length - 2).replace(/^claude_ai_/, "").replace(/_/g, " ");
+  const subject = String((input && (input.subject || input.summary || input.title || input.name)) || "").replace(/\s+/g, " ").trim().slice(0, 80);
+  const summary = `${SAYS[op]}${subject ? ` "${subject}"` : ""}${to.length ? ` to ${to.slice(0, 4).join(", ")}${to.length > 4 ? ` and ${to.length - 4} more` : ""}` : ""} through ${service}`.slice(0, 200), host = "connector:" + service;
+  const holds = readJson(HOLDS(home), []), live = (h) => h.go && !h.used && now - h.go < GO_FOR;
+  const mine = holds.find((h) => h.host === host && key(h.summary) === key(summary) && live(h));
+  if (mine) { mine.used = now; mine.result = "ok"; writeJson(HOLDS(home), holds); return null; } // the call is made as it is: it went
+  let h = holds.find((x) => x.host === host && key(x.summary) === key(summary) && !x.go && !x.no && now - x.at < 86400000);
+  if (!h) { h = { id: randomBytes(4).toString("hex"), host, summary, kind: "send", at: now, session }; holds.push(h); writeJson(HOLDS(home), holds.slice(-200)); }
+  // the user's standing rules that name who it goes to (their address, or a name in it)
+  const names = new Set(to.flatMap((x) => [x.toLowerCase(), ...x.toLowerCase().split(/[@.+_\s-]+/).filter((w) => /^[a-z]{4,}$/.test(w) && !/^(gmail|outlook|yahoo|hotmail|mail|info|team|hello|support|com)$/.test(w))]));
+  // …or a name in a rule that's part of the address ("Alex" in jsmithalex@…): not a word that starts a sentence
+  const locals = to.map((x) => ((x.match(/([\w.+-]+)@/) || [])[1] || "").toLowerCase()).filter(Boolean);
+  const named = (r) => [...r.matchAll(/(?<![.!?]\s|^)\b([A-Z][a-z]{3,})\b/g)].some((w) => locals.some((l) => l.includes(w[1].toLowerCase())));
+  const rules = (readJson(join(dir(home), "standing.json"), []) || []).map((r) => String((r && r.rule) || "")).filter((r) => r && ([...names].some((n) => new RegExp(`\\b${n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`, "i").test(r)) || named(r)));
+  return { held: h.id, why: `this sends as the user ("${h.summary}"), so it waits for their Go, as a send in their Chrome does.${rules.length ? ` Their own rule for this: "${rules.join('" "')}" Do what it says first (a proof where it says), and ask only after.` : ""} Ask in .symbiot/QUESTIONS.md: a ### heading saying plainly what it sends and to whom, ending {#chrome-go-${h.id}}, and one option, "🤖 Agent: go ahead: ${h.summary}". Stop there. Their Go lets this same call through once: make it again exactly as it is` };
 }
 // After a Chrome tool ran (the hook's PostToolUse): its result ends with "Tab Context", each tab of the
 // run's group with its address now (`• tabId 7: "Title" ("https://…")`), or tabs_context_mcp's list as
@@ -126,9 +172,68 @@ function openTabs(session, { home = homedir() } = {}) {
   return Object.entries(readJson(TABS(home), {})).filter(([k]) => k.startsWith(session + ":")).map(([k, v]) => ({ tab: k.slice(session.length + 1), host: (v && v.host) || "" }));
 }
 // The user's Go on a held action's card (a question whose id is chrome-go-<id>): it may go through once.
-function goAhead(id, { home = homedir(), now = Date.now() } = {}) {
+// by: which agent's card it was ({ path, agent }), for what happened after (goHistory).
+function goAhead(id, { home = homedir(), now = Date.now(), by = {} } = {}) {
   const holds = readJson(HOLDS(home), []), h = holds.find((x) => x.id === String(id || "")); if (!h) return false;
-  h.go = now; writeJson(HOLDS(home), holds); return true;
+  h.go = now; delete h.no; Object.assign(h, whoBy(by)); writeJson(HOLDS(home), holds); return true;
+}
+const whoBy = (by = {}) => ({ ...(by.path ? { path: String(by.path) } : {}), ...(by.agent ? { agent: String(by.agent).slice(0, 80) } : {}) });
+// …and their Don't on it: closed, nothing goes through, and it's kept for the history.
+function refuseHold(id, { home = homedir(), now = Date.now(), by = {} } = {}) {
+  const holds = readJson(HOLDS(home), []), h = holds.find((x) => x.id === String(id || "")); if (!h || (h.go && h.used)) return false;
+  h.no = now; delete h.go; Object.assign(h, whoBy(by)); writeJson(HOLDS(home), holds); return true;
+}
+// What happened when a Go went through (ownchrome.mjs knows whether its press landed): ok, or what went wrong.
+function settleHold(id, { ok = true, error = "" } = {}, { home = homedir(), now = Date.now() } = {}) {
+  const holds = readJson(HOLDS(home), []), h = holds.find((x) => x.id === String(id || "")); if (!h) return false;
+  h.used = h.used || now; h.result = ok ? "ok" : String(error || "it didn't go through").replace(/\s+/g, " ").slice(0, 160); writeJson(HOLDS(home), holds); return true;
+}
+const holdOf = (id, { home = homedir() } = {}) => readJson(HOLDS(home), []).find((x) => x.id === String(id || "")) || null;
+
+// A Go card's words, from the hold itself rather than the agent's heading: the button names the press
+// (Send, Pay R 289, Delete, Fill password), its partner says no (Don't send), and one line says where and
+// what ("In your Chrome, on mail.google.com: Clicks Send on the reply to Pat Lee"). UI review of 26 Oct
+// 2026: the card said only "Go", the site was nowhere on it, and there was no way to say no.
+const MONEY = /(?:\bR|\bZAR|US\$|\$|€|£)\s?\d[\d ,]*(?:\.\d{1,2})?(?!\d)/;
+const CONNECTOR_WORD = { Sends: "Send", "Replies to all": "Send reply", Replies: "Send reply", Forwards: "Forward", Shares: "Share", "Answers the invite": "Answer invite", Invites: "Send invite", "Updates the invite": "Update invite" };
+function goWords(h, text = "") {
+  if (!h) return null;
+  const via = String(h.host || "").startsWith("connector:") ? String(h.host).slice(10) : "", summary = String(h.summary || "").replace(via ? /\s+through\s+[^"]+$/ : /$^/, "");
+  const amount = h.kind === "pay" ? ((`${summary}\n${text}`.match(MONEY) || [])[0] || "").replace(/\s+/g, " ").replace(/^(R|ZAR)(?=\d)/, "$1 ").trim() : "";
+  const sends = (summary.match(/\b(Send|Post|Publish|Reply|Comment|Submit|Share|Tweet|Schedule)\b/i) || [])[1] || "Send"; // "Clicks Post on the update": Post
+  let button = { send: sends.charAt(0).toUpperCase() + sends.slice(1).toLowerCase(), pay: "Pay" + (amount ? " " + amount : ""), delete: "Delete", fill: /\bcodes?\b/i.test(summary) ? "Fill code" : "Fill password" }[h.kind] || "Go ahead";
+  if (via) { const w = Object.keys(CONNECTOR_WORD).find((k) => summary.startsWith(k)); if (w) button = CONNECTOR_WORD[w]; }
+  const verb = button.split(" ")[0].toLowerCase(), dont = `Don't ${verb}`;
+  const line = via ? `Through ${via}: ${summary}` : `In your Chrome, on ${h.host}: ${summary}`;
+  const press = via ? `${verb === "send" ? "sends it" : `does it (${button})`} through ${via} once` : h.kind === "fill" ? `fills the saved sign-in on ${h.host} once` : `presses ${button.split(" ")[0]} on ${h.host} once`;
+  return { id: h.id, kind: h.kind, host: via ? "" : h.host, via, summary, button, dont, line, amount, given: `Go given: Symbiot ${press}, when its agent tries again (within ${GO_FOR / 60000} minutes).` };
+}
+// Where a hold is now: asked (waiting for the user), refused, given and waiting for the retry, lapsed (not
+// used within GO_FOR), or done (used: ok, or what went wrong).
+function holdState(h, now = Date.now()) {
+  if (!h) return "";
+  if (h.no) return "refused";
+  if (!h.go) return "asked";
+  if (h.used) return h.result && h.result !== "ok" ? "failed" : "done";
+  return now - h.go >= GO_FOR ? "lapsed" : "given";
+}
+// The presses the user said Go or Don't to, newest first: what, where, when, which agent, and what came of it.
+// Settings → Your own Chrome and each agent's Workdesk block show them (path: one agent's only).
+function goHistory({ home = homedir(), now = Date.now(), path = "", n = 12 } = {}) {
+  return readJson(HOLDS(home), []).filter((h) => (h.go || h.no) && (!path || h.path === path))
+    .sort((a, b) => (b.used || b.go || b.no) - (a.used || a.go || a.no)).slice(0, n)
+    .map((h) => { const w = goWords(h); return { id: h.id, kind: h.kind, host: w.host, via: w.via, summary: w.summary, button: w.button, agent: h.agent || "", path: h.path || "", state: holdState(h, now), go: h.go || 0, no: h.no || 0, used: h.used || 0, until: h.go ? h.go + GO_FOR : 0, ...(h.result && h.result !== "ok" ? { error: h.result } : {}), ...(h.result === "ok" ? { landed: true } : {}) }; });
+}
+// An answer on a Go card: "go" only for its Go (the option or its button pressed, or a plain yes typed),
+// "no" for a no, and "" for anything else, which is words for its agent and leaves the hold shut. "Not
+// yet", "Please don't send it" and "Wait, change the subject first" all opened the hold before (26 Oct 2026).
+const PLAIN_YES = /^\W*(?:yes|yep|yeah|ok(?:ay)?|sure|go|go ahead|do it|yes,?\s*(?:go|go ahead|do it|please)|(?:send|pay|delete|fill|post) it)\W*$/i;
+const SAYS_NO = /^\W*(?:no|nope|don'?t|do not|skip|stop|cancel|not now)\b/i;
+const optWords = (s) => String(s || "").replace(/^\s*(?:🤖|👤)\s*(?:Agent|You)?\s*:?\s*/u, "").replace(/\s*\(recommended\)\s*$/i, "").replace(/\s+/g, " ").trim().toLowerCase();
+function goAnswer(a, { options = [], button = "" } = {}) {
+  const t = String(a || "").trim(); if (!t) return "";
+  if ((options[0] && optWords(t) === optWords(options[0])) || (button && optWords(t) === optWords(button)) || PLAIN_YES.test(t)) return "go";
+  return SAYS_NO.test(t) ? "no" : "";
 }
 // A question asking the user to sign in to a site (sign in to linkedin.com, sign LinkedIn back in) when signing in isn't
 // what stands in the way there: { host, off: true } when the gate refused acting on it in the last day and it's still
@@ -162,4 +267,4 @@ function setActSite(host, on, { load, save }) {
   cfg.chromeAct = [...list]; save(cfg); return { ok: true, sites: cfg.chromeAct };
 }
 
-export { judgeChrome, seen, openTabs, goAhead, setActSite, setActAll, actSites, hostOf, signInNotNeeded, switchOnAct, actAsk, SETTING, PREFIX, READS, ACTS };
+export { holdOrGo, holdOf, goWords, holdState, goHistory, goAnswer, refuseHold, settleHold, GO_FOR, judgeChrome, judgeConnector, recipients, CONNECTOR_SENDS, seen, openTabs, goAhead, setActSite, setActAll, actSites, hostOf, signInNotNeeded, switchOnAct, actAsk, SETTING, PREFIX, READS, ACTS };

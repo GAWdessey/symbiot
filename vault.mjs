@@ -75,7 +75,7 @@ function store(name, entry) {
   let where = "file";
   KR_CACHE.delete(name);
   if (kr && kr.put(name, raw)) { where = "keyring"; delete idx.blobs[name]; } else idx.blobs[name] = seal(raw);
-  idx.names[name] = { ts: entry.ts, count: entry.values.length, used: entry.values.filter((v) => v.used).length, where };
+  idx.names[name] = { ts: entry.ts, count: entry.values.length, used: entry.values.filter((v) => v.used).length, where, ...(entry.site ? { site: entry.site } : {}) };
   writeIndex(idx);
 }
 
@@ -95,14 +95,49 @@ function toKeyring({ kr = keyring() } = {}) {
   if (!left && existsSync(KEYFILE())) { try { unlinkSync(KEYFILE()); keyGone = true; } catch {} }
   return { moved, left, keyGone };
 }
+// The site a saved sign-in fills on, as a password manager matches one: the site's own domain
+// (accounts.example.co.za and example.co.za are both example.co.za), so a page on any other is
+// never given it. Kept with the entry and beside its name in vault.json (a site isn't a secret).
+const SHORT_SLD = /^(?:co|com|net|org|gov|ac|edu|ltd|plc|nic|web)$/;
+function fillSite(host) {
+  let h = String(host || "").trim().toLowerCase();
+  try { if (/^[a-z][a-z0-9+.-]*:\/\//.test(h)) h = new URL(h).hostname; } catch { return ""; }
+  h = h.replace(/[/:?#].*$/, "").replace(/\.$/, "").replace(/^www\./, "");
+  if (h === "localhost" || /^\d+(?:\.\d+){3}$/.test(h)) return h;
+  if (!/^[a-z0-9-]+(?:\.[a-z0-9-]+)+$/.test(h)) return "";
+  const p = h.split("."), n = p.length >= 3 && p[p.length - 1].length === 2 && SHORT_SLD.test(p[p.length - 2]) ? 3 : 2;
+  return p.slice(-n).join(".");
+}
+const onSite = (site, host) => !!site && fillSite(host) === site;
+// The site one fills on, bound once (saved with it, or the user's Go on its first fill) and never
+// moved after: a run can add to the vault through the app's socket, and moving a password's site
+// would hand it to another site. To move it, the user deletes it and saves it again.
+function bindSite(name, host) {
+  const e = load(name); if (!e) return { error: `No secret called "${name}".` };
+  const site = fillSite(host); if (!site) return { error: "That isn't a site." };
+  if (e.site && e.site !== site) return { error: `"${name}" is saved for ${e.site}.`, site: e.site };
+  if (!e.site) store(name, { ...e, site });
+  return { ok: true, name, site };
+}
+// The user's own change to where one fills (the Vault page, unlocked with their PIN: vaultview.mjs editEntry),
+// the only way a bound site moves or is cleared. Never on the app's socket, so a run can't move one. site "":
+// no site, so its next fill asks the user first and binds the site it's on then.
+function setSite(name, site) {
+  const e = load(name); if (!e) return { error: `No secret called "${name}".` };
+  const to = String(site || "").trim() ? fillSite(site) : ""; if (String(site || "").trim() && !to) return { error: "That isn't a website. Type its address, like example.com." };
+  const { site: _was, ...rest } = e; store(name, to ? { ...rest, site: to } : rest);
+  return { ok: true, name, site: to };
+}
 // Save secret values under a name. A name that exists gets the new values added to it.
-function saveSecret(name, values) {
+// site: the site it fills on (fillSite), when the one saving it knows; one that has a site keeps it (bindSite).
+function saveSecret(name, values, { site = "" } = {}) {
   name = String(name || "").trim().slice(0, 80); if (!name) return { error: "A secret needs a name." };
   const vals = [].concat(values).map((v) => String(v)).filter(Boolean); if (!vals.length) return { error: "Nothing to save." };
   const cur = load(name) || { name, ts: Date.now(), values: [] };
   for (const v of vals) if (!cur.values.some((x) => x.v === v)) cur.values.push({ v, used: false });
+  const s = fillSite(site); if (s && !cur.site) cur.site = s;
   store(name, cur);
-  return { ok: true, name, count: cur.values.length };
+  return { ok: true, name, count: cur.values.length, ...(cur.site ? { site: cur.site } : {}) };
 }
 // Names and counts only, never a value.
 const listSecrets = () => Object.entries(readIndex().names).map(([name, m]) => ({ name, ...m, left: m.count - m.used }));
@@ -113,8 +148,8 @@ const CODE_TTL = 10 * 60000;
 function saveCode(name, code, { ttl = CODE_TTL, now = Date.now() } = {}) {
   name = String(name || "").trim().slice(0, 80); const v = String(code || "").trim();
   if (!name || !v) return { error: "A code needs a name and a value." };
-  if (load(name)) deleteSecret(name);
-  store(name, { name, ts: now, values: [{ v, used: false }], once: true, expires: now + ttl });
+  const was = load(name); if (was) deleteSecret(name);
+  store(name, { name, ts: now, values: [{ v, used: false }], once: true, expires: now + ttl, ...(was && was.site ? { site: was.site } : {}) });
   return { ok: true, name, expires: now + ttl };
 }
 // A value an agent can use: the next unspent one. use: true marks it spent (a one-use recovery code).
@@ -124,7 +159,7 @@ function getSecret(name, { use = false, now = Date.now() } = {}) {
   const next = e.values.find((x) => !x.used); if (!next) return { error: `Every value in "${name}" has been used.` };
   if (use && e.once) deleteSecret(name);
   else if (use) { next.used = true; store(name, e); }
-  return { ok: true, name, value: next.v, left: use && e.once ? 0 : e.values.filter((x) => !x.used).length, spent: use };
+  return { ok: true, name, value: next.v, left: use && e.once ? 0 : e.values.filter((x) => !x.used).length, spent: use, ...(e.once ? { once: true } : {}) };
 }
 // Every value of one, as it is, for the Vault page (vaultview.mjs): nothing is spent or changed.
 function peekSecret(name) {
@@ -219,7 +254,7 @@ function siteOf(sentence) {
   const m = s.match(SITE_WORDS); if (m && !/\u0000/.test(m[1])) return m[1].trim().toLowerCase();
   const d = s.match(/\b((?:[a-z0-9-]+\.)+[a-z]{2,})\b/i); if (d) return d[1].toLowerCase().replace(/^www\./, "");
   const k = s.match(KNOWN_SITE); if (k) return k[1].toLowerCase();
-  const b = s.match(/\b((?:[a-z0-9]+\s+){1,2})(?:password|passwd|pw|login)\b/i);
+  const b = s.replace(/\S*\u0000\S*/g, " ").match(/\b((?:[a-z0-9]+\s+){1,2})(?:password|passwd|pw|login)\b/i); // never the end of an email ("za password")
   const w = b ? b[1].trim().toLowerCase().split(/\s+/).filter((x) => !["my", "the", "is", "and", "a", "your", "with", "new", "its", "it's", "here", "heres"].includes(x)) : [];
   return w.join(" ");
 }
@@ -313,9 +348,20 @@ function heldName(value) {
   for (const name of Object.keys(readIndex().names)) { const e = load(name); if (e && Array.isArray(e.values) && e.values.some((x) => x.v === value)) return name; }
   return "";
 }
+// The words a password's name gives its site and account by ("cloudflare password (sam@acme.co.za)"
+// -> cloudflare, sam, acme; "google-sam-bookly" -> google, sam, bookly): no "password", no ".co.za".
+const NOT_OWNER = new Set(["password", "passwd", "passcode", "pw", "pass", "login", "account", "my", "new", "the", "www", "com", "co", "za", "org", "net", "io", "ai", "dev", "app", "uk", "us"]);
+const ownerWords = (name) => String(name || "").toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 1 && !NOT_OWNER.has(w));
 // Save what was found: under the name it's held by already when every value is, else its own. The name, or "".
+// A password is the user's for one site and account, and people use one on several: one pasted for a site
+// and account the held name doesn't name is a login of its own (26 Oct 2026: a new Cloudflare password,
+// pasted from Cloudflare's page beside sam@acme.co.za, was the same as a Google login's and was
+// filed as "google-sam-bookly").
 function keep(name, values) {
-  const held = values.map(heldName); if (held[0] && held.every((h) => h === held[0])) return held[0];
+  const held = values.map(heldName);
+  const pw = /\bpass(?:word|code)\b/i.test(name), mine = ownerWords(name);
+  const same = (h) => !pw || mine.every((w) => ownerWords(h).includes(w));
+  if (held[0] && held.every((h) => h === held[0]) && same(held[0])) return held[0];
   return saveSecret(name, values).ok ? name : "";
 }
 // A run in Symbiot's sandbox can't read the vault (vault.json is sealed from it): "no secrets
@@ -466,4 +512,4 @@ function heldFor(text) {
   return "";
 }
 
-export { toKeyring, heldFor, heldName, vaultSealed, repairFalseSaves, meetsStep, serviceOf, saveSecret, saveCode, CODE_TTL, listSecrets, getSecret, peekSecret, markUsed, deleteSecret, renameSecret, findSecrets, captureSecrets, scrubStored, SCRUB_V };
+export { fillSite, onSite, bindSite, setSite, toKeyring, heldFor, heldName, vaultSealed, repairFalseSaves, meetsStep, serviceOf, saveSecret, saveCode, CODE_TTL, listSecrets, getSecret, peekSecret, markUsed, deleteSecret, renameSecret, findSecrets, captureSecrets, scrubStored, SCRUB_V };

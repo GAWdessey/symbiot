@@ -15,37 +15,61 @@ function relHtml(rl){return "<div class='qrel"+(rl.waiting?" wait":"")+"'>Needs 
 (rl.waiting==='npm'?" &middot; not published yet, so this can't be done yet":rl.waiting==='install'?" &middot; "+(rl.name==='symbiot'?"update Symbiot first":"install it first"):"")+"</div>";}
 function askHtml(a){var k=a.ask;if(!k)return '';var qs=k.questions||[],ss=k.suggestions||[],aw=k.away||[];if(!qs.length&&!ss.length&&!aw.length)return '';
 var h="<div class='aq' data-id='"+esc(a.id)+"'>";
+// One question: pressing an option is the answer, sent at once, and the agent carries on (as on
+// Home); a radio and then "Send answers & continue" was two steps for a single Go. Several: an
+// option press picks it, and the block's Send answers sends them together, so no run starts on half.
+var one=qs.length===1;
 if(qs.length){h+="<h4><i class=ic-ask></i> "+qs.length+" question"+(qs.length>1?"s":"")+" for you</h4>";
 qs.forEach(function(q,i){var rl=q.release;h+="<div class='q' data-i='"+i+"'>"+(q.task?"<div class='qfor' title='"+escQ(q.task)+"'>for: "+esc(q.task)+"</div>":"")+"<div class='qt'>"+esc(q.shown||q.q)+"</div>"+(q.context?"<div class='qc'>"+codeText(q.context)+"</div>":"")+(rl?relHtml(rl):"");
-(q.options||[]).forEach(function(o,j){var off=rl&&rl.waiting&&DONEOPT.test(o);h+="<label class='opt"+(off?" off":"")+"'><input type='radio' name='q_"+esc(a.id)+"_"+i+"' value='"+j+"'"+(off?" disabled":"")+"><span>"+whoHtml((q.labels&&q.labels[j])||o)+(off?" <i>(once "+esc(rl.name+" "+rl.needs)+" is installed)</i>":"")+"</span></label>";});
-h+="<input class='qother' placeholder='"+((q.options&&q.options.length)?"or answer in your own words":"your answer")+"'></div>";});
-h+="<div class='row'><button class='act qsend' title='save the answers and hand the repo back to your agent'>Send answers &amp; continue</button><button class='ghost qsave' title='save the answers for the next run'>Save only</button></div>";}
+// a Go card (plain.mjs goCard): the hold's own line, where and what will be pressed, and its money, above its two buttons
+if(q.go&&q.go.line){var gi=q.go.line.indexOf(': ');h+="<div class='qgo'>"+(gi>0?"<b>"+esc(q.go.line.slice(0,gi))+"</b>: "+esc(q.go.line.slice(gi+2)):esc(q.go.line))+"</div>"+(q.go.money&&String(q.context||'').indexOf(q.go.money)<0?"<div class='qmoney'>"+esc(q.go.money)+"</div>":"");}
+var os=q.options||[];if(os.length)h+="<div class='qopts' role='group' aria-label='answers to choose from'>"+os.map(function(o,j){var off=rl&&rl.waiting&&DONEOPT.test(o);return "<button type='button' class='qopt "+(one&&!j?"act":"ghost")+"' data-j='"+j+"'"+(off?" disabled":"")+(one?"":" aria-pressed='false'")+">"+whoHtml((q.labels&&q.labels[j])||o)+(off?" <i>(once "+esc(rl.name+" "+rl.needs)+" is installed)</i>":"")+"</button>";}).join('')+"</div>";
+h+="<div class='qown'><input class='qother' aria-label='"+(q.go?"tell the agent something: it won&#39;t count as a Go":os.length?"or answer in your own words":"your answer")+"' placeholder='"+(q.go?"or tell the agent something":os.length?"or answer in your own words":"your answer")+"'>"+(one?"<button type='button' class='ghost qsend' title='saves your answer and hands the work back to its agent'>Send answer</button>":"")+"</div></div>";});
+if(!one)h+="<div class='row'><button class='act qsend' title='save the answers and hand the repo back to your agent'>Send answers &amp; continue</button><button class='ghost qsave' title='save the answers for the next run'>Save only</button></div>";}
 if(ss.length){var shown=IDEASOPEN[a.path]?ss.length:(k.ideasShown||ss.length),nf=ss.filter(function(s){return s.from;}).length;h+="<h4><i class=ic-idea></i> "+(!nf?"Ideas from the agent":nf===ss.length?"Ideas for "+esc(a.name)+" from other agents":"Ideas for "+esc(a.name))+"</h4>";ss.forEach(function(s,i){if(i>=shown)return;h+=ideaHtml(s,i,'');});
 if(ss.length>shown)h+="<div class='row'><button class='ghost qmore' title='the agent ranks its ideas best first: weigh these two before adding more'>"+(ss.length-shown)+" more idea"+(ss.length-shown>1?"s":"")+", ranked lower</button></div>";}
 // ideas it had for another lane are on that lane's card (agents.mjs routeIdeas): here, one line saying where they went
 if(aw.length)h+="<details class='ideasent'><summary title='they show on that project&#39;s card, where + task adds them to its tasks'><i class=ic-idea></i> "+(k.sent||[]).map(function(x){return x.n+" idea"+(x.n>1?"s":"")+" sent to "+esc(x.repo);}).join(", ")+"</summary>"+aw.map(function(s,i){return ideaHtml(s,i,'1');}).join('')+"</details>";
 return h+"</div>";}
+// What came of the presses this agent's user said Go or Don't to (chromegate.mjs goHistory), newest first.
+function goClock(t){try{return new Date(t).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});}catch(e){return '';}}
+var GODONE={send:'Sent',pay:'Paid','delete':'Deleted',fill:'Filled'};
+function goState(g){var where=g.via?'through '+g.via:'in your Chrome';
+if(g.state==='refused')return "<span>You said "+esc(g.button.split(' ')[0]==='Fill'?"Don't fill":"Don't "+g.button.split(' ')[0].toLowerCase())+" at "+goClock(g.no)+": nothing was pressed</span>";
+if(g.state==='lapsed')return "<span class='bad'>Your Go lapsed: it wasn't used within 30 minutes</span>";
+if(g.state==='given')return "<span>Go given at "+goClock(g.go)+": waits for its agent to try again, until "+goClock(g.until)+"</span>";
+if(g.state==='failed')return "<span class='bad'>Didn't go through at "+goClock(g.used)+": "+esc(g.error||'')+"</span>";
+return "<span class='ok'>"+(g.landed?(GODONE[g.kind]||'Done'):'Pressed')+" "+where+" at "+goClock(g.used)+"</span>";}
+// each on two lines: the press and what came of it, then what it was and for which agent (agent:false leaves that out)
+function goesHtml(gs,agent){if(!gs||!gs.length)return '';return "<div class='goes'>"+gs.map(function(g){return "<div class='gor'><div class='goh'><b>"+esc(g.button)+(g.host?' on '+esc(g.host):g.via?' through '+esc(g.via):'')+"</b>"+goState(g)+"</div><div class='gow'>"+esc(g.summary)+(agent!==false&&g.agent?' &middot; for '+esc(g.agent):'')+"</div></div>";}).join('')+"</div>";}
 function ideaHtml(s,i,w){var dw=w?" data-w='1'":"";return "<div class='idea'><span style='flex:1'>"+esc(s.text)+(s.from?" <span class='tag' title='the "+escQ(s.from)+" agent had this idea for this project'>from "+esc(s.from)+"</span>":s.other?" <span class='tag' title='this idea is for another project, so + task adds it to that one'>for "+esc(s.repo)+"</span>":"")+"</span>"+(s.added?"<span class='tag'>in Tasks</span>":"<button class='ghost qidea' data-i='"+i+"'"+dw+" style='padding:3px 9px;font-size:12px'>+ task</button><button class='ghost qskip' data-i='"+i+"'"+dw+" title='turn this idea down: the next one moves up, and the agent is told not to suggest it again' style='padding:3px 9px;font-size:12px'>Skip</button>")+"</div>";}
 function ideaOf(a,btn){return (btn.getAttribute('data-w')?a.ask.away||[]:a.ask.suggestions||[])[+btn.getAttribute('data-i')];}
 var IDEASOPEN={};
 function qKeyOf(qe){var box=qe.closest('.aq');var a=box&&agentById(box.getAttribute('data-id'));var q=a&&a.ask.questions[+qe.getAttribute('data-i')];return q?a.path+'|'+q.q:'';}
 // the typed answer is kept in localStorage too (bdSet, the same key as its blob on Home): a reload or a restart keeps it
 if(document.addEventListener)document.addEventListener('input',function(ev){var t=ev.target;if(!t||!t.classList||!t.classList.contains('qother')||!t.closest)return;var qe=t.closest('.aq .q'),k=qe&&qKeyOf(qe);if(k)bdSet(k,t.value,null,null,'desk');});
-function saveDrafts(el){el.querySelectorAll('.aq .q').forEach(function(qe){var k=qKeyOf(qe);if(!k)return;var pick=qe.querySelector('input[type=radio]:checked'),t=qe.querySelector('.qother').value;QDRAFT[k]={o:pick?pick.value:'',t:t};if(t||bdAll()[k])bdSet(k,t,null,null,'desk');});}
-function restoreDrafts(el){el.querySelectorAll('.aq .q').forEach(function(qe){var k=qKeyOf(qe),d=QDRAFT[k];if(!d&&k){var b=bdAll()[k];if(b&&b.text)d={o:'',t:b.text};}if(!d)return;qe.querySelectorAll('input[type=radio]').forEach(function(r){r.checked=!r.disabled&&r.value===d.o;});qe.querySelector('.qother').value=d.t||'';});}
+function saveDrafts(el){el.querySelectorAll('.aq .q').forEach(function(qe){var k=qKeyOf(qe);if(!k)return;var pick=qe.querySelector('.qopt.on'),t=qe.querySelector('.qother').value;QDRAFT[k]={o:pick?pick.getAttribute('data-j'):'',t:t};if(t||bdAll()[k])bdSet(k,t,null,null,'desk');});}
+function restoreDrafts(el){el.querySelectorAll('.aq .q').forEach(function(qe){var k=qKeyOf(qe),d=QDRAFT[k];if(!d&&k){var b=bdAll()[k];if(b&&b.text)d={o:'',t:b.text};}if(!d)return;qe.querySelectorAll('.qopt[aria-pressed]').forEach(function(b){pickOpt(b,!b.disabled&&b.getAttribute('data-j')===d.o);});qe.querySelector('.qother').value=d.t||'';});}
 function collectAnswers(box,a){var out=[];box.querySelectorAll('.q').forEach(function(qe){var q=a.ask.questions[+qe.getAttribute('data-i')];if(!q)return;
-var other=(qe.querySelector('.qother').value||'').trim();var pick=qe.querySelector('input[type=radio]:checked');var ans=other||(pick?q.options[+pick.value]:'');if(ans)out.push({q:q.q,a:ans});});return out;}
+var other=(qe.querySelector('.qother').value||'').trim();var pick=qe.querySelector('.qopt.on');var ans=other||(pick?q.options[+pick.getAttribute('data-j')]:'');if(ans)out.push({q:q.q,a:ans});});return out;}
+// a picked option fills as the block's main button does (act); the rest stay outlined
+function pickOpt(b,on){b.classList.toggle('on',on);if(!b.hasAttribute('aria-pressed'))return;b.setAttribute('aria-pressed',on?'true':'false');b.classList.toggle('act',on);b.classList.toggle('ghost',!on);}
 function wireAsks(el){el.querySelectorAll('.aq').forEach(function(box){var a=agentById(box.getAttribute('data-id'));if(!a||!a.ask)return;
-function send(rerun){var msg=document.getElementById(box.closest('#panel-asks')?'asksmsg':'agentsmsg');var ans=collectAnswers(box,a);
+function send(rerun,given){var msg=document.getElementById(box.closest('#panel-asks')?'asksmsg':'agentsmsg');var ans=given||collectAnswers(box,a);
 if(!ans.length){msg.innerHTML="<div class='note err'>Pick an option or type an answer first.</div>";return;}
 box.querySelectorAll('button').forEach(function(b){b.disabled=true;});
 api('/api/agents/answer',{path:a.path,answers:ans,rerun:rerun}).then(function(r){
-if(!r||r.error){box.querySelectorAll('button').forEach(function(b){b.disabled=false;});msg.innerHTML="<div class='note err'>"+esc((r&&r.error)||'failed')+"</div>";return;}
+if(!r||r.error){box.querySelectorAll('button').forEach(function(b){b.disabled=false;});if(given)box.querySelectorAll('.qopt.on').forEach(function(b){pickOpt(b,false);});msg.innerHTML="<div class='note err'>"+esc((r&&r.error)||'failed')+"</div>";return;}
 ans.forEach(function(x){var k=a.path+'|'+x.q;delete QDRAFT[k];bdSet(k,'');}); // sent: its drafts go
 if(r.talk){box.querySelectorAll('button').forEach(function(b){b.disabled=false;});box.querySelectorAll('input.qother').forEach(function(i){i.value='';});msg.innerHTML="<div class='lqblob'>"+blobTalk(r.talk,a.name)+"</div><div class='muted'>The question stays open: answer it when you're ready.</div>";return;}
 msg.innerHTML="<div class='note ok'>&#10003; Saved "+r.saved+" answer"+(r.saved>1?"s":"")+" for <b>"+esc(a.name)+"</b> in .symbiot/ANSWERS.md"+(r.rerun?" &middot; your agent is picking them up now.":".")+(r.yours&&r.yours.length?"<div class='err'><i class=ic-person></i> Still yours to do: "+esc(r.yours.join(' '))+"</div>":"")+(r.note?"<div class='muted'>"+esc(r.note)+"</div>":"")+"</div>";loadAgents();if(current==='asks')loadAsks();});}
 var s1=box.querySelector('.qsend'),s2=box.querySelector('.qsave');
 if(s1)s1.addEventListener('click',function(){send(true);});if(s2)s2.addEventListener('click',function(){send(false);});
+box.querySelectorAll('.qopt').forEach(function(btn){btn.addEventListener('click',function(){var qe=btn.closest('.q'),q=a.ask.questions[+qe.getAttribute('data-i')];if(!q)return;
+if(!btn.hasAttribute('aria-pressed')){pickOpt(btn,true);send(true,[{q:q.q,a:q.options[+btn.getAttribute('data-j')]}]);return;}
+var on=!btn.classList.contains('on');qe.querySelectorAll('.qopt').forEach(function(b){pickOpt(b,on&&b===btn);});});});
+// Enter in a typed answer sends it, as the button beside it does
+box.querySelectorAll('.qown .qother').forEach(function(inp){inp.addEventListener('keydown',function(ev){if(ev.key==='Enter'&&!ev.isComposing&&s1&&a.ask.questions.length===1&&inp.value.trim()){ev.preventDefault();send(true);}});});
 var more=box.querySelector('.qmore');if(more)more.addEventListener('click',function(){IDEASOPEN[a.path]=true;loadAgents();});
 box.querySelectorAll('.qidea').forEach(function(btn){btn.addEventListener('click',function(){var s=ideaOf(a,btn);if(!s)return;btn.disabled=true;
 var sk=btn.parentNode.querySelector('.qskip');if(sk)sk.remove();
@@ -85,14 +109,16 @@ function handHtml(a){var hs=a.handing;if(!hs||!hs.length)return '';
 return "<div class='aq hand'><h4>Handed over</h4>"+hs.map(function(x){var pg=handProg(x);return "<div class='qc'><b>"+esc(x.lane)+"</b>: "+esc(x.text)+"<br><span"+(x.gone?" class='muted'":" style='color:var(--amber)'")+">"+esc(x.why)+"</span>"+(pg?"<br><span class='muted'>"+esc(pg)+"</span>":"")+"</div>";}).join('')+"</div>";}
 function answering(){var f=document.activeElement;return !!(f&&f.closest&&f.closest('.aq'));}
 // Handovers (lanes.mjs): what one lane's agent handed to another, and where it stands.
-var LANEWORD={started:'working on it',held:'queued: that lane is busy',blocked:"didn't start",done:'done, reported back',error:"couldn't hand over"};
+var STAGEWORD={running:'working on it',asks:'its agent asked you something first',ended:'its run ended',queued:'waiting for its agent to start'};
+var LANEWORD={started:'working on it',held:'queued: that lane is busy',blocked:"didn't start",done:'done, reported back',stopped:'stopped before it finished',error:"couldn't hand over"};
 function loadLanes(){api('/api/lanes').then(function(d){var el=document.getElementById('laneslist');if(!el||!d)return;var hs=d.handoffs||[];
 var row=function(h){
 var back=h.result||h.error||(h.note?"It didn't start: "+h.note:''),more=(h.full?"<div>"+esc(h.full)+"</div>":"")+(back?"<div class='tres'>"+esc(back)+"</div>":"");
-return "<div class='task'><span class='t'><b>"+esc(h.from)+"</b> &rarr; <b>"+esc(h.to)+"</b>: "+esc(String(h.text||'').split('**').join(''))+(h.n>1?" <span class='muted'>&times;"+h.n+"</span>":"")+(more?"<details class='tfull'><summary>"+(h.full?"in full":"what came back")+"</summary>"+more+"</details>":"")+"</span><span class='rp'"+(h.status==='error'||h.status==='blocked'?" style='color:var(--amber)'":"")+">"+esc(LANEWORD[h.status]||h.status)+"</span></div>";};
+return "<div class='task'><span class='t'><b>"+esc(h.from)+"</b> &rarr; <b>"+esc(h.to)+"</b>: "+esc(String(h.text||'').split('**').join(''))+(h.n>1?" <span class='muted'>&times;"+h.n+"</span>":"")+(more?"<details class='tfull'><summary>"+(h.full?"in full":"what came back")+"</summary>"+more+"</details>":"")+"</span><span class='rp'"+(h.status==='error'||h.status==='blocked'?" style='color:var(--amber)'":"")+">"+esc(h.skipped?'skipped by you':(h.status==='started'&&STAGEWORD[h.stage])||LANEWORD[h.status]||h.status)+"</span></div>";};
 var seen={},uniq=[];hs.forEach(function(h){var k=h.from+'|'+h.to+'|'+h.status+'|'+h.text;if(seen[k]){seen[k].n++;return;}var c={};for(var x in h)c[x]=h[x];c.n=1;seen[k]=c;uniq.push(c);});
-var live=uniq.filter(function(h){return h.status!=='done';}),fin=uniq.filter(function(h){return h.status==='done';});
-whenFree(el,'lanes',function(){sameHtml(el,(live.length?"<div class='tgroup agg'>Handovers under way <span class='tcount'>"+live.length+"</span></div>"+live.slice(0,12).map(row).join(''):'')+(fin.length?"<details class='agdone'><summary class='tgroup agg'>Finished handovers <span class='tcount'>"+fin.length+"</span></summary>"+fin.slice(0,20).map(row).join('')+"</details>":''));});});}
+// under way only while it is (lanes.mjs live); the counts are the rows shown
+var live=uniq.filter(function(h){return h.live;}),fin=uniq.filter(function(h){return !h.live;}).slice(0,20);
+whenFree(el,'lanes',function(){sameHtml(el,(live.length?"<div class='tgroup agg'>Handovers under way <span class='tcount'>"+live.length+"</span></div>"+live.map(row).join(''):'')+(fin.length?"<details class='agdone'><summary class='tgroup agg'>Finished or stopped handovers <span class='tcount'>"+fin.length+"</span></summary>"+fin.map(row).join('')+"</details>":''));});});}
 
 // ---- an agent's work, live (work.mjs parses its stream) ------------------------------
 var WKICON={read:"<path d='M2 4h5l1 1h6v8H2z'/>",edit:"<path d='M3 13l1-3 7-7 2 2-7 7z'/>",run:"<path d='M3 5l3 3-3 3M8 12h5'/>",search:"<circle cx='7' cy='7' r='4'/><path d='M10 10l3 3'/>",web:"<circle cx='8' cy='8' r='5.5'/><path d='M2.5 8h11M8 2.5c2 2 2 9 0 11M8 2.5c-2 2-2 9 0 11'/>",agent:"<path d='M8 2l1.5 4.5L14 8l-4.5 1.5L8 14l-1.5-4.5L2 8l4.5-1.5z'/>",connector:"<path d='M6 2v4M10 2v4M4 6h8v2a4 4 0 0 1-8 0zM8 12v2'/>",tool:"<circle cx='8' cy='8' r='2.5'/>"};
@@ -179,10 +205,10 @@ if(ch&&(ch.dirty||ch.stat||(ch.commits&&ch.commits.length))){
   if(ch.stat)parts.push(esc(ch.stat));
   if(parts.length)b+="<div class='changed'>What it did &middot; "+parts.join(' &middot; ')+"</div>";
   if(ch.commits&&ch.commits.length)b+="<div class='commits'>"+ch.commits.map(function(c){return "<div><code>"+esc(c.hash)+"</code> "+esc(c.msg)+"</div>";}).join("")+"</div>";
-}else if(a.status==='done'){
+}else if(a.status==='done'&&pk){ // an ops run's folder isn't a repo: no files to change, so nothing to say
   b+="<div class='changed muted'>No files changed.</div>";
 }
-b+=waitHtml(a)+needsHtml(a)+askHtml(a)+handHtml(a)+factsHtml(a);
+b+=waitHtml(a)+needsHtml(a)+askHtml(a)+(a.goes&&a.goes.length?"<div class='aq'><h4><i class=ic-person></i> After your Go</h4>"+goesHtml(a.goes,false)+"</div>":"")+handHtml(a)+factsHtml(a);
 b+=a.work?("<details class='wkraw'><summary>what it said, in full</summary><pre class='alogout'>"+esc((a.tail&&a.tail.trim())||'(nothing yet)')+"</pre></details>"):("<pre class='alogout'>"+esc((a.tail&&a.tail.trim())||'(waiting for output…)')+"</pre>");
 return "<div class='agent' data-i='"+list.indexOf(a)+"'>"+b+"</div>";};
 el.innerHTML=agentGroups(list,agentBlock);var dn=el.querySelector('.agdone');if(dn)dn.addEventListener('toggle',function(){AGDONEOPEN=dn.open;});

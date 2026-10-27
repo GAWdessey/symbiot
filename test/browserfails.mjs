@@ -1,6 +1,7 @@
 // Browser sign-ins that don't hold (browserfails.mjs): a sign-in ask for a site the Symbiot
 // Browser can't hold (Twilio, Cloudflare, Google) never reaches the user, and one the user
-// answered "done" to whose run still asks again is learned as one of them.
+// answered "done" to whose run still asks again is learned as one of them. Any other step
+// the user takes on a site is theirs in their own Chrome, never the Symbiot Browser.
 //
 //   node test/browserfails.mjs
 //
@@ -52,6 +53,27 @@ try {
   ok("…asked again after it: the browser can't hold this sign-in, so it isn't the user's again", again && again.kind === "approve" && again.api === "app.example-sms.co.za" && /can't hold this sign-in/.test(again.what), again);
   ok("…and the site is learned: every brief lists it, and no ask for it reaches the user from now on", B.failingSites().some((e) => e.host === "app.example-sms.co.za") && /app\.example-sms\.co\.za/.test(standingBrief().join("\n")) && !!B.blockedSignIn("log in to app.example-sms.co.za"));
   ok("…a skip isn't a done (it may come back)", recordDone("Sign in to www.domains.co.za", "skip") === false && B.blockedSignIn("Sign in to www.domains.co.za", Date.now() + 1000) === null);
+
+  console.log("THE USER'S OWN STEPS — in their own Chrome, never the Symbiot Browser (26 Oct 2026)");
+  const reg = "👤 You (only you: your registrar sign-in): sign in at clientzone.example-registrar.co.za in the Symbiot Browser (Settings → Connections → Add a site), then I switch the nameservers and check the site and mail (recommended: everything's ready)";
+  const ao = B.apiOptions([reg, "🤖 Agent: wait, leave the new route ready and switch later", "Skip this part: leave it as it is"]);
+  ok("the 26 Oct card's sign-in option is theirs in their own Chrome, recommended still; the others stay", /^👤 You \(only you: your registrar sign-in\): sign in at clientzone\.example-registrar\.co\.za in your own Chrome, then I switch/.test(ao[0]) && !/Symbiot Browser/.test(ao[0]) && /\(recommended/.test(ao[0]) && ao[1] === "🤖 Agent: wait, leave the new route ready and switch later" && ao[2] === "Skip this part: leave it as it is", ao);
+  ok("…its card has no Sign in button that opens the Symbiot Browser", !!signInAsked(reg) && signInAsked(ao[0]) === null, ao[0]);
+  ok("…\"then click Done in the Symbiot Browser\" goes with it", B.ownChromeStep("Sign in to www.reddit.com in the Symbiot Browser, then click Done in the Symbiot Browser") === "Sign in to www.reddit.com in your own Chrome");
+  ok("…a mention of the Symbiot Browser that isn't an ask stays as it was", B.ownChromeStep("I read it in the Symbiot Browser: 3 new messages") === "I read it in the Symbiot Browser: 3 new messages");
+  const pq2 = parseQuestions("## Questions\n### Switch the domain's nameservers now?\nAll ready.\n- " + reg + "\n- Skip this part\n", { linked: [] });
+  ok("…on the Workdesk and Home too", /in your own Chrome/.test(pq2.questions[0].options[0]) && !/Symbiot Browser/.test(pq2.questions[0].options[0]), pq2.questions[0].options);
+  const step = needsOf(join(HOME, "projects", "sms"), { final: "One thing only you can do: sign in to www.domains.co.za/client/dashboard in the Symbiot Browser (Settings → Connections → Add a site), then I change the nameservers.", end: Date.now() });
+  ok("a run's last words asking for one: the step card says their own Chrome", step && step.kind === "step" && /in your own Chrome/.test(step.what) && !/Symbiot Browser/.test(step.what), step);
+  const chromeDir = join(HOME, ".config/google-chrome"); mkdirSync(join(chromeDir, "Default"), { recursive: true });
+  ok("their own Chrome, with no profile to read, is just that", B.ownChrome({ home: HOME, platform: "linux" }) === "your own Chrome");
+  writeFileSync(join(chromeDir, "Local State"), JSON.stringify({ profile: { info_cache: { Default: { name: "Work", user_name: "pat@example.com" } } } }));
+  ok("…named by its profile and account when they can be read", B.ownChrome({ home: HOME, platform: "linux" }) === 'your own Chrome (its "Work" profile, pat@example.com)', B.ownChrome({ home: HOME, platform: "linux" }));
+  const own = B.ownStepLine('your own Chrome (its "Work" profile, pat@example.com)');
+  ok("every brief: a registrar or provider step is theirs in their own Chrome, with the address and the values, never the Symbiot Browser", standingBrief().join("\n").includes(B.ownStepLine()) && /its "Work" profile, pat@example\.com\), never in the Symbiot Browser/.test(own) && /exact address, where on the page, and the exact values/.test(own), own);
+  ok("…and a site that refuses this computer's own address (a 403 that calls it a proxy) is their phone on mobile data", /403 that names this computer's IP address, or calls it a proxy/.test(own) && /phone on mobile data/.test(own));
+  const { ONLY_YOU } = await import("../handover.mjs");
+  ok("the brief's own example no longer sends them to the Symbiot Browser to sign in", !/in the Symbiot Browser \(Settings → Connections → Add a site\)/.test(ONLY_YOU) && /sign in to <site, e\.g\. www\.domains\.co\.za\/client\/dashboard> in your own Chrome/.test(ONLY_YOU) && /the window it opens is never the user's step/.test(ONLY_YOU));
 
   console.log("THE USER'S OWN CHROME — to read, never to click (2026-10-20)");
   ok("no Claude in Chrome on this computer: not offered", B.realChrome({ cfg: {}, platform: "linux" }) === false && !B.browserBrief(false).includes(B.CHROME_BRIEF));

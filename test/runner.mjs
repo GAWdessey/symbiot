@@ -37,6 +37,16 @@ try {
   const n = spawnSync(process.execPath, [RUN, "f-flaky"], { encoding: "utf8", env: { ...process.env, SYMBIOT_TEST_DIR: DIR, SYMBIOT_TEST_JOBS: "", SYMBIOT_TEST_RETRY: "0" }, timeout: 60000 });
   ok("SYMBIOT_TEST_RETRY=0 gives no second try", n.status === 1, n.stdout);
   rmSync(join(DIR, "f-flaky.mjs"), { force: true });
+  console.log("RUNNER — --known: files known to fail here don't fail the run, a new one does");
+  put("known.txt", "# known on this platform\nb-fail.mjs\nc-crash.mjs  # loads nothing yet\nd-hang.mjs\na-pass.mjs\n");
+  const k = run("--timeout", "3", "-j", "3", "--known", join(DIR, "known.txt"));
+  ok("all the failures on the list: the run passes", k.code === 0 && /✓ No new failures/.test(k.out), k.out);
+  ok("…the table still names them", /Failed: b-fail\.mjs, c-crash\.mjs, d-hang\.mjs/.test(k.out) && /3 of them are on .*known\.txt, known to fail here/.test(k.out), k.out);
+  ok("…and one on the list that passes now is named, to take off", /take it off the list: a-pass\.mjs/.test(k.out), k.out);
+  put("known.txt", "b-fail.mjs\n");
+  const k2 = run("--timeout", "3", "-j", "3", "--known", join(DIR, "known.txt"));
+  ok("a failure off the list fails the run, and is named", k2.code === 1 && /✗ New failures, not on the list: c-crash\.mjs, d-hang\.mjs/.test(k2.out), k2.out);
+  ok("a list that isn't there fails the run, saying so", run("a-pass", "--known", join(DIR, "no-such.txt")).code === 1, "");
   console.log("RUNNER — only the files named");
   const o = run("a-pass", "e-pass");
   ok("a name or part of one picks them, and all passing passes", o.code === 0 && /2 test files/.test(o.out) && /✓ 2 of 2 test files pass/.test(o.out) && !/b-fail/.test(o.out), o.out);

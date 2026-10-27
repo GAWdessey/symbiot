@@ -129,8 +129,8 @@ body.lq-liquid.lq-pooled main{display:block;position:fixed;top:64px;left:max(12p
 body.lq-liquid.lq-pooled #lqwhy.on{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:0 0 12px;color:#8A919B;font-size:13px;line-height:1.5}
 #lqwhy .lqmb{min-height:34px;padding:5px 13px;font-size:13px}
 body.lq-light #lqwhy{color:#5A6470}
-body.lq-liquid.lq-pooled #lqsinkrow{display:flex;justify-content:space-between;align-items:center;gap:12px;position:sticky;top:0;z-index:2;margin:-8px -6px 10px;padding:6px 6px 10px;border-bottom:1px solid rgba(220,228,240,.12);background:rgba(6,8,11,.9);backdrop-filter:blur(14px)}
-body.lq-liquid.lq-light.lq-pooled #lqsinkrow{background:rgba(246,248,251,.94);border-bottom-color:rgba(20,30,45,.1)}
+body.lq-liquid.lq-pooled #lqsinkrow{display:flex;justify-content:space-between;align-items:center;gap:12px;position:sticky;top:0;z-index:2;margin:-8px -6px 10px;padding:6px 6px 10px;border-bottom:1px solid rgba(220,228,240,.12);background:#06080B}
+body.lq-liquid.lq-light.lq-pooled #lqsinkrow{background:#F6F8FB;border-bottom-color:rgba(20,30,45,.1)}
 /* where you are: the section (or the project) you opened, named large at the top of its panel */
 .lqwhere{display:flex;align-items:baseline;flex-wrap:wrap;gap:4px 12px;min-width:0}
 .lqcrumb{font:500 12.5px var(--sans);color:var(--faint);letter-spacing:.02em}
@@ -284,6 +284,12 @@ body.lq-light .lqblob .bdoing{color:#5A6470}body.lq-contrast .lqblob .bdoing{col
 .lqblob .bwhy{font-size:11.5px;line-height:1.3;color:#8A919B;margin-top:3px;overflow:hidden;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2}
 .lqblob .nopt .brec{display:block;font-style:normal;font-size:10.5px;opacity:.7;margin-top:1px}
 body.lq-light .lqblob .bwhy{color:#5A6470}
+.lqblob .bgo{font-size:12px;line-height:1.35;color:#C9CDD3;margin-top:6px;overflow:hidden;overflow-wrap:anywhere;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2}
+.lqblob .bgo b{font-weight:600;color:#F3F0EA}
+.lqblob .bmoney{font-size:12px;line-height:1.35;color:#E8C27A;margin-top:3px;font-weight:600;overflow:hidden;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2}
+body.lq-light .lqblob .bgo{color:#2B3644}body.lq-light .lqblob .bgo b{color:#151A21}body.lq-light .lqblob .bmoney{color:#7A4F00}
+body.lq-contrast .lqblob .bgo,body.lq-contrast .lqblob .bgo b,body.lq-contrast .lqblob .bmoney{color:inherit}
+body.lq-look-pearl .lqblob .nopt.rec.bgoyes,body.lq-look-pearl .aq .qgo~.qopts .qopt.act,body.lq-look-pearl .aq .qmoney~.qopts .qopt.act{background:linear-gradient(180deg,#4A505A 0%,#2A2E35 55%,#1B1E23 100%);color:#FFFFFF;border-color:#1B1E23}
 #lqupd{position:relative;margin-left:10px}
 #lqupd .lqupb{border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.06);color:#ECE9E4;border-radius:999px;padding:5px 12px;font:500 12.5px var(--sans);cursor:pointer;min-height:30px}
 #lqupd .lqupl{display:none;position:absolute;left:0;top:calc(100% + 6px);z-index:60;width:min(460px,calc(100vw - 32px));max-height:60vh;overflow-y:auto;background:#15191F;border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:6px;box-shadow:0 12px 40px rgba(0,0,0,.45)}
@@ -684,7 +690,6 @@ body.lq-solid .mkbig,body.lq-solid .mkbigin{backdrop-filter:none}
 .rbackbar button{flex:none}.rbackbar .rbpath{flex:1;min-width:0;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;direction:rtl;text-align:left}
 body.lq-light .rbackbar{background:rgba(246,248,251,.95);box-shadow:0 1px 0 rgba(20,30,45,.1)}body.lq-solid .rbackbar{backdrop-filter:none;background:var(--ink)}
 @media(max-width:520px){.rbackbar .rbpath{display:none}}
-body.lq-liquid.lq-pooled:has(#panel-reports:not(.hidden) #rbackbar) #lqsinkrow{background:rgba(6,8,11,.97)}body.lq-liquid.lq-light.lq-pooled:has(#panel-reports:not(.hidden) #rbackbar) #lqsinkrow{background:rgba(246,248,251,.98)}
 .rzoom{position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,.82);display:flex;align-items:center;justify-content:center;cursor:zoom-out;padding:24px}.rzoom img{max-width:100%;max-height:100%;border-radius:8px}
 .rdoc blockquote{margin:8px 0;padding:2px 12px;border-left:3px solid var(--line);color:var(--faint)}.rdoc a{color:var(--green)}
 .rdoc .rtable{overflow-x:auto;margin:10px 0}.rdoc table{border-collapse:collapse;font-size:13px;min-width:100%}.rdoc th,.rdoc td{border:1px solid var(--line);padding:6px 8px;text-align:left;vertical-align:top}.rdoc th{background:var(--ink3);color:var(--bone);font-weight:600}
@@ -727,7 +732,20 @@ body.lq-liquid.lq-pooled:has(#panel-reports:not(.hidden) #rbackbar) #lqsinkrow{b
 .aq .qrel{font-size:12px;margin-top:4px;color:var(--green)}.aq .qrel.wait{color:var(--amber)}
 .aq label.opt.off{color:var(--faint);cursor:default}.aq .opt.off i{font-size:12px}
 .aq .qother{margin-top:7px;padding:7px 10px;font-size:13px}
+.aq .qopts{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.aq .qopt{min-height:36px;padding:7px 16px;max-width:100%;text-align:left;white-space:normal;line-height:1.35;font-size:13px}
+.aq .qopt i{font-size:12px;opacity:.8}
+.aq .qopt:focus-visible,.aq .qsend:focus-visible{outline:2px solid currentColor;outline-offset:2px}
+.aq .qown{display:flex;gap:8px;align-items:center;margin-top:8px}
+.aq .qown .qother{flex:1;min-width:0;margin-top:0}
+.aq .qown .qsend{flex:none;padding:7px 14px;font-size:13px}
+body.lq-touch .aq .qopt,body.lq-touch .aq .qown .qsend,body.lq-touch .aq .qown .qother{min-height:44px}
+@media (max-width:520px){.aq .qopts{flex-direction:column}.aq .qopt{width:100%}.aq .qown{flex-wrap:wrap}.aq .qown .qother{flex:1 1 100%}.aq .qopt,.aq .qown .qsend,.aq .qown .qother{min-height:44px}}
 .aq .row{margin:10px 0 2px}
+.aq .qgo{font-size:13px;line-height:1.45;color:var(--text);margin-top:6px}.aq .qgo b{font-weight:600}
+.aq .qmoney{font-size:13px;margin-top:4px;color:var(--amber);font-weight:600}
+.goes{margin-top:8px;font-size:12.5px;color:var(--faint);line-height:1.5}.goes .gor{padding:5px 0}.goes .goh{display:flex;flex-wrap:wrap;column-gap:10px;align-items:baseline}.goes b{color:var(--text);font-weight:600}.goes .gow{overflow-wrap:anywhere}
+.goes .ok{color:var(--green)}.goes .bad{color:var(--amber)}
 label.check{display:flex;gap:8px;align-items:center;font-size:13px;color:var(--text);margin:6px 0}
 label.check input{width:auto}
 .alogout{white-space:pre-wrap;background:var(--ink);border:1px solid var(--line);border-radius:8px;padding:10px;margin-top:10px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;line-height:1.5;color:var(--text);max-height:260px;overflow:auto}
@@ -940,11 +958,12 @@ body.lq-liquid #panel-tasks > .note,body.lq-liquid #panel-tasks .tnote{font-size
 body.lq-liquid .aq{border:1px solid rgba(255,255,255,.08);border-left:2px solid var(--amber);border-radius:14px;background:rgba(255,255,255,.03);padding:12px 16px}
 body.lq-liquid.lq-light .aq{border-color:rgba(21,26,33,.08);border-left-color:var(--amber);background:rgba(255,255,255,.55)}
 body.lq-liquid .aq h4{font:600 11px var(--sans);letter-spacing:.1em;display:flex;align-items:center;gap:6px}
-body.lq-liquid .aq .q{border-bottom-color:var(--line)}
+body.lq-liquid .aq .q{padding:12px 16px;margin:8px 0 0}
 body.lq-liquid .aq label.opt{gap:10px;padding:4px 0}
 body.lq-liquid .aq .opt input{margin-top:1px}
 body.lq-liquid .who{display:inline-flex;align-items:center;gap:4px;padding:1px 8px;border-radius:999px;background:rgba(255,255,255,.07);font-size:12px;font-weight:600;color:var(--bone);white-space:nowrap}
 body.lq-liquid.lq-light .who{background:rgba(21,26,33,.06)}
+body.lq-liquid .aq .qopt .who,body.lq-liquid.lq-light .aq .qopt .who{font-size:11px;padding:0 6px;margin-right:4px;background:transparent;color:inherit;border:1px solid currentColor;opacity:.8}
 /* drift */
 body.lq-liquid .drift{border:1px solid rgba(255,255,255,.07);background:rgba(255,255,255,.03);border-radius:14px;padding:14px 16px}
 body.lq-liquid.lq-light .drift{border-color:rgba(21,26,33,.07);background:rgba(255,255,255,.55)}
@@ -988,7 +1007,7 @@ body.lq-light #quota .qpill,body.lq-light #quota .qpop{background:rgba(255,255,2
 .ssh .muted{font-weight:400;font-size:12.5px}
 /* the Vault page (vaultview.mjs): grouped by service, one picked in a detail pane, what needs a look; no value until it's unlocked */
 #panel-vault,#vaultmsg{--vred:#F07B7F;--vdig:#8CC2FF;--vsym:#F2B766}#panel-vault{max-width:1080px;margin:0 auto;--vred:#F07B7F;--vdig:#8CC2FF;--vsym:#F2B766;--vsoft:rgba(255,255,255,.045);--vsel:rgba(255,255,255,.085)}
-body.lq-light #vaultmsg{--vred:#B42318}body.lq-light #panel-vault{--vred:#B42318;--vdig:#1D5FC4;--vsym:#9A5200;--vsoft:rgba(21,26,33,.045);--vsel:rgba(21,26,33,.075)}
+body.lq-light #vaultmsg{--vred:#B42318}body.lq-light #panel-vault button.vdanger{color:#fff}body.lq-light #panel-vault{--vred:#B42318;--vdig:#1D5FC4;--vsym:#9A5200;--vsoft:rgba(21,26,33,.045);--vsel:rgba(21,26,33,.075)}
 .vsl{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
 .vbar{display:flex;align-items:center;gap:10px;margin:2px 0 12px}
 .vsearch{position:relative;flex:1;min-width:0}
@@ -1011,6 +1030,7 @@ body.lq-light #vaultmsg{--vred:#B42318}body.lq-light #panel-vault{--vred:#B42318
 .vdot{width:8px;height:8px;border-radius:50%;background:var(--amber);flex:none}
 .vsplit{display:grid;grid-template-columns:minmax(260px,340px) minmax(0,1fr);gap:18px;align-items:start}
 .vlist{min-width:0}
+#panel-vault.vsolo .vsplit{grid-template-columns:minmax(0,1fr)}#panel-vault.vsolo .vlist{display:none}#panel-vault.vsolo .vdetail{position:static;width:100%;max-width:640px;margin:0 auto}
 .vgh{display:flex;align-items:center;gap:8px;padding:14px 10px 4px;font:600 12.5px var(--sans);color:var(--faint)}.vgh:first-child{padding-top:2px}
 .vgh i{font-style:normal;font-weight:400}
 #panel-vault .vrow{display:flex;align-items:center;gap:11px;width:100%;min-height:54px;padding:8px 10px;margin:1px 0;border-radius:11px;border:0;background:transparent;text-align:left;color:inherit;cursor:pointer;font:inherit}
@@ -1032,7 +1052,7 @@ body.lq-light .vmono{color:hsl(var(--h) 55% 28%);background:hsl(var(--h) 60% 90%
 #panel-vault .vdact button,#panel-vault .vbtn{min-height:38px;padding:0 13px;font-size:13.5px}
 #panel-vault button.vdel{background:transparent;border:1px solid var(--line);color:var(--vred)}
 #panel-vault button.vdel:hover{border-color:var(--vred)}
-#panel-vault button.vdanger{background:var(--vred);color:#fff;border:0;border-radius:10px;font:inherit;font-weight:600;cursor:pointer}
+#panel-vault button.vdanger{background:var(--vred);color:#1B0B0C;border:0;border-radius:10px;font:inherit;font-weight:600;cursor:pointer}
 .vissue{display:flex;gap:10px 14px;align-items:center;flex-wrap:wrap;margin:18px 0 0;padding:12px 14px;border-radius:12px;border:1px solid color-mix(in srgb,var(--amber) 40%,transparent);background:color-mix(in srgb,var(--amber) 9%,transparent);font-size:13.5px;line-height:1.45;color:var(--text)}
 .vissue p{flex:1 1 240px;margin:0;display:flex;gap:9px;align-items:baseline}.vissue p .vdot{position:relative;top:-1px}
 .vissue .vib{display:flex;gap:6px}
@@ -1042,21 +1062,24 @@ body.lq-light .vmono{color:hsl(var(--h) 55% 28%);background:hsl(var(--h) 60% 90%
 .vval code{flex:1;min-width:0;font:500 15.5px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--bone);overflow-wrap:anywhere;user-select:all}
 .vval code.vhid{letter-spacing:.16em;color:var(--faint);user-select:none;white-space:nowrap;overflow:hidden}
 .vval code .vd{color:var(--vdig)}.vval code .vs{color:var(--vsym)}
-#panel-vault .vval button,#panel-vault .vcode button{min-height:38px;min-width:70px;padding:0 12px;font-size:13.5px;display:flex;align-items:center;justify-content:center;gap:6px}
+#panel-vault .vval button,#panel-vault .vcode button{min-height:38px;min-width:70px;padding:0 12px;font:600 13.5px var(--sans);display:flex;align-items:center;justify-content:center;gap:6px}
 .vval button svg,.vcode button svg{width:15px;height:15px}
-.vcodes{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:6px;padding:6px 10px 10px}
+#panel-vault .vval button[data-va='copy'],#panel-vault .vcode button{min-width:124px;padding:0 10px}
+.vcodes{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,300px),1fr));gap:6px;padding:6px 10px 10px}
 .vcode{display:flex;align-items:center;gap:6px;padding:4px 4px 4px 10px;border-radius:9px;background:var(--ink);font:500 14px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--bone);min-height:46px}
 .vcode span{flex:1;min-width:0;overflow-wrap:anywhere}
 .vcode.used span{text-decoration:line-through;color:var(--faint)}.vcode.used em{font:400 12.5px var(--sans);color:var(--faint);padding-right:8px}
 .vok{min-height:20px;padding:0 14px 10px;font-size:12.5px;color:var(--green)}
-.vok:empty{display:none}
+.vok:empty{display:none}.vok.vbad{color:var(--vred)}
+.vbadn{display:block;margin-top:4px;font-size:12.5px;color:var(--vred)}
 .vmeta{margin:20px 0 0;display:grid;grid-template-columns:max-content minmax(0,1fr);gap:9px 18px;font-size:13.5px;line-height:1.45}
 .vmeta dt{color:var(--faint)}.vmeta dd{margin:0;color:var(--text);min-width:0;overflow-wrap:anywhere}
 .vmeta code{font:500 13px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:var(--ink);color:var(--bone);padding:2px 7px;border-radius:6px}
 .vmeta button{margin-left:6px}
 #panel-vault .vmeta button.vtxt{min-height:28px;padding:0 6px;font-size:12.5px;color:var(--faint)}
+#panel-vault .vmeta button.vtxt svg{width:13px;height:13px;vertical-align:-2px;margin-right:4px}
 .vform{display:grid;gap:12px;margin-top:2px}
-.vform label{display:grid;gap:5px;font-size:13px;color:var(--faint)}
+.vform label{display:grid;gap:5px;font-size:13px;color:var(--faint)}.vform .vhint{font-size:12px;line-height:1.4;color:var(--faint)}.vmeta .vnosite{color:var(--faint)}
 #panel-vault .vform input,#vaultsheet input,#vaultsheet textarea{width:100%;min-height:42px;font-size:14.5px;border-radius:10px;box-sizing:border-box}
 #vaultsheet textarea{min-height:120px;padding:10px 12px;font:500 14px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;resize:vertical}
 .vsb{display:flex;align-items:center;gap:8px;justify-content:flex-end;flex-wrap:wrap;margin-top:6px}
@@ -1072,7 +1095,10 @@ body.lq-light .vmono{color:hsl(var(--h) 55% 28%);background:hsl(var(--h) 60% 90%
 .vlog .vlr{display:flex;gap:10px;padding:6px 0;border-top:1px solid var(--line)}.vlog .vlr b{color:var(--text);font-weight:500;flex:1;min-width:0;overflow-wrap:anywhere}
 #panel-vault .vback{display:none}
 #vaultmsg{position:fixed;left:16px;right:16px;bottom:104px;margin:0 auto;width:fit-content;max-width:560px;box-sizing:border-box;z-index:85;display:flex;align-items:center;gap:12px;padding:10px 10px 10px 16px;border-radius:12px;background:var(--bone);color:var(--ink);font-size:14px;line-height:1.4;box-shadow:0 10px 30px rgba(0,0,0,.35)}
-#vaultmsg:empty{display:none}#vaultmsg.err{background:var(--vred);color:#fff}
+.ownpress{margin-top:12px;font-size:13px}.ownpress>b{display:block;margin-bottom:2px;color:var(--bone)}
+@media (max-width:600px){#ownrow,#linerow{flex-direction:column;align-items:stretch;gap:10px}#ownrow>button,#linerow>button{width:100%;min-height:40px}}
+.ownsteps{margin:6px 0 4px;padding-left:22px}.ownsteps li{margin:4px 0}.ownpathrow{display:flex;gap:8px;align-items:center;margin-top:4px}.ownpath{flex:1;min-width:0;overflow-wrap:anywhere;word-break:break-all;font-size:12.5px;line-height:1.5}.owncopy{flex:none}
+#vaultmsg:empty{display:none}#vaultmsg.err{background:var(--vred);color:#1B0B0C}body.lq-light #vaultmsg.err{color:#fff}
 #vaultmsg button{min-height:32px;padding:0 12px;border-radius:8px;border:0;background:rgba(0,0,0,.12);color:inherit;font:600 13.5px var(--sans);cursor:pointer}
 #vaultsheet{position:fixed;inset:0;z-index:90;display:grid;place-items:center;padding:16px;background:rgba(4,6,8,.55)}
 #vaultsheet.hidden{display:none}
@@ -1099,16 +1125,17 @@ body.lq-liquid .vsheet{background:#16181C}body.lq-liquid.lq-light .vsheet{backgr
 .vsplit{grid-template-columns:minmax(0,1fr)}
 #panel-vault.vone .vlist,#panel-vault.vone .vfilt,#panel-vault.vone .vbar{display:none}
 #panel-vault:not(.vone) .vdetail{display:none}
+#panel-vault.vsolo .vdetail{display:block}
 .vdetail{position:static;padding:16px;border-radius:14px}
 #panel-vault .vback{display:flex;align-items:center;gap:4px;min-height:40px;margin:0 0 10px;padding:0 10px 0 4px;background:transparent;border:0;color:var(--bone);font:600 14px var(--sans);cursor:pointer}
 .vdh{flex-wrap:wrap}.vdact{width:100%}.vdact button{flex:1}
 .vchip .vcl{display:none}
 #panel-vault .vadd span{display:none}#panel-vault .vadd{padding:0 13px}
-.vcodes{grid-template-columns:minmax(0,1fr)}
+.vcodes{grid-template-columns:minmax(0,1fr)}#panel-vault .vcode button{min-width:44px;min-height:40px}#panel-vault .vcode button .vbl{display:none}
 #vaultmsg{bottom:96px}
 .vbar{flex-wrap:wrap}.vsearch{flex:1 1 100%}.vchip{flex:1}
 .vfilt{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;margin-left:-2px;padding:0 2px 2px}.vfilt::-webkit-scrollbar{display:none}#panel-vault .vfilt button{flex:none}
-.vmeta{grid-template-columns:minmax(0,1fr);gap:2px}.vmeta dd{margin-bottom:10px}
+.vmeta{grid-template-columns:minmax(0,1fr);gap:2px}.vmeta dd{margin-bottom:10px}#panel-vault .vmeta button.vtxt{min-height:40px}
 }
 body.lq-liquid.lq-light .vlock.open{border-color:var(--green)}
 @media (max-width:560px){.vrow{grid-template-columns:minmax(0,1fr)}.vrow .va{grid-column:1;grid-row:auto;margin-top:6px}.vrow .va button{flex:1}.vlock input{flex:1 1 100%;width:100%}.vlock button{flex:1}}
@@ -1118,8 +1145,8 @@ body.lq-liquid .sset .note{font-size:12.5px;max-width:70ch}
 body.lq-liquid .sset .cxh{margin-top:0}
 /* the Close bar carries the panel's own ground, so what scrolls under it stays clean */
 /* top: the panel's padding (main's 16px), so it sticks at the very top edge: scrolled content no longer shows in a strip above it */
-body.lq-liquid.lq-pooled #lqsinkrow{top:-16px;margin:-14px -14px 10px;padding:10px 10px 8px;background:linear-gradient(180deg,rgba(6,8,11,.97) 70%,rgba(6,8,11,0));border-radius:22px 22px 0 0}
-body.lq-liquid.lq-light.lq-pooled #lqsinkrow{background:linear-gradient(180deg,rgba(246,248,251,.98) 70%,rgba(246,248,251,0))}
+body.lq-liquid.lq-pooled #lqsinkrow{top:-16px;margin:-14px -14px 10px;padding:10px 10px 8px;background:#06080B;border-radius:22px 22px 0 0}
+body.lq-liquid.lq-light.lq-pooled #lqsinkrow{background:#F6F8FB}
 
 /* Agents: needs you, at work, finished (folded) */
 .agdone{margin-top:6px}

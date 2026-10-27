@@ -139,6 +139,8 @@ try {
   ok(`…again each time there are fewer open tasks than at the last continue, but never more than ${a.AUTO_MAX} in an hour`, started.length - n0 === a.AUTO_MAX, started.length - n0);
   put(lane3, "TASKS.md", "## Tasks\n- [ ] step 0\n");
   ok("…till the hour has passed", a.continueLanes({ now: later + 3600000 + 20, run: go, runs: runs3 }).length === 1, started.length - n0);
+  ok("the cap is per piece of work: three starts on one thing don't hold back a new one (25 Oct 2026)", (() => { const p = join(HOME, "work", "keyed"), at = 2e6; for (let i = 0; i < a.AUTO_MAX; i++) a.autoStart(p, { now: at + i, key: "goal:a" }); return !a.autoStart(p, { now: at + 5, key: "goal:a" }) && a.autoStart(p, { now: at + 6, key: "goal:b" }) && a.autoStart(p, { now: at + 7, key: "handover:x" }); })());
+  ok("…and a folder still takes at most AUTO_FOLDER_MAX an hour, whatever the work", (() => { const p = join(HOME, "work", "keyed2"), at = 3e6; let n = 0; for (let i = 0; i < 20; i++) if (a.autoStart(p, { now: at + i, key: "k" + i })) n++; return n === a.AUTO_FOLDER_MAX; })());
   ok("a handover report gets no start past the cap either (autoStart)", (() => { const p = join(HOME, "work", "cap"); return a.autoStart(p, { now: 1e6 }) && a.autoStart(p, { now: 1e6 + 1 }) && a.autoStart(p, { now: 1e6 + 2 }) && !a.autoStart(p, { now: 1e6 + 3 }) && a.autoStart(p, { now: 1e6 + 3600001 }); })());
 
   console.log("3) ANSWER FAN-OUT — mail domains and everyone's hosts aren't topics; a background share doesn't look like an answer");

@@ -17,7 +17,7 @@ import { createServer } from "node:http";
 import { mkdtempSync, rmSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const HOME = mkdtempSync(join(tmpdir(), "symbiot-smoke-"));
@@ -29,7 +29,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const LATEST = "999.0.0";
 const reg = createServer((req, res) => { res.writeHead(200, { "content-type": "application/json" }); res.end(JSON.stringify({ "dist-tags": { latest: LATEST } })); });
 await new Promise((r) => reg.listen(0, "127.0.0.1", r));
-const env = { ...process.env, HOME, USERPROFILE: HOME, SYMBIOT_NO_OPEN: "1", SYMBIOT_NO_SIGNIN: "1", SYMBIOT_NO_AUTO_UPDATE: "1", SYMBIOT_PORT: String(20000 + Math.floor(Math.random() * 20000)), SYMBIOT_REGISTRY: `http://127.0.0.1:${reg.address().port}` };
+const env = { ...process.env, HOME, USERPROFILE: HOME, SYMBIOT_NO_OPEN: "1", SYMBIOT_NO_SIGNIN: "1", SYMBIOT_NO_NET: "1", SYMBIOT_NO_AUTO_UPDATE: "1", SYMBIOT_PORT: String(20000 + Math.floor(Math.random() * 20000)), SYMBIOT_REGISTRY: `http://127.0.0.1:${reg.address().port}` };
 for (const k of ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "OPENAI_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY", "SYMBIOT_MODEL"]) delete env[k];
 const child = spawn(process.execPath, [join(HERE, "..", "index.mjs"), "app"], { env, stdio: ["ignore", "pipe", "pipe"] });
 let buf = "";
@@ -277,6 +277,11 @@ const calls = [
   ["/api/links/site", "POST"],      // no site -> "Give the site", no browser opened
   ["/api/links/check", "POST"],     // no id -> "isn't linked"
   ["/api/links/unlink", "POST"],
+  ["/api/line", "GET"],             // this computer's connection: sites that refuse it, the last check
+  ["/api/line/check", "POST"],      // not in tests: SYMBIOT_NO_NET -> "Checking is switched off here"
+  ["/api/own-chrome", "GET"],        // Symbiot's extension in your own Chrome: set up? connected? which sites
+  ["/api/own-chrome/setup", "POST"], // writes its folder and registers its host with the browsers here (none in this HOME)
+  ["/api/line/forget", "POST"],     // no host -> nothing forgotten
   ["/api/intuition", "POST"],       // no mode -> "Pick off, watch or act.", nothing changed
   ["/api/intuition/focus", "POST"], // no text -> "Nothing to save."
   ["/api/intuition/accept", "POST"],// no id -> "That suggestion isn't there any more."
@@ -457,7 +462,7 @@ try {
 
   console.log("WEEKLY — isAppRunningWeekly() finds this app and its schedule, with no port or token passed");
   const runningWeekly = (extra = {}) => new Promise((resolve) => {
-    const p = spawn(process.execPath, ["--input-type=module", "-e", `import { isAppRunningWeekly } from ${JSON.stringify(join(HERE, "..", "server.mjs"))}; console.log(JSON.stringify(await isAppRunningWeekly()));`], { env: { ...env, ...extra }, stdio: ["ignore", "pipe", "pipe"] });
+    const p = spawn(process.execPath, ["--input-type=module", "-e", `import { isAppRunningWeekly } from ${JSON.stringify(pathToFileURL(join(HERE, "..", "server.mjs")).href)}; console.log(JSON.stringify(await isAppRunningWeekly()));`], { env: { ...env, ...extra }, stdio: ["ignore", "pipe", "pipe"] });
     let out = ""; p.stdout.on("data", (d) => (out += d)); p.on("exit", () => resolve(out.trim()));
   });
   const setWk = (on) => fetch(base + "/api/desktop/weekly", { method: "POST", headers: H, body: JSON.stringify({ on }) });

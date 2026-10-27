@@ -10,6 +10,7 @@
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const HOME = mkdtempSync(join(tmpdir(), "symbiot-codes-"));
 process.env.HOME = HOME; process.env.USERPROFILE = HOME; process.env.SYMBIOT_VAULT = "file"; process.env.SYMBIOT_NO_POLL = "1";
@@ -132,7 +133,7 @@ try {
     // 21 Oct 2026: two or three copies of the check at once, each putting up a card and keeping the phone's Symbiot in front
     const { execFileSync } = await import("node:child_process"), lock = join(CFG, "phone-check.lock");
     writeFileSync(lock, JSON.stringify({ pid: process.pid, at: Date.now() }));
-    let said = ""; try { said = execFileSync(process.execPath, [new URL("../scripts/phone-codes-check.mjs", import.meta.url).pathname], { env: { ...process.env, HOME, PATH: "" }, encoding: "utf8", timeout: 30000 }); } catch (e) { said = String(e.stdout || ""); }
+    let said = ""; try { said = execFileSync(process.execPath, [fileURLToPath(new URL("../scripts/phone-codes-check.mjs", import.meta.url))], { env: { ...process.env, HOME, PATH: "" }, encoding: "utf8", timeout: 30000 }); } catch (e) { said = String(e.stdout || ""); }
     ok("a second check while one runs stops before anything, and leaves the running one's lock", /another phone check is running/.test(said) && !/Step 1/.test(said) && JSON.parse(readFileSync(lock, "utf8")).pid === process.pid, said.slice(0, 300));
     rmSync(lock, { force: true });
   }
@@ -197,6 +198,10 @@ try {
   ok("a code kept before this isn't read back…", !JSON.stringify(D.doneList()).includes("820119") && !D.heldBy(cq, { lane: "ops" }), D.doneList());
   D.recordDone("Which plan should Pro be sold on?", "monthly", "ops");
   ok("…and is cleaned from the file with the next answer", !readFileSync(DONE, "utf8").includes("820119"));
+  // 23 Oct 2026: the phone check's card was held by ops' question on the same check, asked back about the day before
+  writeFileSync(DONE, JSON.stringify([{ k: "can you wake your phone and open symbiot on it so the phone code check can start", q: "Can you wake your phone and open Symbiot on it, so the phone code check can start?", a: "did you fix the force app open?", lane: "ops", ts: Date.now() - 86400000, back: true }]));
+  ok("a code ask isn't held by another question on the same subject that the user asked back about", !D.heldBy(S.QUESTION, { lane: "ops", id: "codecheck-x" }) && !D.heldBy(S.QUESTION, { lane: "ops" }));
+  ok("…while a question that isn't a code ask still is", !!D.heldBy("Can you open Symbiot on your phone so the phone code check can carry on?", { lane: "ops" }));
 } catch (e) { ok("ran", false, String((e && e.stack) || e)); }
 finally { rmSync(HOME, { recursive: true, force: true }); }
 console.log(`\n${fail ? "✗" : "✓"} codes: ${pass} passed, ${fail} failed`);

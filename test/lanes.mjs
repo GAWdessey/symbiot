@@ -16,7 +16,7 @@ mkdirSync(CFG, { recursive: true });
 let pass = 0, fail = 0;
 const ok = (n, c, got) => { if (c) { pass++; console.log("  ✓ " + n); } else { fail++; console.log("  ✗ " + n + (got !== undefined ? "  got: " + JSON.stringify(got) : "")); } };
 
-const { dispatch, lanesTick, outcome, loadLedger, lanesState, MAX_CHAIN, aboutIt, partlyDone, remoteKey, orcaMoves, orcaRelink, stuckHandovers, allowHandover, skipHandover, namedDirs, handingOf } = await import("../lanes.mjs");
+const { dispatch, lanesTick, outcome, loadLedger, lanesState, stageOf, underWay, MAX_CHAIN, aboutIt, partlyDone, remoteKey, orcaMoves, orcaRelink, stuckHandovers, allowHandover, skipHandover, namedDirs, handingOf } = await import("../lanes.mjs");
 const { parseHandoffs, handoverRules, CLI_LOGIN, ONLY_YOU, leftToYou, gitWork, agentsGitWork, agentsClicking, agentsCodeWork, heldAsks, agentsPosting, linkedAsks, linkedChore } =await import("../handover.mjs");
 const { buildTasksMd, mergeWhenGreen } = await import("../tasks.mjs");
 {
@@ -101,6 +101,7 @@ try {
     ok("no reach known: the rules are as they were", !/can reach/.test(handoverRules(["bookly"], "bookly").join("\n")), "");
     ok("unreachable: the servers a handover names that a sandboxed repo lane can't reach; none for ops, or unsandboxed", unreachable("Set WHATSAPP_PROVIDER=meta in /srv/bookly/.env on prod-box and restart", "bookly", r).join() === "prod-box" && !unreachable("on prod-box", "ops", r).length && !unreachable("on prod-box", "bookly", { ...r, sandboxed: false }).length && !unreachable("the telcohub-production-notes file", "bookly", r).length, "");
     ok("serverOnly: a job that's all on a server the lane can't reach (a deploy, a restart, a check there), none with code in it, none for ops or unsandboxed", serverOnly("Put the bookly fix for Pat's two WhatsApp complaints live on prod-box", "bookly", r).join() === "prod-box" && serverOnly("Read-only: check the relay's logs on prod-box", "bookly", r).length === 1 && !serverOnly("Fix the bug in the invite flow, then deploy it to prod-box", "bookly", r).length && !serverOnly("Add a WHATSAPP_PROVIDER switch to the code, then set it in the live .env on prod-box", "bookly", r).length && !serverOnly("Put it live on prod-box", "ops", r).length && !serverOnly("Put it live on prod-box", "bookly", { ...r, sandboxed: false }).length && !serverOnly("Check the Meta template's status", "bookly", r).length, "");
+    ok("serverOnly: a deploy that names no server goes to ops too, not a sandboxed lane (a go-ahead on batch 2 moved nothing, 23 Oct 2026)", serverOnly("Go ahead: deploy batch 2 of the reminders", "bookly", r).join() === "the server it deploys to" && !serverOnly("Fix the reminders, then deploy batch 2", "bookly", r).length && !serverOnly("Deploy batch 2", "ops", r).length && !serverOnly("Deploy batch 2", "bookly", { ...r, sandboxed: false }).length, "");
     const before = calls.add.length;
     put(atlas, "HANDOFF.md", "### ChatApp\nAdd a WHATSAPP_PROVIDER switch to the code, then set it to meta in the live .env on prod-box and restart the service.\n");
     dispatch(atlas, { ...deps(), reach: r });
@@ -798,6 +799,21 @@ try {
     ask(op, "Record the consent-screen video now?", "Ops records the screen too.");
     const s3 = shareAnswer(dl, [{ q: "Record the consent-screen video now?", a: "yes, from the staging site" }], o);
     ok("…and started when its own open question is the one answered", started.join() === op && s3[0].started, [s3, started]);
+  }
+  // a started handover says where its run really is, not "working on it" for good (25 Oct 2026)
+  {
+    const d = join(HOME, "stage"); mkdirSync(join(d, ".symbiot"), { recursive: true });
+    const e = { status: "started", at: 1000, to: { lane: "ops", path: d } }, none = () => null;
+    ok("a handover whose agent hasn't started yet is queued", stageOf(e, { running: none }).stage === "queued", stageOf(e, { running: none }));
+    writeFileSync(join(d, ".symbiot", "agent.log"), "=== ops 2026-10-25T10:00:00.000Z ===\n$ x\n");
+    ok("…its run still going is running", stageOf(e, { running: () => ({ pid: 1 }) }).stage === "running");
+    ok("…its run ended with nothing asked is ended, not working", stageOf(e, { running: none }).stage === "ended", stageOf(e, { running: none }));
+    writeFileSync(join(d, ".symbiot", "QUESTIONS.md"), "## Questions\n\n### Run it as root?\nx\n- a\n- b\n");
+    ok("…its run ended on a question for the user is asks", stageOf(e, { running: none }).stage === "asks");
+    ok("…a reported or finished one has no stage", !stageOf({ ...e, reportedAt: 5 }).stage && !stageOf({ ...e, status: "done" }).stage);
+    // only what is really going counts as under way, so the count matches (25 Oct 2026: 13, most of them over)
+    ok("…a running or queued one is under way", underWay(e, { status: "started", stage: "running" }) && underWay(e, { status: "held" }) && underWay(e, { status: "started", stage: "asks" }));
+    ok("…an ended run, a stopped, finished or failed one, or one you skipped is not", !underWay(e, { status: "started", stage: "ended" }) && !underWay({ ...e, reportedAt: 5 }, { status: "stopped" }) && !underWay(e, { status: "done" }) && !underWay(e, { status: "error" }) && !underWay({ ...e, skipped: 5 }, { status: "started", stage: "running" }));
   }
 } finally {
   rmSync(HOME, { recursive: true, force: true });

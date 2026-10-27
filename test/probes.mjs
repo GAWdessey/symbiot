@@ -73,6 +73,10 @@ try {
   ok("the lane whose open task names it is told, and started", ran.join() === dl && /### Symbiot: WhatsApp template bookly_invite_v3 \(en\): approved/.test(readFileSync(join(dl, ".symbiot", "ANSWERS.md"), "utf8")), [ran, did]);
   ok("…a lane whose tasks don't name it isn't", !ran.includes(quiet));
   ok("an open PR of Symbiot's with conflicts becomes its lane's task, on the same branch", added.length === 1 && added[0][1] === "symbiot" && /has conflicts with main: rebase its branch on main/.test(added[0][0]) && /Don't open a new PR/.test(added[0][0]), added);
+  const J = await import("../jobs.mjs"), blocked = J.loadJobs().find((j) => j.key === J.prKey("symbiot", "https://github.com/me/symbiot/pull/216"));
+  ok("…and its job record says blocked: conflicts, not merge queued", blocked && blocked.state === "blocked" && /conflicts/.test(J.jobLine(blocked) + blocked.note) && !/merge queued/.test(J.jobLine(blocked)), blocked);
+  P.actOn([{ text: "PR symbiot#216 (symbiot): ready to merge", href: "https://github.com/me/symbiot/pull/216", kind: "pr", lane: "symbiot", subject: "symbiot#216", state: "ready to merge", open: true }], { map: {} });
+  ok("…and approved again once GitHub has no objection", J.loadJobs().find((j) => j.key === blocked.key).state === "approved");
   ok("…a PR you closed is left alone", !added.some((a) => /atlas#3/.test(a[0])));
 
   console.log("STOPPED BY YOU — stays stopped");

@@ -25,16 +25,19 @@ import { computeDrift } from "./drift.mjs";
 import { afterShip, markLive, deployTick } from "./deploy.mjs";
 import { quotaState } from "./quota.mjs";
 import { laneCap, mergeEnded, DEFAULT_CAP } from "./parallel.mjs";
-import { noteLaneIds, addTask, setTaskModel, refileTask, laneNames, toggleTask, removeTask, cancelTask, restoreTask, syncTasks, taskType, pushTasks, pendingReview, workingDiff, learnNpm, withReleases, releaseInput, approveRepo, approveChanges, dropChanges, sendBack, setAutoMerge, mergeWhenGreen, shipJob, shipJobOf, sendAgain, forgetUnsent, shippingPaths } from "./tasks.mjs";
+import { noteLaneIds, closeUnchanged, addTask, setTaskModel, refileTask, laneNames, toggleTask, removeTask, cancelTask, restoreTask, syncTasks, taskType, pushTasks, pendingReview, workingDiff, learnNpm, withReleases, releaseInput, approveRepo, approveChanges, sendBack, setAutoMerge, mergeWhenGreen, shipJob, shipJobOf, sendAgain, forgetUnsent, shippingPaths, dropChanges } from "./tasks.mjs";
 import { repoReview, repoSuggest, folderSuggest, taskChat, clearTaskChat, mailState, setMail, sentMail, produce, releaseNotes } from "./writeups.mjs";
 import { denyList } from "./outward.mjs";
 import { listSecrets, getSecret, saveSecret, markUsed, deleteSecret, scrubStored, repairFalseSaves } from "./vault.mjs";
 import { vaultList, vaultValue, vaultLog, setPin, unlock as vaultUnlock, lock as vaultLock, addEntry as vaultAdd, renameEntry as vaultRename, removeEntry as vaultRemove } from "./vaultview.mjs";
 import { SCREENS_SOCK, sockGate, loadScreens, screenImage, captureScreen, splitScreen, listMonitors, allowScreenshots, importScreen, setRegions, renameScreen, removeScreen, blueprint, clickRegion } from "./screens.mjs";
+import { setupOwnChrome, refreshOwnChrome, startBroker, ownChromeStatus, mapInOwnChrome, ownChromeFor, OWN_SOCK, ownScreen, pressInOwnChrome, typeInOwnChrome, chooseInOwnChrome, fillInOwnChrome, scrollInOwnChrome, wholeInOwnChrome, uploadInOwnChrome, secretInOwnChrome } from "./ownchrome.mjs";
+import { goHistory } from "./chromegate.mjs";
 import { sessionCookie, mapPage, wholePage, pressRegion, typeRegion, chooseRegion, fillForm, verifyPage, uploadRegion, scrollPage, signIn, keepBrowserOpen, isTrusted, trustedSites, trustSite, untrustSite, openSymbiotBrowser, closeSymbiotBrowser, onBrowserClosed, setBrowserHub, siteUrl, browserHub, windowOpen } from "./headless.mjs";
 import { weeklyState, setWeekly, runWeekly, startWeekly, autostartState, setAutostart, installLauncher, iconSvg, setLauncherLook, desktopNotify } from "./desktop.mjs";
 import { markNews, newsSince, watchState, addWatch, setEvery, removeWatch, clearNews, seenWatch, checkWatch, startWatches, setBrief, draftReply, openChat, watchBoard, boardChat, clearBoardChat } from "./watch.mjs";
 import { setLinkAct, setLinksActAll, linksState, linkSite, checkLink, unlinkSite, addSite, signInAsked, sitesCheck } from "./links.mjs";
+import { lineState, checkLine, forgetBlocked } from "./lineblocks.mjs";
 import { testWeeks, testInstalls, postsState, draftPosts, approvePost, editPost, skipPost, voiceFromLinkedIn, addMedia, removeMedia, mediaFile, mediaDir, pictureOfPage, clipOfPage, openUrl } from "./post.mjs";
 import { mindState, forget, actNow, actIn, loadMind } from "./mind.mjs";
 import { goalsTick, goalAnswer, goalFor } from "./goals.mjs";
@@ -51,7 +54,7 @@ import { adaptState, noteUse } from "./adapt.mjs";
 import { settleDone } from "./proof.mjs";
 import { writeCards, loadCardText, keyOf as cardKeyOf } from "./needs.mjs";
 import { shoot } from "./design.mjs";
-import { updateAsk, cardTalk, dismissCard, reportIdeasAdd, reportIdeasDismiss, reportAsk, reportDraftAnswer, homeState, homeTick, homeAsk, homeAnswer, homeNext, workScene, forgetWork, workGo, workTick, firstSteps, marketingState, marketingGo, marketingDraftAnswer, marketingTask, moveToMarketing, onboarding, setOnboarding, startOnboarding, phoneSetupFirst, loadDismissed } from "./home.mjs";
+import { updateAsk, cardTalk, cardFor, dismissCard, reportIdeasAdd, reportIdeasDismiss, reportAsk, reportDraftAnswer, homeState, homeTick, homeAsk, homeAnswer, homeNext, workScene, forgetWork, workGo, workTick, firstSteps, marketingState, marketingGo, marketingDraftAnswer, marketingTask, moveToMarketing, onboarding, setOnboarding, startOnboarding, phoneSetupFirst, loadDismissed } from "./home.mjs";
 import { marketingOverview } from "./mkoverview.mjs";
 import { MARKETING_DIR, MARKETING, productNames, draftPreview, laneMedia, displayName, setDraftMedia } from "./marketing.mjs";
 import { trays, trayMedia, setBlur, addBlur, removeBlur, setReviewed, renderCapture } from "./tray.mjs";
@@ -224,6 +227,8 @@ function saveShots(list) {
   return out;
 }
 function readBody(req) {
+  // read once already, by a route that looked before handing it on (a screen in the user's own Chrome)
+  if (req.symbiotBody) return Promise.resolve(req.symbiotBody);
   return new Promise((resolve) => {
     let d = ""; req.on("data", (ch) => (d += ch));
     req.on("end", () => { try { resolve(d ? JSON.parse(d) : {}); } catch { resolve({}); } });
@@ -626,8 +631,28 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
         if (!b.out || !out.startsWith(home + "/") || (out.startsWith(CONFIG_DIR + "/") && !out.startsWith(join(CONFIG_DIR, "drafts") + "/"))) return json(res, { error: "Screenshots go in the run's own folder." });
         return json(res, await shoot(String(b.url || ""), { out, sizes: String(b.sizes || "1440x900,390x844"), full: b.full === true, bin: chromeBinary() }));
       }
-      if (u.pathname === "/api/screens/map" && req.method === "POST") { const b = await readBody(req); return json(res, screenOut(await mapPage(b.site, b.name, { whole: b.whole === true, who: String(b.who || "") }))); }
+      if (u.pathname === "/api/screens/map" && req.method === "POST") { const b = await readBody(req); if (b.chrome === "own" || (b.chrome !== "hidden" && !b.whole && ownChromeFor(b.site))) return json(res, screenOut(await mapInOwnChrome(b.site, b.name))); return json(res, screenOut(await mapPage(b.site, b.name, { whole: b.whole === true, who: String(b.who || "") }))); }
+      // Symbiot's extension in the user's own Chrome: whether it's set up and connected, and setting it up (ownchrome.mjs)
+      if (u.pathname === "/api/own-chrome") { let presses = []; try { presses = goHistory({ n: 12 }); } catch {} return json(res, { ...ownChromeStatus(), presses }); }
+      if (u.pathname === "/api/own-chrome/setup" && req.method === "POST") return json(res, setupOwnChrome());
       // press / type: refused unless confirmed, or the page's site is one you trust
+      // a screen mapped in the user's own Chrome is acted on there, never in the hidden browser (ownchrome.mjs)
+      // a saved sign-in from the vault into a field: only in the user's own Chrome, never given back (ownchrome.mjs secretInOwnChrome)
+      if (u.pathname === "/api/screens/secret" && req.method === "POST") { const b = await readBody(req), own = ownScreen(String(b.id || "")); return json(res, own ? screenOut(await secretInOwnChrome(own.id, String(b.region || ""), String(b.name || ""), { confirmed: b.confirmed === true })) : { error: "A saved sign-in is filled only in your own Chrome: map the page there (symbiot screens map <site> --own-chrome), then fill it on that screen." }); }
+      if (/^\/api\/screens\/(press|type|replace|choose|fill|upload|scroll|whole)$/.test(u.pathname) && req.method === "POST") {
+        const b = await readBody(req), own = ownScreen(String(b.id || ""));
+        if (own) {
+          const verb = u.pathname.split("/").pop(), opts = { confirmed: b.confirmed === true, noSend: b.noSend === true };
+          if (verb === "press") return json(res, screenOut(await pressInOwnChrome(own.id, String(b.region || ""), opts)));
+          if (verb === "type" || verb === "replace") return json(res, screenOut(await typeInOwnChrome(own.id, String(b.region || ""), b.text, { ...opts, enter: b.enter === true, ...(verb === "replace" ? { replace: String(b.replace == null ? "" : b.replace) } : {}) })));
+          if (verb === "scroll") return json(res, screenOut(await scrollInOwnChrome(own.id, String(b.to || "down"))));
+          if (verb === "choose") return json(res, screenOut(await chooseInOwnChrome(own.id, String(b.region || ""), b.option, opts)));
+          if (verb === "fill") return json(res, screenOut(await fillInOwnChrome(own.id, Array.isArray(b.fields) ? b.fields.map((f) => ({ region: String(f.region || ""), text: f.text })) : [], { ...opts, press: String(b.press || "") })));
+          if (verb === "whole") return json(res, screenOut(await wholeInOwnChrome(own.id)));
+          return json(res, screenOut(await uploadInOwnChrome(own.id, String(b.region || ""), Array.isArray(b.files) ? b.files.map(String) : String(b.files || ""), opts)));
+        }
+        req.symbiotBody = b;
+      }
       if (u.pathname === "/api/screens/press" && req.method === "POST") { const b = await readBody(req); return json(res, screenOut(await pressRegion(String(b.id || ""), String(b.region || ""), { confirmed: b.confirmed === true, noSend: b.noSend === true, who: String(b.who || "") }))); }
       // scroll and whole page: they only look, so they never ask
       if (u.pathname === "/api/screens/whole" && req.method === "POST") { const b = await readBody(req); return json(res, screenOut(await wholePage(String(b.id || ""), { who: String(b.who || "") }))); }
@@ -646,7 +671,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       if (u.pathname === "/api/screens/trusted/remove" && req.method === "POST") { const b = await readBody(req); return json(res, untrustSite(b.site)); }
       // Saved secrets (vault.mjs): names and counts for Settings; an agent reads one by name, never a list of values.
       if (u.pathname === "/api/secrets" || u.pathname === "/api/secrets/list") return json(res, { secrets: listSecrets() });
-      if (u.pathname === "/api/secrets/add" && req.method === "POST") { const b = await readBody(req); return json(res, saveSecret(String(b.name || ""), Array.isArray(b.values) ? b.values.slice(0, 50) : [])); }
+      if (u.pathname === "/api/secrets/add" && req.method === "POST") { const b = await readBody(req); return json(res, saveSecret(String(b.name || ""), Array.isArray(b.values) ? b.values.slice(0, 50) : [], { site: String(b.site || "") })); }
       if (u.pathname === "/api/secrets/get" && req.method === "POST") { const b = await readBody(req); return json(res, getSecret(String(b.name || ""), { use: !!b.use })); }
       if (u.pathname === "/api/secrets/used" && req.method === "POST") { const b = await readBody(req); return json(res, markUsed(String(b.name || ""), String(b.value || ""))); }
       if (u.pathname === "/api/secrets/delete" && req.method === "POST") { const b = await readBody(req); return json(res, deleteSecret(String(b.name || ""))); }
@@ -661,8 +686,8 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       if (u.pathname === "/api/vault/lock" && req.method === "POST") { const b = await readBody(req); return json(res, vaultLock(b.token)); }
       if (u.pathname === "/api/vault/value" && req.method === "POST") { const b = await readBody(req); return json(res, vaultValue(String(b.name || ""), { token: String(b.token || ""), act: b.act === "copy" ? "copy" : "reveal" })); }
       // Keeping it tidy, on an unlocked page only: add one, rename one, delete one (vaultview.mjs).
-      if (u.pathname === "/api/vault/add" && req.method === "POST") { const b = await readBody(req); return json(res, vaultAdd({ label: b.label, account: b.account, values: Array.isArray(b.values) ? b.values : [], token: String(b.token || "") })); }
-      if (u.pathname === "/api/vault/rename" && req.method === "POST") { const b = await readBody(req); return json(res, vaultRename(String(b.name || ""), { label: b.label, account: b.account, token: String(b.token || "") })); }
+      if (u.pathname === "/api/vault/add" && req.method === "POST") { const b = await readBody(req); return json(res, vaultAdd({ label: b.label, account: b.account, values: Array.isArray(b.values) ? b.values : [], site: typeof b.site === "string" ? b.site : "", token: String(b.token || "") })); }
+      if (u.pathname === "/api/vault/rename" && req.method === "POST") { const b = await readBody(req); return json(res, vaultRename(String(b.name || ""), { label: b.label, account: b.account, ...(typeof b.site === "string" ? { site: b.site } : {}), token: String(b.token || "") })); }
       if (u.pathname === "/api/vault/delete" && req.method === "POST") { const b = await readBody(req); return json(res, vaultRemove(String(b.name || ""), { token: String(b.token || "") })); }
       if (u.pathname === "/api/screens/signin" && req.method === "POST") { const b = await readBody(req); return json(res, await signIn(b.site)); }
       // What Symbiot remembers across the app (mind.mjs), and forgetting it.
@@ -681,6 +706,10 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       if (u.pathname === "/api/links/check" && req.method === "POST") { const b = await readBody(req); return json(res, await checkLink(String(b.id || ""))); }
       if (u.pathname === "/api/links/actall" && req.method === "POST") { const b = await readBody(req); return json(res, setLinksActAll(b.on === true)); } // agents may act on every site in your own Chrome (chromegate.mjs "*")
       if (u.pathname === "/api/links/act" && req.method === "POST") { const b = await readBody(req); return json(res, setLinkAct(String(b.id || ""), b.on === true)); } // agents may act on it in your own Chrome (chromegate.mjs)
+      // This computer's connection (lineblocks.mjs): sites that refuse it, and Check, which asks two reputation lists about its address
+      if (u.pathname === "/api/line") return json(res, lineState());
+      if (u.pathname === "/api/line/check" && req.method === "POST") return json(res, await checkLine());
+      if (u.pathname === "/api/line/forget" && req.method === "POST") { const b = await readBody(req); return json(res, forgetBlocked(String(b.host || ""))); }
       if (u.pathname === "/api/links/unlink" && req.method === "POST") { const b = await readBody(req); return json(res, unlinkSite(String(b.id || ""))); }
       // Posts (post.mjs): the week's drafts, waiting on you. Approve is your yes: Marketing's
       // agent posts it through Symbiot's signed-in browser.
@@ -757,8 +786,9 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
         const b = await readBody(req), r = homeAnswer(b.id, { pick: b.pick, text: b.text });
         if (!r || !r.talk) return json(res, r);
         // neither yes nor no: it's said to the card's agent, and the card stays (home.mjs cardTalk)
-        const card = ((homeState() || {}).you || []).find((y) => y.id === b.id) || {}, path = card.path || String(b.id || "").replace(/^\w+:/, "");
-        const t = await cardTalk(path, [{ q: card.q || card.sub || card.title || "this card", a: r.text }], { force: true }).catch(() => null);
+        const card = cardFor(b.id, { q: b.q });
+        if (!card) { console.log(`card talk: no card or question behind ${String(b.id || "").slice(0, 80)}, so "${String(r.text).slice(0, 60)}" went to no agent`); return json(res, { ok: true, keep: true, said: "I can't find what this card asks any more: it was answered or changed a moment ago. Ask on Home, and I'll answer from there." }); }
+        const t = await cardTalk(card.path, [{ q: card.q, a: r.text }], { force: true }).catch(() => null);
         return json(res, t || { ok: true, keep: true, said: "Noted on the card for its agent. A question doesn't settle it: press one of its buttons, or say in your own words what you did, when you're ready." });
       }
       if (u.pathname === "/api/away" && req.method === "POST") { const b = await readBody(req); return json(res, toggleAway(() => winUrl(server.address().port), b.open)); } // a pass per window
@@ -805,7 +835,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       if (u.pathname === "/api/phone/link" && req.method === "POST") { const b = await readBody(req); return json(res, await setPhoneLink(b.on === true)); }
       if (u.pathname === "/api/phone/free" && req.method === "POST") return json(res, await freePhonePort());
       if (u.pathname === "/api/phone/port" && req.method === "POST") { const b = await readBody(req); return json(res, await usePhonePort(b.port)); }
-      if (u.pathname === "/api/phone/code" && req.method === "POST") { await startPhoneLink(); return json(res, newCode()); } // a port that was taken may be free now
+      if (u.pathname === "/api/phone/code" && req.method === "POST") { await startPhoneLink(); return json(res, newCode({ usb: true })); } // a port that was taken may be free now; the user pressed it, so a cable's phone gets it too
       if (u.pathname === "/api/phone/unpair" && req.method === "POST") { const b = await readBody(req); return json(res, unpairPhone(String(b.id || ""))); }
       if (u.pathname === "/api/phone/relay" && req.method === "POST") { const b = await readBody(req); return json(res, setRelay(b.on === true)); }
       if (u.pathname === "/api/phone/pair" && req.method === "POST") { const b = await readBody(req); return json(res, await pairComputer(b.address, b.code, { link: String(b.link || "") })); }
@@ -963,6 +993,9 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
     // something removed the file (an older Symbiot's exit, a cleanup): open it again
     every("screens socket", 30000, () => { if (!existsSync(SCREENS_SOCK)) bind(); });
     process.on("exit", () => { try { rmSync(SCREENS_SOCK, { force: true }); } catch {} });
+    // the door of Symbiot's extension in the user's own Chrome (ownchrome.mjs), with its folder brought up to this version
+    refreshOwnChrome(); startBroker();
+    process.on("exit", () => { try { if (!OWN_SOCK.startsWith("\\\\")) rmSync(OWN_SOCK, { force: true }); } catch {} });
   }
   server.listen(PORT, "127.0.0.1");
   // secrets kept on disk beside their key go into the keyring once there is one, and the key file with them (vault.mjs)
@@ -990,13 +1023,15 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
   // an agent's allow list that stays inside your work is turned on by itself, and the agent carries on
   every("allow lists", 20000, () => autoAllowSweep(), { first: 4000 });
   every("triage", 15000, () => triageSweep()); // every question an agent writes is judged before it can be a card (triage.mjs)
+  every("unchanged runs", 60000, () => closeUnchanged()); // a run that changed nothing waits on no Approve (tasks.mjs)
   // what the user asked for, followed through to done or "not finished", never dropped (goals.mjs)
   const goalDeps = () => {
     let cardPaths = new Set(); try { cardPaths = new Set(onUser().map((c) => c.path).filter(Boolean)); } catch {}
     let ai = null; try { ai = resolveProvider() ? aiWrite : null; } catch {}
     return { write: ai, running: (p) => !!goalRunning(p), start: (p) => runHandoff(p, { force: true }), autoStart, ops: (req, o) => actNow(req, o), notify: (t, b) => desktopNotify(t, b), settle: settleRecord, stop: stopWaiting,
       ledger: (() => { try { return loadLedger(); } catch { return { handoffs: [] }; } })(), waits: (() => { try { return awaitingState().waits; } catch { return []; } })(), map: (() => { try { return laneMap(); } catch { return {}; } })(), until: (what, now) => waitUntil(what, now), cardPaths,
-      notTheirs: (card) => { try { return !!(loadCardText()[cardKeyOf({ q: card.q, options: card.options })] || {}).notTheirs; } catch { return false; } } };
+      notTheirs: (card) => { try { return !!(loadCardText()[cardKeyOf({ q: card.q, options: card.options })] || {}).notTheirs; } catch { return false; } },
+      unclear: (card) => { try { return !!(loadCardText()[cardKeyOf({ q: card.q, options: card.options })] || {}).unclear; } catch { return false; } } };
   };
   onGoalAnswer((path, answers) => goalAnswer(path, answers, goalDeps()));
   // each card on Needs you gets its short question and labelled options written once (needs.mjs)

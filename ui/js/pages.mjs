@@ -86,7 +86,7 @@ document.getElementById('newroot').addEventListener('keydown',function(e){if(e.k
 $('addknow').addEventListener('click',addKnowUI);
 ['newknow','newknowex'].forEach(function(id){$(id).addEventListener('keydown',function(e){if(e.key==='Enter')addKnowUI();});});
 document.getElementById('addtrusted').addEventListener('click',addTrustedUI);
-document.getElementById('addsitego').addEventListener('click',addSiteUI);
+document.getElementById('addsitego').addEventListener('click',addSiteUI);var lck=document.getElementById('linecheck');if(lck)lck.addEventListener('click',lineCheck);var ows=document.getElementById('ownset');if(ows)ows.addEventListener('click',ownSetUp);
 document.getElementById('addsite').addEventListener('keydown',function(e){if(e.key==='Enter')addSiteUI();});
 document.getElementById('newtrusted').addEventListener('keydown',function(e){if(e.key==='Enter')addTrustedUI();});
 document.getElementById('driftrun').addEventListener('click',function(){driftLoaded=false;loadDrift();});

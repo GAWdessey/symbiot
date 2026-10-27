@@ -9,6 +9,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
 const HOME = mkdtempSync(join(tmpdir(), "symbiot-chromegate-"));
 process.env.HOME = HOME; process.env.USERPROFILE = HOME;
@@ -32,6 +33,8 @@ try {
   for (const [t, k] of [["Sends the drafted reply to pat@example.com", "send"], ["Clicks the Send button", "send"], ["Presses Enter to send the message", "send"], ["Posts the update", "send"], ["Pays the invoice", "pay"], ["Clicks Pay now", "pay"], ["Places the order for 3 domains", "pay"], ["Deletes the old template", "delete"], ["Closes the account", "delete"]]) ok(`"${t}": ${k}`, heldFor(t) === k, heldFor(t));
   for (const t of ["Opens the Posts tab", "Opens the payment settings", "Types the subject line", "Clicks Next", "Closes the dialog", "Fills in the name field"]) ok(`"${t}": nothing to hold`, heldFor(t) === "", heldFor(t));
   ok("Enter, Return and ctrl+Enter pressed are sends too, as the action says; a click on \"Return policy\" isn't", ["Presses Enter", "Hits Return", "Presses ctrl+Enter in the message box"].every((t) => heldFor(t, "linkedin.com") === "send") && heldFor("Clicks the Return policy link", "linkedin.com") === "");
+  for (const t of ["Adds the company card under Billing setup", "Clicks Save card", "Presses Add payment method", "Claims the ads credit", "Enters the card details on the billing page"]) ok(`"${t}": adding a card or claiming a credit is held like a payment`, heldFor(t, "www.linkedin.com") === "pay", heldFor(t, "www.linkedin.com"));
+  for (const t of ["Opens the billing settings", "Types the card number", "Saves the draft post", "Accepts the cookie banner", "Clicks Save"]) ok(`"${t}": nothing to hold`, heldFor(t, "www.linkedin.com") === "", heldFor(t, "www.linkedin.com"));
   ok("…and in mail, Reply only opens a draft (as Symbiot's own browser has it)", heldFor("Clicks the Reply button", "mail.google.com") === "" && heldFor("Clicks the Reply button", "linkedin.com") === "send");
 
   console.log("READING — anywhere, as before");
@@ -79,7 +82,7 @@ try {
   const cmd = A.withOwnTools('claude -p "{prompt}"', true, () => true), rd = A.withOwnTools('claude -p "{prompt}"', true, () => false);
   ok("with acting switched on somewhere, a run gets the tools that act in their Chrome", /--chrome/.test(cmd) && /mcp__claude-in-chrome__computer/.test(cmd) && /mcp__claude-in-chrome__form_input/.test(cmd), cmd);
   ok("…and none of them when it's on nowhere", /--chrome/.test(rd) && !/mcp__claude-in-chrome__computer/.test(rd), rd);
-  const hook = (ev) => spawnSync(process.execPath, [new URL("../guard.mjs", import.meta.url).pathname], { input: JSON.stringify(ev), encoding: "utf8", env: { ...process.env, HOME } });
+  const hook = (ev) => spawnSync(process.execPath, [fileURLToPath(new URL("../guard.mjs", import.meta.url))], { input: JSON.stringify(ev), encoding: "utf8", env: { ...process.env, HOME } });
   const h1 = hook({ session_id: "s9", tool_name: C + "navigate", tool_input: { tabId: 4, url: "https://www.linkedin.com/feed/" } }), h2 = hook({ session_id: "s9", tool_name: C + "computer", tool_input: { tabId: 4, action: "left_click", coordinate: [1, 1], action_summary: "Posts the update" } });
   // the agent can't give itself the Go: the holds and the tabs are the gate's to write, not the run's
   const holdsF = join(CFG, "chrome-holds.json"), tabsF = join(CFG, "chrome-tabs.json");
@@ -137,7 +140,7 @@ try {
     ok("…another run's aren't", G.openTabs("other", t).length === 0 && G.openTabs("", t).length === 0);
     G.seen(C + "tabs_close_mcp", `Closed tab 41\n\nTab Context:\n- Available tabs:\n${ctx([42])}`, { ...t, input: { tabId: 41 } });
     ok("a tab it closed is gone", G.openTabs("tabs1", t).map((x) => x.tab).join() === "42", G.openTabs("tabs1", t));
-    const hook = (ev) => spawnSync(process.execPath, [new URL("../guard.mjs", import.meta.url).pathname], { input: JSON.stringify(ev), encoding: "utf8", env: { ...process.env, HOME } });
+    const hook = (ev) => spawnSync(process.execPath, [fileURLToPath(new URL("../guard.mjs", import.meta.url))], { input: JSON.stringify(ev), encoding: "utf8", env: { ...process.env, HOME } });
     const stop = hook({ hook_event_name: "Stop", session_id: "tabs1", stop_hook_active: false });
     ok("ending with one open: the Stop hook sends it back to close it, naming the tab", stop.status === 2 && /tabs_close_mcp on tab 42 \(linkedin\.com\)/.test(stop.stderr), [stop.status, stop.stderr]);
     ok("…only once: a tab it can't close never keeps it from ending", hook({ hook_event_name: "Stop", session_id: "tabs1", stop_hook_active: true }).status === 0);
@@ -174,6 +177,20 @@ try {
   const inCard = P.plainAsk(lane, { q: ask, options: ["🤖 Agent: once you've signed in, schedule both"] });
   ok("switched on and open signed in: a sign-in ask there is still not needed, and its card says it was signed in", (G.signInNotNeeded(ask, { home: HOME }) || {}).off === false && /No sign-in needed: linkedin\.com was open signed in in your Chrome/.test(inCard.q) && /it's signed in/.test((judge("Write", { file_path: join(lane, ".symbiot", "QUESTIONS.md"), content: `### ${ask}\n` }, lq) || {}).why || ""), inCard);
 
+  console.log("A CONNECTOR THAT SENDS AS THE USER — held for their Go too (23 Oct 2026: mail went out through one unseen)");
+  writeFileSync(join(CFG, "standing.json"), JSON.stringify([{ rule: "Never send anything to Pat (pat.lee@example.com) until the user has seen it on WhatsApp and said yes." }, { rule: "Keep replies short." }]));
+  const MAIL = "mcp__claude_ai_Gmail__send_message", mail = { to: "pat.lee@example.com", subject: "The setup guide", body: "Here it is." };
+  const m1 = judge(MAIL, mail, o);
+  ok("a mail sent through the connector: held, with a card to ask and the Go id", m1 && m1.held && /\{#chrome-go-[0-9a-f]+\}/.test(m1.why) && /Sends "The setup guide" to pat\.lee@example\.com through Gmail/.test(m1.why), m1);
+  ok("…the user's own rule about who it goes to is on it", /Their own rule for this: "Never send anything to Pat/.test(m1.why) && !/Keep replies short/.test(m1.why), m1.why);
+  ok("…the same call again keeps its one card", judge(MAIL, mail, o).held === m1.held);
+  writeFileSync(join(CFG, "standing.json"), JSON.stringify([{ rule: "Never send anything to Robbie (Robert Vance) until the user has seen it on WhatsApp." }]));
+  const m2 = judge(MAIL, { to: "vancerobbie@example.com", subject: "Notes" }, o);
+  ok("…a name in the rule that's part of the address counts too", /Their own rule for this: "Never send anything to Robbie/.test((m2 || {}).why || ""), m2);
+  ok("their Go lets that call through once", G.goAhead(m1.held, { home: HOME }) && judge(MAIL, mail, o) === null && !!judge(MAIL, mail, o));
+  ok("reading mail, searching, drafting: never held", ["search_threads", "get_message", "create_draft", "list_labels"].every((n) => judge("mcp__claude_ai_Gmail__" + n, { query: "x" }, o) === null));
+  ok("an event with no guests sends nothing; one with guests is held", judge("mcp__claude_ai_Google_Calendar__create_event", { summary: "Focus" }, o) === null && !!(judge("mcp__claude_ai_Google_Calendar__create_event", { summary: "Kickoff", attendees: [{ email: "sam@example.com" }] }, o) || {}).held);
+  ok("a reply and a forward are held too", !!(judge("mcp__claude_ai_Gmail__reply", { threadId: "t1", body: "ok" }, o) || {}).held && !!(judge("mcp__claude_ai_Gmail__forward", { messageId: "m1", to: "x@example.com" }, o) || {}).held);
 } catch (e) { ok("ran", false, String((e && e.stack) || e)); }
 finally { rmSync(HOME, { recursive: true, force: true }); }
 console.log(`\n${fail ? "✗" : "✓"} chromegate: ${pass} passed, ${fail} failed`);

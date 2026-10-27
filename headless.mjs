@@ -27,6 +27,7 @@ import { CONFIG_DIR, chromeBinary, loadConfig, saveConfig } from "./core.mjs";
 import { chromeSession } from "./chromeimport.mjs";
 import { isSend } from "./sends.mjs";
 import { loadScreens, addPageScreen, center, stitchPng, stitchListPng } from "./screens.mjs";
+import { lineBlock, noteBlocked } from "./lineblocks.mjs";
 
 const PROFILE = join(CONFIG_DIR, "browser");
 // The profile inside it every Symbiot browser opens, named. Chrome opens the one it last
@@ -605,9 +606,11 @@ const SCROLLER = `function modalScroller() {
   const can = (e) => e.scrollHeight - e.clientHeight > 1 && /^(auto|scroll|overlay)$/.test(getComputedStyle(e).overflowY);
   const shown = (e) => { const b = e.getBoundingClientRect(), cs = getComputedStyle(e); return b.width > 20 && b.height > 20 && b.bottom > 0 && b.right > 0 && b.top < H && b.left < W && cs.visibility !== 'hidden' && cs.display !== 'none' && +cs.opacity !== 0; };
   // the one on top: the last open one whose middle is its own
-  // a box that holds the window: marked modal, or fixed over a good part of it (not a cookie bar or a chat bubble)
+  // a box that holds the window: marked modal, or fixed over a good part of it or over its middle,
+  // where the wheel is (LinkedIn's small Scheduled posts box), not a cookie bar or a chat bubble at an edge
   const fixed = (e) => { for (let n = e; n && n !== document.documentElement; n = n.parentElement) if (getComputedStyle(n).position === 'fixed') return true; return false; };
-  const holds = (e) => { const b = e.getBoundingClientRect(); return e.getAttribute('aria-modal') === 'true' || (() => { try { return e.matches('dialog:modal'); } catch (x) { return false; } })() || (fixed(e) && b.width * b.height >= W * H / 6); };
+  const mid = (b) => b.left <= W / 2 && b.right >= W / 2 && b.top <= H / 2 && b.bottom >= H / 2;
+  const holds = (e) => { const b = e.getBoundingClientRect(); return e.getAttribute('aria-modal') === 'true' || (() => { try { return e.matches('dialog:modal'); } catch (x) { return false; } })() || (fixed(e) && (b.width * b.height >= W * H / 6 || mid(b))); };
   const boxes = [...document.querySelectorAll('dialog[open], [role=dialog], [role=alertdialog], [aria-modal=true]')].filter(shown).filter(holds).filter((e) => !e.parentElement || !e.parentElement.closest('dialog[open], [role=dialog], [role=alertdialog], [aria-modal=true]'));
   if (!boxes.length) return null;
   const onTop = (e) => { const b = e.getBoundingClientRect(), t = document.elementFromPoint(Math.max(0, Math.min(W - 1, (b.left + b.right) / 2)), Math.max(0, Math.min(H - 1, (Math.max(0, b.top) + Math.min(H, b.bottom)) / 2))); return !!t && e.contains(t); };
@@ -842,7 +845,24 @@ async function collect(page, expression = COLLECT) {
   await markClicks(page);
   const { result, exceptionDetails } = await page.send("Runtime.evaluate", { expression, returnByValue: true });
   if (exceptionDetails) throw new Error("Couldn't read the page: " + ((exceptionDetails.exception && exceptionDetails.exception.description) || exceptionDetails.text));
-  return (result && result.value) || { url: "", title: "", items: [] };
+  const info = (result && result.value) || { url: "", title: "", items: [] };
+  const block = await lineBlocked(page, info);
+  return block ? { ...info, block } : info;
+}
+// A page that refuses this computer's connection itself (lineblocks.mjs): recorded for its site,
+// with its own review link if it has one, so cards make the step the user's phone on mobile data.
+const BLOCK_TEXT = "(() => ({ text: (document.title + ' ' + ((document.body && document.body.innerText) || '')).slice(0, 3000), review: ([...document.links].find((a) => /review|unblock|appeal|whitelist/i.test(a.href + ' ' + a.innerText)) || {}).href || '' }))()";
+async function lineBlocked(page, info) {
+  try {
+    const { result } = await page.send("Runtime.evaluate", { expression: BLOCK_TEXT, returnByValue: true });
+    return blockOf((result && result.value) || {}, info.url);
+  } catch { return null; }
+}
+// What BLOCK_TEXT read ({ text, review }) on the page at url: its block, recorded, or null.
+function blockOf(v, url) {
+  const b = lineBlock(v.text); if (!b) return null;
+  const host = hostOf(url), e = noteBlocked(host, b, { review: v.review });
+  return { ...b, host, ...(e && e.review ? { review: e.review } : {}), note: `${host} refuses this computer's internet connection itself (${b.why}${b.ip ? ", " + b.ip : ""}): no browser on this computer gets past it, the user's own Chrome included. Use its API if it has one; otherwise the step is the user's, on their phone on mobile data (not Wi-Fi)${e && e.review ? ", and its review form is " + e.review : ""}.` };
 }
 // A sign-in page instead of the site.
 function signInPage(url) {
@@ -853,9 +873,10 @@ function signInPage(url) {
 // A screenshot and what's on it, saved as a screen named `name`, else for the page.
 function saveScreen(name, data, info, suffix = "") {
   const host = hostOf(info.url), base = String(name || "").trim() || info.title || host || "Page";
-  const s = addPageScreen(suffix ? base.slice(0, 80 - suffix.length) + suffix : base, Buffer.isBuffer(data) ? data : Buffer.from(data, "base64"), info, info.items);
+  const s = addPageScreen(suffix ? base.slice(0, 80 - suffix.length) + suffix : base, Buffer.isBuffer(data) ? data : Buffer.from(data, "base64"), info, info.items, info.via);
   if (s.error) return s;
   // a sign-in page instead of the site: say how to get past it once
+  if (info.block) return { ...s, note: info.block.note, block: info.block };
   return signInPage(info.url) ? { ...s, note: `This looks like a sign-in page (${host}). Click Sign in, sign in once in the window that opens, close it, then map again: the hidden browser keeps that sign-in.` } : s;
 }
 // The page as it is now, saved as a screen with its regions.
@@ -1797,4 +1818,4 @@ function watchWindow({ every = 2000, start = 30000, idle = 0 } = {}) {
   if (WATCH.unref) WATCH.unref();
 }
 
-export { windowSince, snapProfile, SNAP, BROWSER_IDLE_MIN, takeChromeSignIn, open as openSite, linkedSite, CHROME_TRIED, typeInto, watcherBusy, WATCH_GRACE, noteAgentUse, windowMoved, saveSessions, showScreen, fillForm, verifyPage, sessionCookie, historyPage, SESSION_COOKIE, tabKey, siteUrl, browserArgs, sandboxProxy, reducedUa, windowUa, mapPage, wholePage, readPage, readTexts, readLinkedIn, LI_READ, pagePicture, pageClip, CLIP, isSend, pressRegion, typeRegion, chooseRegion, uploadRegion, uploadFiles, attachFiles, FILE_BOX, scrollPage, SCROLLS, signIn, keepBrowserOpen, closeBrowser, browserOpen, keepSessions, SESSION_KEEP, SESSIONS, loadSessions, trustedSites, isTrusted, trustSite, untrustSite, PROFILE , openSymbiotBrowser, closeSymbiotBrowser, onBrowserClosed, scratchPage, open as openPage, netWatch, IDLE, shortUrl, evaluate, SCROLLER, watchWindow, windowOpen, lockHolder, setBrowserHub , browserHub };
+export { PAGE_HEIGHT, MAX_TALL, CHOOSE_SELECT, CHOOSE_OPTION, chooseSaid, saveScreen, blockOf, BLOCK_TEXT, collectJs, scrollJs, findRegion, MODAL_OPEN, SELECT_PART, DEEP, hostOf, oneAtATime, windowSince, snapProfile, SNAP, BROWSER_IDLE_MIN, takeChromeSignIn, open as openSite, linkedSite, CHROME_TRIED, typeInto, watcherBusy, WATCH_GRACE, noteAgentUse, windowMoved, saveSessions, showScreen, fillForm, verifyPage, sessionCookie, historyPage, SESSION_COOKIE, tabKey, siteUrl, browserArgs, sandboxProxy, reducedUa, windowUa, mapPage, wholePage, readPage, readTexts, readLinkedIn, LI_READ, pagePicture, pageClip, CLIP, isSend, pressRegion, typeRegion, chooseRegion, uploadRegion, uploadFiles, attachFiles, FILE_BOX, scrollPage, SCROLLS, signIn, keepBrowserOpen, closeBrowser, browserOpen, keepSessions, SESSION_KEEP, SESSIONS, loadSessions, trustedSites, isTrusted, trustSite, untrustSite, PROFILE , openSymbiotBrowser, closeSymbiotBrowser, onBrowserClosed, scratchPage, open as openPage, netWatch, IDLE, shortUrl, evaluate, SCROLLER, watchWindow, windowOpen, lockHolder, setBrowserHub , browserHub };

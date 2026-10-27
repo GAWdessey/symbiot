@@ -6,14 +6,14 @@
 import { mkdtempSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { execFileSync } from "node:child_process";
 
 const SRC = join(dirname(fileURLToPath(import.meta.url)), ".."), HOME = mkdtempSync(join(tmpdir(), "symbiot-tm-"));
 mkdirSync(join(HOME, ".config", "symbiot"), { recursive: true });
 const code = `
-import { addTask, setTaskModel } from ${JSON.stringify(join(SRC, "tasks.mjs"))};
-import { loadTasks } from ${JSON.stringify(join(SRC, "core.mjs"))};
+import { addTask, setTaskModel } from ${JSON.stringify(pathToFileURL(join(SRC, "tasks.mjs")).href)};
+import { loadTasks } from ${JSON.stringify(pathToFileURL(join(SRC, "core.mjs")).href)};
 const t = addTask("tidy the docs", "x");
 const out = { bad: setTaskModel(t.id, "gpt9").error, none: setTaskModel("nope", "opus").error };
 out.set = setTaskModel(t.id, "Opus").model; out.stored = loadTasks().find((x) => x.id === t.id).model;

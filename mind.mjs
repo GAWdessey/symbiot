@@ -301,9 +301,10 @@ const laneName = (repo, map) => Object.keys(map).find((n) => n.toLowerCase() ===
 // said: the user's own message, from a chat (converse). Urgency is read in it, never in the
 // request the chat model wrote: "before anything else" in its rewrite made a card-labelling
 // fix urgent and parked bookly twice (20 Oct 2026). A task in Symbiot's own lane (self)
-// parks no other lane; and from a chat it waits on the Workdesk for Go (addTask later)
-// unless they asked for it (asksNow): "why are these under bookly?" is a bug to note, not
-// a run to start. Without said (an API call, a test), the request is their words.
+// parks no other lane. From a chat it starts at once like any other: it used to wait on the
+// Workdesk for Go unless they asked for it, and Garth's standing preference is that a
+// Symbiot fix noted from chat starts right away (25 Oct 2026). Without said (an API call, a
+// test), the request is their words.
 function actIn(request, repo, { map = {}, known = "", title, context, said, self, run = runHandoff, add = addTask, push = pushTasks, ops = actNow, first = urgentFirst, undo = urgentUndo, reach, now = Date.now() } = {}) {
   const lane = laneName(repo, map);
   if (!lane) return { ...ops(request, { title, context, known, now }), lane: "" };
@@ -314,10 +315,10 @@ function actIn(request, repo, { map = {}, known = "", title, context, said, self
     return { ...ops(request, { title, context: [context, `This was meant for ${lane}'s agent, but ${why}, so it's yours: do it here, and if there's code to change in ${lane}, hand that part to ${lane}.`].filter(Boolean).join("\n\n"), known, now, lane }), lane: "", rerouted: { from: lane, why } };
   }
   const near = unreachable(request, lane, reach), chat = said !== undefined, words = chat ? String(said || "") : request;
-  const own = lane === (self === undefined ? selfLane(map) : self), later = own && chat && !asksNow(words);
-  const opts = { ...(near.length ? { after: `Symbiot: ${lane} runs in a sandbox and can't reach ${near.join(" or ")}. Do the code part here, and hand what has to change on ${near.length > 1 ? "those servers" : "that server"} to ops, saying what.` } : {}), ...(chat ? { said: words, later } : {}) };
+  const own = lane === (self === undefined ? selfLane(map) : self);
+  // later: false sends one an older chat left waiting for Go along with it (tasks.mjs addTask)
+  const opts = { ...(near.length ? { after: `Symbiot: ${lane} runs in a sandbox and can't reach ${near.join(" or ")}. Do the code part here, and hand what has to change on ${near.length > 1 ? "those servers" : "that server"} to ops, saying what.` } : {}), ...(chat ? { said: words, later: false } : {}) };
   const t = add(request, lane, Object.keys(opts).length ? opts : undefined); if (t && t.error) return { error: t.error };
-  if (later) return { ok: true, lane, task: t.id, later: true };
   const p = push({ repo: lane }); if (!p || !p.written || !p.written.length) return { error: `Couldn't write ${lane}'s tasks for its agent.` };
   const urgent = isUrgent(words) ? first(map[lane], { lanes: own ? {} : map, halt: urgentStop(words), others: !own }) : null; // "first" queues it; only "urgent" or a crash stops the run going there
   const e = run(map[lane]);
@@ -327,14 +328,13 @@ function actIn(request, repo, { map = {}, known = "", title, context, said, self
   return { ok: true, lane, task: t.id, ...state, ...(urgent ? { urgent } : {}) };
 }
 // They asked for it to be done, not just told Symbiot what's wrong: "fix it", "can you…",
-// "please", "now". A complaint or a question ("why are these under bookly?") isn't.
+// "please", "now": never only a question about what happened (asksStatus).
 const ASKS_NOW = /\b((?:it|this|that|them|on it) now|now,? please|right away|straight away|immediately|asap|please|pls|can you|could you|would you|will you|can i (?:please )?(?:have|get|see)|i (?:want|need|'?d like)|go ahead|do it|start (?:it|on it|that|this)|(?:fix|sort|change|make|build|add|do) (?:it|this|that|them)\b)/i;
 // "did we send the 100?", "is it done?", "has it gone out?": a question about what happened. It is
 // answered from the job record and the agents' last words; it never stops, redirects or starts anything.
 const STATUS_Q = /^\W*(?:(?:did|do|does|have|has|had|was|were|is|are|how(?:'s| is| did| many)?|what(?:'s| is| happened)|where)\b|(?:any|so)\b.*\?)/i;
 const ORDER = /\b(stop|cancel|kill|halt|pause|redirect|restart|retry|resend|send it|start|fix|do it|go ahead|front|merge)\b/i;
 const asksStatus = (text) => { const t = String(text || "").trim(); return STATUS_Q.test(t) && /\?\s*$/.test(t) && !ORDER.test(t) && !ASKS_NOW.test(t); };
-const asksNow = (text) => isUrgent(text) || ASKS_NOW.test(String(text || ""));
 // The line under a handover's reply, from what actIn did (see there).
 function handedLine(did) {
   const lane = did.lane, u = did.urgent, un = u && u.unparked ? ` ${lane} was parked; I unparked it for this.` : "";
@@ -365,10 +365,10 @@ function spokenLine(did, reply = "") {
   if (did.urgent) return `It's urgent, so ${did.lane}'s agent does it first.`;
   return did.queued ? `I've handed it to the ${did.lane} agent. It starts beside the run there if they don't clash; the Workdesk says what it waits on if they do.` : `I've handed it to the ${did.lane} agent.`;
 }
-// For later: on the list, in a repo's lane if it names one Symbiot knows.
-// One in Symbiot's own lane waits for Go (addTask later): a free lane starts its tasks by itself.
+// For later: on the list, in a repo's lane if it names one Symbiot knows; a free lane starts
+// its tasks by itself, Symbiot's own lane too (it waited for Go until 25 Oct 2026).
 function taskIn(text, repo, { map = {}, add = addTask } = {}) {
-  const lane = laneName(repo, map), r = lane && lane === selfLane(map) ? add(text, lane, { later: true }) : add(text, lane);
+  const lane = laneName(repo, map), r = add(text, lane);
   return r && r.error ? { error: r.error } : { ok: true, id: r.id, lane };
 }
 
@@ -380,6 +380,15 @@ const unbackedClaim = (reply, did) => !(did && !did.error && !did.notStarted) &&
 const CLAIMS_BINDING = /\b(?:from now on|going forward|every agent|all agents|each agent|agents (?:will|won'?t|now|always|never)|standing rule|always do|never do)\b/i;
 const bindingClaim = (reply, saved) => !saved && CLAIMS_BINDING.test(String(reply || ""));
 const NOT_BINDING = "\n\nTo be plain: that isn't a standing rule yet. I haven't saved it into the agents' briefs, so it doesn't bind them. Say \"make that a rule\" and I will.";
+// …unless what it says is that an agent already running is on it, and one is: that's true without a hand-off
+// (2ac43b27700e, 25 Oct 2026: the correction contradicted a reply saying the running lane agent had the job).
+const ALREADY = /\b(?:already|still)\b[^.]{0,80}?\b(?:running|on it|working|under ?way|in progress|picked it up)\b|\b(?:running|working) on (?:it|this|that)\b/i;
+const escRe = (x) => String(x).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+function runningClaim(reply, lanes = {}, running = runningHandoff) {
+  reply = String(reply || ""); if (!ALREADY.test(reply)) return false;
+  const all = Object.entries(lanes || {}), named = all.filter(([n]) => new RegExp(`(?<![\\w-])${escRe(n)}(?![\\w-])`, "i").test(reply));
+  return (named.length ? named : all).some(([, p]) => { try { return !!running(p); } catch { return false; } });
+}
 const UNBACKED = "\n\nCorrection: nothing was handed to an agent or queued by this reply, so nothing is running on it yet. Say the word and I'll start it.";
 function parseReply(raw) {
   const t = String(raw || "").trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
@@ -395,7 +404,7 @@ const BAD_FORM = "(the model didn't answer in the right form, so nothing was don
 // own last turns. act: { agent(request) -> result, task(text, repo) -> result },
 // what "do" runs here. Gives { reply, did?, remembered }.
 const DEFAULT_ASK = (sys, p, o) => write(sys, p, { ...o, floor: "sonnet" });
-async function converse({ where, role = "", context = "", history = "", question, act = {}, ask = DEFAULT_ASK, map = null, now = Date.now(), images = [], nav = false, settle = false, tasks = [], control = false }) {
+async function converse({ where, role = "", context = "", history = "", question, act = {}, ask = DEFAULT_ASK, map = null, now = Date.now(), images = [], nav = false, settle = false, tasks = [], control = false, running = runningHandoff }) {
   // a secret they pasted goes to the vault before anything is stored or sent; the model sees a placeholder
   let kept = []; try { ({ text: question, saved: kept } = captureSecrets(question, { context: () => [history, ...(loadMind().log || []).slice(-6).map((l) => String((l && l.text) || ""))].join("\n") })); } catch {}
   kept = [...new Set([...kept, ...[...String(question).matchAll(/\[saved: ([^\]]+)\]/g)].map((m) => m[1])])]; // or saved already, by the page it came from (home.mjs homeAsk)
@@ -468,7 +477,7 @@ async function converse({ where, role = "", context = "", history = "", question
     if (good.length) reply += `\n\n${good.map((x) => x.said).join(" ")}`;
     for (const x of good) steps.push(`${x.op}: ${x.said}`.slice(0, 120));
   }
-  if (!did && !steered.some((x) => x.ok) && unbackedClaim(reply, did)) reply += UNBACKED;
+  if (!did && !steered.some((x) => x.ok) && unbackedClaim(reply, did) && !runningClaim(reply, lanes, running)) reply += UNBACKED;
   const rules = (Array.isArray(j.rule) ? j.rule : []).map((x) => String(x || "")).filter((x) => x.trim()).slice(0, 3).filter((x) => addRule(x));
   if (bindingClaim(reply, rules.length)) reply += NOT_BINDING;
   // what's read aloud: the reply, then the line under it as a short phrase (spokenLine)
@@ -488,4 +497,4 @@ async function converse({ where, role = "", context = "", history = "", question
 // The usual "task" act, for a caller with no lanes of its own to pass.
 const addToTasks = (text, repo) => { let map = {}; try { map = laneMap(); } catch {} return taskIn(text, repo, { map }); };
 
-export { dayLine, dayMark, MIND_FILE, loadMind, saveMind, remember, recall, recallText, lately, mindState, forget, actBrief, actNow, actIn, taskIn, selfLane, rulesFor, parseReply, converse, spokenLine, unbackedClaim, bindingClaim, goOf, PAGES, addToTasks , ownThread };
+export { dayLine, dayMark, MIND_FILE, loadMind, saveMind, remember, recall, recallText, lately, mindState, forget, actBrief, actNow, actIn, taskIn, selfLane, rulesFor, parseReply, converse, spokenLine, unbackedClaim, runningClaim, bindingClaim, goOf, PAGES, addToTasks , ownThread };

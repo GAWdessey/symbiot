@@ -14,13 +14,13 @@ import { heldAsks } from "./handover.mjs";
 import { plainAsk } from "./plain.mjs";
 import { pillOf, nowLine, plainSummary, handWords, laneName, looksShell } from "./cardwords.mjs";
 const cmdFree = (s) => (looksShell(s) ? nowLine(s) : s); // a running agent's step, never its command: "Ran ssh -i ~/.ssh/…" read on Home's spheres too
-import { join, basename } from "node:path";
+import { join, basename, isAbsolute } from "node:path";
 import { homedir } from "node:os";
 import { readFileSync, writeFileSync, mkdirSync, statSync } from "node:fs";
 import { watchBoard, draftReply, draftCards, draftAnswer } from "./watch.mjs";
 import { pendingReview, pushTasks, addTask, taskType, releaseNotIn, unplacedTasks } from "./tasks.mjs";
 import { estimate, estimateWords } from "./estimate.mjs";
-import { launchFault, ensureRunnable, agentQuestions, answerQuestions, heldAsk, grantCard, cardIsPermission, onCardGone, setHandoffCmd, agentsList, agentsNow, forgetAgents, runHandoff, runningHandoff, handoffCmd, loadRuns, connectorsInfo, parkedPaths, agentMissing, settleNeeds, closeAsk, pickAgent, detectHandoffs, linkReach, unchangedStep, whereOf, claudePause, parkLane, waitingTask } from "./agents.mjs";
+import { launchFault, ensureRunnable, agentQuestions, answerQuestions, heldAsk, grantCard, cardIsPermission, onCardGone, setHandoffCmd, agentsList, agentsNow, forgetAgents, runHandoff, runningHandoff, handoffCmd, loadRuns, connectorsInfo, parkedPaths, agentMissing, settleNeeds, closeAsk, sameSubject, pickAgent, detectHandoffs, linkReach, unchangedStep, whereOf, claudePause, parkLane, waitingTask, namedBlocker, autoStart } from "./agents.mjs";
 import { stallCards, loadStall, saveStall } from "./stall.mjs";
 import { isDone, recordDone, doneList, asksBack, askBackNote, wantsReport, closesAsk, heldBy, reportsSince, talkOf, addTalk, talkText, YES, asksQ, saysDone, wantsToRead } from "./asksdone.mjs";
 import { captureSecrets } from "./vault.mjs";
@@ -32,9 +32,10 @@ import { windowSince, BROWSER_IDLE_MIN } from "./headless.mjs";
 import { control } from "./control.mjs";
 import { jobsLines, parkedJobs, syncOnUser, syncTasks, onUser, runRecord } from "./jobs.mjs";
 import { goalCards } from "./goals.mjs";
+import { folderSlug, reviewHolds, heldMergeCard } from "./design.mjs";
 import { intuitionUpdates, intuitionLines } from "./intuition.mjs";
 import { overridesUpdates } from "./overrides.mjs";
-import { splitNeeds, applyText, loadCardText } from "./needs.mjs";
+import { moneyNote, splitNeeds, applyText, loadCardText, blankAsk, blankText } from "./needs.mjs";
 import { converse, actIn, actNow, taskIn, loadMind, dayMark } from "./mind.mjs";
 import { repoPathMap, laneMap, reposState, scanRoots } from "./scan.mjs";
 import { resolveProvider, PROVIDERS, claudeState } from "./ai.mjs";
@@ -407,6 +408,7 @@ onCardGone((path, q) => !!loadDismissed()[`${path}|${q}`]); // a step's card you
 // within HOME_LOOKED. Then a look reads what the tick built and never waits on the build
 // (/api/home took 3.2 s, 20 Oct 2026); nobody looking, nothing is built.
 const HOME_LOOKED = 60000; let looked = 0;
+const slugs = new Map(), slugFor = (f) => { if (!slugs.has(f)) slugs.set(f, folderSlug(f)); return slugs.get(f); }; // a folder's GitHub repo, read once
 function homeTick({ now = Date.now() } = {}) { if (now - looked < HOME_LOOKED) try { homeState({ now, fresh: true, tick: true }); } catch {} }
 function homeState({ now = Date.now(), fresh = false, deps = {}, tick = false } = {}) {
   if (!tick && !Object.keys(deps).length) looked = now;
@@ -486,15 +488,17 @@ function homeState({ now = Date.now(), fresh = false, deps = {}, tick = false } 
     // asking the user to paste or save a secret Symbiot holds already: answered with where it is, never a card
     if (a.status !== "running") { let h = ""; try { h = (deps.heldAsk || heldAsk)(a.path, q); } catch {} if (h) continue; }
     const lane = laneOfPath(a.path, map), repo = lane || (lane === "" ? "" : a.name);
-    // the work it asks about is done already (another lane took it and ticked it): the card says so, and Close it is first
-    const pa = plainAsk(a.path, q), done = finished(a.path, q.q), opts = (q.options || []).slice(0, 2);
-    const closed = done ? { done, options: [`Close it: ${done.lane} has done this already (${done.text}). Check that it's so, and carry on without asking again. (recommended)`, opts[0]].filter(Boolean),
+    // the work it asks about is done already (another lane took it and ticked it): the card says so, and Close it is first.
+    // It's doneBy, never done: a goal's card has a done of its own, a string (what its run has done so far), and a card
+    // that had it read "undefined has done this already: undefined" (23 Oct 2026). No lane or no words: no such line.
+    const pa = plainAsk(a.path, q), fin = finished(a.path, q.q), done = fin && fin.lane && fin.text ? fin : null, opts = (q.options || []).slice(0, 2);
+    const closed = done ? { doneBy: done, options: [`Close it: ${done.lane}'s agent has done this already (${done.text}). Check that it's so, and carry on without asking again. (recommended)`, opts[0]].filter(Boolean),
       labels: ["Close it: it's done", ...(opts[0] ? [blobLabel(pa.labels ? pa.labels[0] : opts[0])] : [])] } : {};
     // its line under the title is the question as the card asks it (plain.mjs): a sign-in ask that was really a setting names the setting
     // the user answered another agent on this work: it has that answer, and is checking whether it settles this (lanes.mjs shareAnswer)
     const sh = sharedTo(a.path), shared = sh && (a.status === "running" || Date.parse(sh.at) > (a.startedAt || 0)) ? { shared: sh } : {}; // and not once it has asked again since
     you.push({ kind: "ask", id: "ask:" + a.path, path: a.path, repo, ...shared, name: repo ? named(lane ? map[lane] : a.path, repo) : plain(String(a.name || "an agent").replace(/^Agent:\s*/, "").replace(/^New job:\s*/i, ""), 60), // the card's header is narrow: no "New job:" in it
-      title: `${a.name} asks`, sub: String(pa.q || q.q || "").slice(0, 90), ...(q.task ? { task: q.task } : {}), ...(q.talk ? { talk: q.talk } : {}), ...pa, options: opts, ...closed, ...(qs.length > 1 ? { more: qs.length - 1 } : {}), ...signInCard([q.q, ...opts]), ...reportLink(q.report), shape: "agents" });
+      title: `${a.name} asks`, sub: String(pa.q || q.q || "").slice(0, 90), ...(q.task ? { task: q.task } : {}), ...(q.talk ? { talk: q.talk } : {}), ...pa, options: opts, ...(pa.go ? { rec: 0 } : {}), ...closed, ...(qs.length > 1 ? { more: qs.length - 1 } : {}), ...signInCard([q.q, ...opts]), ...reportLink(q.report), shape: "agents" });
   }
   // What stopped and can't go on without you, as a question too: a handover that
   // couldn't start (lanes.mjs stuckHandovers: "Allow this run access to ~/Company?"),
@@ -537,7 +541,7 @@ function homeState({ now = Date.now(), fresh = false, deps = {}, tick = false } 
   // which project each agent's card is about, from the record (lanes.mjs projectOf): "" says "no project"
   { let ledger = null; for (const y of you) if (y.path && (y.kind === "ask" || y.kind === "approve") && y.fix !== "draft" && y.project === undefined) { if (!ledger) { try { ledger = (deps.ledger || loadLedger)(); } catch { ledger = { handoffs: [] }; } } y.project = y.repo || projectFor(y.path, map, ledger); } }
   // nothing waits on you: a few things that can be done next (none while anything does)
-  you = undismissed(settleAsks(you), (deps.dismissed || loadDismissed)());
+  you = undismissed(settleAsks(dropBlank(you, list)), (deps.dismissed || loadDismissed)());
   // Needs you holds decisions and the user's own steps only; what just tells them something is an
   // update (needs.mjs). Each card reads as its writer put it: a short question, why, labelled options.
   const split = splitNeeds(you), updates = split.updates;
@@ -545,7 +549,13 @@ function homeState({ now = Date.now(), fresh = false, deps = {}, tick = false } 
   try { const gone = new Set(Object.keys((deps.dismissed || loadDismissed)())); updates.unshift(...(deps.intuition || intuitionUpdates)({ now, dismissed: gone })); } catch {}
   // a change to how Symbiot works, proposed from what the user kept pushing back on (overrides.mjs): Apply / Not now
   try { const gone = new Set(Object.keys((deps.dismissed || loadDismissed)())); updates.unshift(...(deps.overrides || overridesUpdates)({ dismissed: gone })); } catch {}
-  { let ct = {}; try { ct = (deps.cardText || loadCardText)(); } catch {} you = split.you.map((y) => { try { return applyText(y, ct); } catch { return y; } }); }
+  { let ct = {}; try { ct = (deps.cardText || loadCardText)(); } catch {} you = split.you.map((y) => { try { return moneyNote(applyText(y, ct)); } catch { return y; } }); } // adding a card says money up front (needs.mjs moneyNote)
+  // a merge or publish card for work the design critic hasn't passed (design.mjs heldMergeCard): none while it's
+  // being judged or fixed, and "isn't ready: still missing …" once it has failed. After the card writer, so its
+  // labels ("I've merged it myself") can't bring a merge back.
+  { const holds = deps.reviewHolds || ((y) => { const f = map[y.repo] || (y.path && !/^goal:/.test(y.path) ? y.path : ""), slug = f ? slugFor(f) : ""; return slug ? reviewHolds(slug, { now }) : []; });
+    you = you.map((y) => heldMergeCard(y, holds)).filter(Boolean); }
+  if (!Object.keys(deps).length) for (const y of you) SHOWN.set(y.id, y); // every card built, not only the six sent: what cardFor finds
   (deps.syncJobs || syncOnUser)(you, { now }); // the job record's "waiting on you": these cards, all of them (jobs.mjs)
   const nextAll = nextUp({ now, map, list, named, deps: { board: () => bd, reports: () => rep, ...(deps.next || {}) } });
   const next = you.length ? [] : nextAll; // not shown while something needs you, but a tap on one already on screen still works (homeNext)
@@ -558,11 +568,22 @@ function homeState({ now = Date.now(), fresh = false, deps = {}, tick = false } 
 
 // Cards the chat says your message answered: only a question that's really on Home counts (the
 // model can't close one by inventing it). Each goes in the shared record, so the card leaves and no agent asks it again.
-function settleFromChat(h, said, answer) {
+// A card their chat message answered: closed on Home, and its agent gets the message as its answer.
+// It used to be closed only, so "send the 100" in chat hid the Send card, sent nothing, and they
+// were told to tap Send after all (23 Oct 2026). A plain yes takes the card's agent option.
+const CHAT_YES = /^\W*(?:yes|yep|yeah|ya|ok(?:ay)?|sure|go(?: ahead)?|do it|send (?:it|them|the|that|this)|approve(?:d)?|confirm(?:ed)?|please do|go for it)\b/i;
+const plainYes = (t) => CHAT_YES.test(t) && t.length <= 60 && !/\b(?:but|instead|not|later|tomorrow|wait|hold|change|only|except|unless)\b|n't\b/i.test(t); // "send it tomorrow" is their words, not the option
+function settleFromChat(h, said, answer, { reply = answerQuestions } = {}) {
   const key = (t) => String(t || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
   const shown = ((h && h.you) || []).filter((y) => y.kind === "ask" && y.q);
   let n = 0;
-  for (const q of said || []) { const y = shown.find((x) => key(x.q) === key(q)); if (y && recordDone(y.q, `answered in chat: ${String(answer || "").slice(0, 120)}`)) n++; }
+  for (const q of said || []) {
+    const y = shown.find((x) => key(x.q) === key(q)); if (!y) continue;
+    if (recordDone(y.q, `answered in chat: ${String(answer || "").slice(0, 120)}`)) n++;
+    if (!y.path || !String(y.id || "").startsWith("ask:")) continue; // an agent's own question: the rest close as they did
+    const go = plainYes(String(answer || "").trim()) && (y.options || []).find((o) => /^\W*🤖\s*Agent:/u.test(String(o)));
+    try { reply(y.path, [{ q: y.raw || y.q, a: go || `Answered in chat: "${String(answer || "").replace(/\s+/g, " ").trim().slice(0, 600)}"` }], { rerun: true }); } catch {}
+  }
   return n;
 }
 // Asks that never belong on Home: "close the Symbiot Browser" is an agent's wait-and-retry, not
@@ -572,11 +593,14 @@ const CLOSE_BROWSER = /\b(?:close|quit|shut)\b[^.?]{0,40}\bSymbiot Browser\b|\bS
 // steps over, with no security-key tap or code in them, isn't a card for Home.
 const HAND_CLICKS = /\b(?:click|press|tap|hit)\b[^.?]{0,60}\b(?:Edit|Delete|Remove|Save|Done|Submit|Continue|Next|Allow|Confirm|Update|Add|Create|Revoke|Disable|Enable)\b/i;
 const NEEDS_THEM = /\b(?:security key|passkey|hardware key|2fa|sms|one-time|verification code|recovery code|authenticator)\b/i;
+// Two runs asking about one decision in their own words (two runs on the same invite: one "I'll send
+// it", one "send it yourself", 23 Oct 2026) are one card: the one where the agent does it, else the first.
+const agentFirst = (y) => /^\W*🤖/u.test(String((y.options || [])[0] || ""));
 function settleAsks(you) {
-  const seen = new Map();
+  const seen = [], drop = new Set();
   // "Already covered?" (a standing rule that shared words with the card) is gone from cards: it
   // matched on words, not meaning, and put unrelated rules under the user's questions (22 Oct 2026).
-  return you.filter((y) => {
+  const kept = you.filter((y) => {
     if (y.kind !== "ask") return true;
     if (isDone(y.q)) return false; // already answered, for any agent
     const said = `${y.q || ""} ${(y.options || []).join(" ")}`;
@@ -584,16 +608,16 @@ function settleAsks(you) {
     if (HAND_CLICKS.test(said) && !NEEDS_THEM.test(said)) return false;
     const k = String(y.q || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
     if (!k) return true;
-    // the same human step worded two ways ("Trusted Publisher … security key" twice) is one card
+    // the same human step worded two ways ("Trusted Publisher … security key" twice) is one card,
+    // and so is one decision two runs ask about in their own words (sameSubject)
     const w = new Set(k.split(" ").filter((t) => t.length > 3));
-    for (const [sk, sw] of seen) {
-      if (sk === k) return false;
-      const both = [...w].filter((t) => sw.has(t)).length;
-      if (w.size >= 5 && sw.size >= 5 && both / Math.min(w.size, sw.size) >= 0.8) return false;
-    }
-    seen.set(k, w);
+    const twin = seen.find((x) => !drop.has(x.y) && (x.k === k || (w.size >= 5 && x.w.size >= 5 && [...w].filter((t) => x.w.has(t)).length / Math.min(w.size, x.w.size) >= 0.8) ||
+      (x.y.path && y.path && x.y.path !== y.path && sameSubject(x.y.q, y.q))));
+    if (twin) { if (!(agentFirst(y) && !agentFirst(twin.y))) return false; drop.add(twin.y); }
+    seen.push({ k, w, y });
     return true;
   });
+  return kept.filter((y) => !drop.has(y));
 }
 
 // An answer on a stuck handover's, a waiting run's or a failed run's blob. pick: the
@@ -782,7 +806,7 @@ function phoneBits(now = Date.now()) {
   try {
     if (!PHONE) {
       const a = phoneApprovals(now), l = linkState(), phones = l.on ? (l.phones || []).map((p) => ({ name: p.name, ...(p.seen ? { seen: p.seen } : {}), ...(p.via ? { via: p.via } : {}), ...(p.old ? { old: true } : {}) })) : [];
-      return { ...(phones.length ? { phones } : {}), ...(a.length ? { phoneApproved: a.map((x) => ({ repo: x.repo, phone: x.phone, at: x.at, status: x.status, ...(x.pr ? { pr: x.pr } : {}), ...(x.error ? { error: x.error } : {}) })) } : {}) };
+      return { ...(phones.length ? { phones } : {}), ...(l.on && l.usbFail ? { phoneUsbFail: l.usbFail } : {}), ...(a.length ? { phoneApproved: a.map((x) => ({ repo: x.repo, phone: x.phone, at: x.at, status: x.status, ...(x.pr ? { pr: x.pr } : {}), ...(x.error ? { error: x.error } : {}) })) } : {}) };
     }
     const v = computerView(); if (!v.paired) return {};
     const c = v.copy || {}, asks = (c.asks || []).filter((x) => !x.waiting).length, approves = (c.approves || []).filter((x) => !x.waiting).length;
@@ -904,7 +928,7 @@ async function homeAsk(question, { ask, now = Date.now(), state, images = [], ac
   let open = []; try { open = loadTasks().filter((t) => t && !t.done && !t.archived && !t.review).map((t) => ({ id: t.id, text: t.text, repo: t.repo })); } catch {}
   const r = await converse({ where: "Home", role, nav: true, settle: true, control: true, tasks: open, context: homeContext(h), question: question + (pics.length ? `\n(The user attached ${pics.length} screenshot${pics.length > 1 ? "s" : ""}: you can see ${pics.length > 1 ? "them" : "it"}.)` : ""), map, now, images: pics.map(({ mime, data, path }) => ({ mime, data, path })), ...(ask ? { ask } : {}),
     act: {
-      agent: (req, known, repo, said) => { const d = repo ? actIn(req + shotNote, repo, { map, known, title: "Home", said }) : actNow(req + shotNote, { title: "Home", known }); noteHanded(d, req); return d; },
+      agent: (req, known, repo, said, kind) => { const d = repo ? actIn(req + shotNote, repo, { map, known, title: "Home", said, kind }) : actNow(req + shotNote, { title: "Home", known }); noteHanded(d, req); return d; },
       task: (text, repo) => { const d = taskIn(text + shotNote, repo, { map }); noteHanded(d, text); return d; },
       control: (ops) => control(ops, { map }),
       ...acts, // a phone's chat (phone.mjs OPS.chat) overrides these: it answers and adds tasks, but starts and steers nothing (15 Oct 2026)
@@ -953,6 +977,35 @@ function sinceReport(r, { read = (f) => readFileSync(f, "utf8"), stat = (f) => s
   if (ans.trim()) out.push(`The lane's newest answers and handover reports (.symbiot/ANSWERS.md, newest last). Read them before saying what's true now, and before starting any work: what's already found or done there isn't redone.\n${ans.slice(-6000)}`);
   return out.length ? `\n\nSince the report:\n${out.join("\n\n")}` : "";
 }
+// A card with nothing to ask (needs.mjs blankAsk) is dropped, and app.log says which run made it, once
+// per card, so why it came can be looked into: on 23 Oct 2026 nothing said where an empty one came from.
+const BLANK_SEEN = new Set();
+function dropBlank(cards, list = [], log = (l) => console.log(l)) {
+  return (cards || []).filter((y) => {
+    if (!blankAsk(y)) return true;
+    const k = `${y.id}|${y.raw || y.q || y.sub || ""}`;
+    if (!BLANK_SEEN.has(k)) {
+      if (BLANK_SEEN.size > 500) BLANK_SEEN.clear(); BLANK_SEEN.add(k);
+      const a = (list || []).find((x) => x && y.path && x.path === y.path);
+      log(`card blocked: ${y.id || "a card"} ("${plain(y.title || "", 60)}") had no question, only ${JSON.stringify(String(y.raw || y.q || y.sub || "").slice(0, 60))}; from ${a ? `run ${a.id || "with no id"} (${plain(String(a.name || ""), 60)})` : "no run"} in ${y.path || "no folder"}`);
+    }
+    return false;
+  });
+}
+// The card a word typed on it is about (/api/home/answer → cardTalk): by its id, from every card Home
+// and the relay built last (SHOWN), else its run (needs:/failed: name the run, not its folder), with the
+// question the page sent when the card's gone since. null when there's no real folder or question: never
+// a made-up one. On 23 Oct 2026 a relay card wasn't among Home's first six, so its talk went to its agent
+// as "this card", in a folder named for its id (~/earlier-7f4dfae5), and the AI said the card was empty.
+const SHOWN = new Map();
+function cardFor(id, { q = "", deps = {} } = {}) {
+  id = String(id || ""); const ref = id.replace(/^\w+:/, "");
+  let y = (deps.shown || SHOWN).get(id) || null;
+  if (!y && /^(?:needs|failed):/.test(id)) { try { const a = (deps.agents || agentsList)().find((x) => x.id === ref); if (a) y = { id, path: a.path, q: a.needs && a.needs.what ? a.needs.what + (a.needs.check ? ` Check first: ${a.needs.check}` : "") : "" }; } catch {} }
+  if (!y && /^(?:ask|stalled):/.test(id)) y = { id, path: ref };
+  const path = y && y.path ? String(y.path) : "", text = [y && y.raw, y && y.q, y && y.sub, q].map((x) => String(x || "").trim()).find((x) => !blankText(x)) || "";
+  return path && isAbsolute(path) && text ? { ...y, path, q: text } : null;
+}
 // A card is a conversation with its agent, like an agent's pane: what the user types on it that
 // is a question or a remark, not an answer ("did you fix the force app", 22 Oct 2026), is answered
 // on the card from that run's own records, and the card's question stays open. Asked for work
@@ -960,7 +1013,7 @@ function sinceReport(r, { read = (f) => readFileSync(f, "utf8"), stat = (f) => s
 // the text is an answer (answerQuestions takes it as before).
 async function cardTalk(path, answers, { ask, deps = {}, extra = "", force = false } = {}) {
   const rows = Array.isArray(answers) ? answers : [], one = rows.length === 1 ? rows[0] : null;
-  if (!path || !one || !String(one.a || "").trim()) return null;
+  if (!path || !one || !String(one.a || "").trim() || blankText(one.q)) return null; // no question to talk about: never "this card"
   const read = deps.read || ((f) => { try { return readFileSync(join(path, ".symbiot", f), "utf8"); } catch { return ""; } });
   const qs = (deps.questions || ((p) => { try { return agentQuestions(p, "", { raw: true }).questions; } catch { return []; } }))(path);
   const q = qs.find((x) => String(x.q).trim().toLowerCase() === String(one.q || "").trim().toLowerCase()) || { q: one.q, options: [] };
@@ -978,7 +1031,7 @@ async function cardTalk(path, answers, { ask, deps = {}, extra = "", force = fal
     open ? `Its open and waiting items:\n${open}` : "", `The newest answers it has (newest last):\n${read("ANSWERS.md").slice(-4000)}`,
     before.length ? `Said on this card already:\n${talkText(before)}` : "", extra].filter(Boolean).join("\n\n");
   const res = await converse({ where: `Card: ${name}: ${String(q.q).slice(0, 60)}`, role, context, question: said, map, ...(ask ? { ask } : {}),
-    act: { agent: (req, known, repo, s2) => (repo || lane ? actIn(req, repo || lane, { map, known, title: "Card", said: s2 }) : actNow(req, { title: "Card", known })), task: (text, repo) => taskIn(text, repo || lane, { map }) } });
+    act: { agent: (req, known, repo, s2, kind) => (repo || lane ? actIn(req, repo || lane, { map, known, title: "Card", said: s2, kind }) : actNow(req, { title: "Card", known })), task: (text, repo) => taskIn(text, repo || lane, { map }) } });
   const reply = String(res.reply || "").trim() || "I couldn't answer that just now.";
   const talk = addTalk(path, q.q, { from: "agent", text: reply });
   return { ok: true, talk, reply, ...(res.did ? { did: res.did } : {}), lane: lane || "ops" };
@@ -991,7 +1044,7 @@ async function updateAsk(id, text, { context = "", ask } = {}) {
   let map = {}; try { map = laneMap(); } catch {}
   const role = "They're asking about an update on their Updates list: things Symbiot noticed or did, or would have done, on its own. Answer about it plainly; if they ask for one of its moves (or anything) to be done, do it.";
   const res = await converse({ where: `Updates: ${id}`, role, context: `The update's moves:\n${context || "(none kept)"}`, question: text, map, ...(ask ? { ask } : {}),
-    act: { agent: (req, known, repo, said) => (repo ? actIn(req, repo, { map, known, title: "Updates", said }) : actNow(req, { title: "Updates", known })), task: (t, repo) => taskIn(t, repo, { map }) } });
+    act: { agent: (req, known, repo, said, kind) => (repo ? actIn(req, repo, { map, known, title: "Updates", said, kind }) : actNow(req, { title: "Updates", known })), task: (t, repo) => taskIn(t, repo, { map }) } });
   return { answer: res.reply, ...(res.did ? { did: res.did } : {}) };
 }
 // Ask about the report in place: the same mind as Home's chat, the report in front of it.
@@ -1019,7 +1072,7 @@ async function reportAsk(id, question, { ask, deps = {} } = {}) {
   const role = `Here they're reading a report an agent wrote, "${r.title}"${lane ? ` (${lane})` : ""}, under Reports. Answer about it from its text; a task or agent work it leads to goes to ${lane || "the lane it belongs to"} unless they say otherwise.`;
   const res = await converse({ where: `Reports: ${r.title}`, role, context: `The report (${r.file}):\n${String(r.text || "").slice(0, 12000)}${sinceReport(r)}`, question, map, ...(ask ? { ask } : {}),
     act: {
-      agent: (req, known, repo, said) => ((repo || lane) ? actIn(req, repo || lane, { map, known, title: "Reports", said }) : actNow(req, { title: "Reports", known })),
+      agent: (req, known, repo, said, kind) => ((repo || lane) ? actIn(req, repo || lane, { map, known, title: "Reports", said, kind }) : actNow(req, { title: "Reports", known })),
       task: (text, repo) => taskIn(text, repo || lane, { map }),
     } });
   return { answer: res.reply, spoken: res.spoken, ...(res.did ? { did: res.did } : {}), steps: res.steps || [] };
@@ -1103,7 +1156,8 @@ function workSceneNow({ deps = {}, full = false } = {}) {
   // The cards are read from the job record Home writes (jobs.mjs onUser), so an orb never stands
   // for a question Home dropped (answered already, held in the vault, asked twice by one agent).
   // With the agents stubbed (tests) and no record given, they're worked out from those agents here.
-  const gone = (deps.dismissed || loadDismissed)(), trouble = troubles({ stuck: stuck(), list: AG, map, named, drafts: drafts() });
+  const gone = (deps.dismissed || loadDismissed)(), trouble = dropBlank(troubles({ stuck: stuck(), list: AG, map, named, drafts: drafts() }), AG);
+  if (!Object.keys(deps).length) for (const t of trouble) SHOWN.set(t.id, t); // the relay shows these: talk typed on one finds it (cardFor)
   const cards = deps.onUser ? deps.onUser() : deps.agents ? null : (homeState({ tick: true }), onUser()); // tick: the scene reading Home is nobody looking (homeTick)
   const held = {};
   if (cards) for (const c of cards) {
@@ -1152,7 +1206,7 @@ function workSceneNow({ deps = {}, full = false } = {}) {
     }
     // Agent runs are one card for many unrelated jobs: each question says which job it's for
     const job = l === RUNS_LANE ? plain(String(a.name || "").replace(/^Agent:\s*/, "").replace(/^New job:\s*/i, ""), 90) : "";
-    for (const q of qs) { p.qs = p.qs || []; const c = { q: q.shown || q.q, ...(q.shown ? { raw: q.q } : {}), ...(q.task || job ? { task: q.task || job } : {}), ...(q.talk ? { talk: q.talk } : {}), options: (q.options || []).slice(0, 3), ...(q.labels ? { labels: q.labels } : {}), path: a.path, ...signInCard([q.q, ...(q.options || []).slice(0, 3)]), ...reportLink(q.report) }; if (gone[cardKey(c)]) { p.asks = Math.max(0, p.asks - 1); continue; } if (p.qs.length < 3) p.qs.push(c); } // one dismissed (dismissCard) stays off the relay too
+    for (const q of qs) { p.qs = p.qs || []; const c = { q: q.shown || q.q, ...(q.shown ? { raw: q.q } : {}), ...(q.task || job ? { task: q.task || job } : {}), ...(q.talk ? { talk: q.talk } : {}), options: (q.options || []).slice(0, 3), ...(q.labels ? { labels: q.labels } : {}), path: a.path, ...signInCard([q.q, ...(q.options || []).slice(0, 3)]), ...reportLink(q.report) }; if (gone[cardKey(c)] || !dropBlank([{ kind: "ask", ...c }], AG).length) { p.asks = Math.max(0, p.asks - 1); continue; } if (p.qs.length < 3) p.qs.push(c); } // one dismissed (dismissCard) stays off the relay too
     // an idea for another lane is on that lane's sheet, and here just "2 ideas sent to symbiot" (agents.mjs routeIdeas)
     for (const s of ideas.concat(away.filter((s) => !s.delivered))) {
       const there = s.other || s.delivered === false ? at(s.repo) : p;
@@ -1256,10 +1310,18 @@ function waitWhy({ map, named, running, held, ready, isParked, deps = {} }) {
     if (h) return h.approve ? { kind: "approve", noGo: true, text: `Waiting on your OK for ${name}'s last run, on the Workdesk`, path: h.path } : h.step ? { kind: "step", noGo: true, text: `Waiting on a step only you can do for ${name}: its card is under Needs you`, path: h.path } : { kind: "asks", noGo: true, text: `Waiting on your answer to ${name}'s question, on the Workdesk`, path: h.path };
     if (inBrief && ready.has(lane)) return { kind: "approve", noGo: true, text: `Waiting on your OK for ${name}'s work, on the Workdesk`, path };
     // its agent marked it [~]: it waits on something outside the run, and an answer coming in starts the lane again
+    // only a real, named blocker holds it (agents.mjs namedBlocker): "waits on: someone with root" when
+    // the lane has root left steve's OOM fix idle with no card to release it (25 Oct 2026)
     const on = inBrief ? (deps.waiting || waitingTask)(path, t.text) : "";
-    if (on) return { kind: "waiting", noGo: true, text: `Waiting on ${on.replace(/^(?:waits|waiting) (?:on|for):?\s*/i, "").replace(/[.\s]+$/, "")}. ${name}'s agent carries on once that's in` };
+    if (on && (deps.named || namedBlocker)(on)) return { kind: "waiting", noGo: true, text: `Waiting on ${on.replace(/^(?:waits|waiting) (?:on|for):?\s*/i, "").replace(/[.\s]+$/, "")}. ${name}'s agent carries on once that's in` };
     if (fail) return { kind: "blocked", failAt: fail.at, text: `Blocked: ${name}'s agent didn't start: ${String(fail.note).replace(/^Not started:\s*/i, "")}` };
-    if (inBrief && lastRun(path) >= b.at) return { ...flag(`${name}'s last run ended without finishing it: Go starts it again`), ended: true };
+    // its last run ended without finishing it: it starts again by itself, a few times an hour at most
+    // (autoStart, keyed to this task), and only then waits for Go: it used to wait for Go at once, and
+    // a full Workdesk sat with no agent running (25 Oct 2026)
+    if (inBrief && lastRun(path) >= b.at) {
+      const key = `ended:${t.id}`, room = now - lastRun(path) >= RETRY_AFTER && (deps.autoStart || autoStart)(path, { key, take: false, now });
+      return room ? { kind: "next", retryKey: key, text: `Next: ${name}'s last run ended without finishing it, so it starts again on its own` } : { ...flag(`${name}'s last run ended without finishing it: Go starts it again`), ended: true };
+    }
     return age > STUCK_AFTER ? flag(`Not started after ${minutes(age)}, with nothing in its way`) : { kind: "next", text: `Next: starts on its own, ${name}'s lane is free` };
   };
 }
@@ -1296,6 +1358,7 @@ function workTick({ deps = {} } = {}) {
     const e = run(wr.path);
     if (e && e.id && !e.busy && !e.blocked) {
       delete fails[lane]; out.started.push(lane);
+      for (const x of w.all.filter((y) => y.repo === lane && y.why.retryKey)) (deps.autoStart || autoStart)(wr.path, { key: x.why.retryKey, now }); // a restart counts towards its task's cap
       for (const id of exclude) go(lane, mine.find((x) => x.id === id));
     }
     else if (!e || (e.blocked && !e.parked)) { fails[lane] = { at: now, note: plain((e && e.note) || "the agent command didn't run", 120) }; out.failed.push(lane); }
@@ -1449,4 +1512,4 @@ function setOnboarding({ step, skip, unskip, skipRest, done, restart } = {}) {
   return onboarding();
 }
 
-export { updateAsk, cardTalk, homeTick, HOME_LOOKED, WORK_KEEP, FIRST_RUN, troubles, agentDigest, garthLedger, plainAsk, dismissCard, cardKey, loadDismissed, DISMISSED_FILE, reportIdeasAdd, reportAsk, reportDraftAnswer, workTick, waitWhy, AUTO_GRACE, STUCK_AFTER, marketingState, marketingGo, marketingDraftAnswer, marketingTask, moveToMarketing, goLane, homeState, homeContext, homeAsk, homeAnswer, homeNext, nextUp, laneNamed, NEXT_FILE, workScene, forgetWork, workGo, displayName, firstSteps, onboarding, setOnboarding, startOnboarding, ONB_STEPS, ONB_STEPS_PHONE, onbSteps, phoneBits, phoneSetupFirst, finishedState, handedState, noteHanded, phoneChat, isPeak, reportIdeasDismiss, settleAsks, settleFromChat, unplacedCards };
+export { updateAsk, cardTalk, cardFor, dropBlank, homeTick, HOME_LOOKED, WORK_KEEP, FIRST_RUN, troubles, agentDigest, garthLedger, plainAsk, dismissCard, cardKey, loadDismissed, DISMISSED_FILE, reportIdeasAdd, reportAsk, reportDraftAnswer, workTick, waitWhy, AUTO_GRACE, STUCK_AFTER, marketingState, marketingGo, marketingDraftAnswer, marketingTask, moveToMarketing, goLane, homeState, homeContext, homeAsk, homeAnswer, homeNext, nextUp, laneNamed, NEXT_FILE, workScene, forgetWork, workGo, displayName, firstSteps, onboarding, setOnboarding, startOnboarding, ONB_STEPS, ONB_STEPS_PHONE, onbSteps, phoneBits, phoneSetupFirst, finishedState, handedState, noteHanded, phoneChat, isPeak, reportIdeasDismiss, settleAsks, settleFromChat, unplacedCards };

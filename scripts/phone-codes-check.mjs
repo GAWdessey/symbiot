@@ -113,9 +113,10 @@ async function main() {
   }
   if (!ok("a phone answers adb", !!serial && adb("get-state") === "device", serial)) return stop("no phone on adb: turn on Wireless debugging on the phone (Developer options), or pass --serial");
   console.log(`  ${adb("shell", "getprop", "ro.product.model")} (${serial})`);
-  // asleep again, the phone drops adb before the notification goes: its screen stays on while the check runs, and finish() puts the setting back
+  // asleep again, the phone drops adb before the notification goes: its screen stays on while the check runs, and finish() puts the setting back.
+  // Never woken from here (it was, with a wake key): the user pressing the card has it awake, and nothing acts on its screen (23 Oct 2026)
   const stay = adb("shell", "settings", "get", "global", "stay_on_while_plugged_in");
-  if (/^\d+$/.test(stay || "")) { stayWas = stay; adb("shell", "svc", "power", "stayon", "true"); adb("shell", "input", "keyevent", "KEYCODE_WAKEUP"); }
+  if (/^\d+$/.test(stay || "")) { stayWas = stay; adb("shell", "svc", "power", "stayon", "true"); }
 
   step("the phone app has CodeListener, and Notification access");
   const dump = () => adb("shell", "dumpsys", "package", PKG) || "", appVersion = () => (dump().match(/versionName=(\S+)/) || [])[1] || "";

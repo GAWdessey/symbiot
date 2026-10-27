@@ -12,13 +12,13 @@ import { randomBytes, createHash } from "node:crypto";
 import { track as jobTrack, runRecord, recordOf, loadJobs, goalRows } from "./jobs.mjs";
 import { CONFIG_DIR, loadConfig, saveConfig, loadTasks, TASK_MAX, clipWords, jobWords, sameTask, taskWords, sh, runOut, hasCmd, readState, writeJsonAtomic } from "./core.mjs";
 import { meetsStep, captureSecrets, heldFor } from "./vault.mjs";
-import { recordDone, isDone, isApprovalAsk, approvalText, approvedBefore, recentTurns, recentTasks, asksBack, askBackNote, closesAsk, runSaysClosed, heldBy, reportsSince, runReport, reportAsked, standingList, talkOf, endTalk, talkText } from "./asksdone.mjs";
+import { recordDone, isDone, isApprovalAsk, approvalText, approvedBefore, recentTurns, recentTasks, asksBack, askBackNote, closesAsk, runSaysClosed, heldBy, reportsSince, runReport, reportAsked, standingList, talkOf, endTalk, talkText, addTalk } from "./asksdone.mjs";
 import { sentAfter } from "./sentmail.mjs";
 import { parseRun, lastRunText, readRunLog, runStarted, briefPlan, stepOf, runLine, waitingOn, waitUntil, RECHECK } from "./work.mjs";
 import { noteDuration, noteCost, kindOf } from "./estimate.mjs";
 import { plainAsk } from "./plain.mjs";
-import { apiOptions, blockedSignIn, apiRoute, realChrome, CHROME_READ, CHROME_ACT } from "./browserfails.mjs";
-import { actSites, goAhead, signInNotNeeded, switchOnAct } from "./chromegate.mjs";
+import { apiOptions, blockedSignIn, apiRoute, realChrome, ownChromeStep, CHROME_READ, CHROME_ACT } from "./browserfails.mjs";
+import { actSites, goAhead, refuseHold, holdOf, goWords, goAnswer, goHistory, signInNotNeeded, switchOnAct } from "./chromegate.mjs";
 import { pushGo } from "./pushgate.mjs";
 import { goAhead as phoneGo } from "./phonegate.mjs";
 import { lanesJob, parseFacts, leftToYou, blockedChecks, blockedHandover, OPS, gitWork, agentsGitWork, agentsClicking, agentsCodeWork, agentsMail, agentsPosting, linkedAsks, linkedChore, PUSH_OK } from "./handover.mjs";
@@ -29,7 +29,8 @@ import { runbookOf, onDeployAnswer } from "./deploy.mjs";
 import { claudeState, resolveProvider, write as aiWrite } from "./ai.mjs";
 import { settleDone, ticked as tickedItems } from "./done.mjs";
 import { toReview, criticBrief, CRITIC_PROMPT, settleVerdict, reviewOf, saveReview, startDesign, settleDesign, dropDesign, specsFor, DESIGNER_PROMPT } from "./design.mjs";
-import { judge as triageJudge, verdictOf, saveVerdict, shows as triageShows, answerFor as triageAnswer, recordFault, HOLD_MS as TRIAGE_HOLD, noteCardWords, sweepGone } from "./triage.mjs";
+import { moneyNote } from "./needs.mjs";
+import { judge as triageJudge, precheck as triagePrecheck, verdictOf, saveVerdict, shows as triageShows, answerFor as triageAnswer, recordFault, HOLD_MS as TRIAGE_HOLD, noteCardWords, sweepGone } from "./triage.mjs";
 import { stalledFor, onStall, loadStall, saveStall, clearStall, STALL_MIN, STALL_PROMPT_TAIL } from "./stall.mjs";
 
 const HANDOFFS = []; // live registry of agents Symbiot has handed work to
@@ -48,7 +49,7 @@ const shSingle = (s) => "'" + String(s).replace(/'/g, "'\\''") + "'";
 const escDq = (s) => String(s).replace(/[\\"$`]/g, "\\$&");
 // Plain words only: in the Orca preset this passes through two shells, so no
 // backticks or $ (escDq covers one level).
-const HANDOFF_PROMPT = "Read .symbiot/TASKS.md and implement its unchecked items in this repo, one at a time, urgent ones first: finish the first one completely (built, tested, ticked) before you look at the next, then carry on with the next while you can. An item that is already done in the code, or no longer applies, you tick with a one-line note saying why. Tick an item [x] only when it is done and checked: one that is blocked, handed to another lane, or waiting on a person, a reply or a later event you mark [~] with a note of what it waits on, never [x], and a finding is not a done item. Look at the [~] items first: once what one waits on has come in, carry on with it. Never stop because the list is long: another run picks up where you left off. Tick each item [x] in that file as you finish it and leave your changes uncommitted, so they can be reviewed and approved. If you need a decision, or have ideas or options for the user, write them to .symbiot/QUESTIONS.md as TASKS.md explains, then skip that item and carry on with the next: a question never ends the run while other items can be done. Read .symbiot/ANSWERS.md first if it exists. Confirm before anything destructive. Ask the user once per job, not once per step: before you ask anything, work out everything the job will need from them to the end and put it all in one question, each thing with the default you will use if they leave it. Never ask them whether something has happened or what state it is in: check it yourself. When the user says go ahead, do it. If something truly stops you, never ask the same question again: name the one thing that blocks you as a step only they can take, with exactly where to do it, and stop there.";
+const HANDOFF_PROMPT = "Read .symbiot/TASKS.md and implement its unchecked items in this repo, one at a time, urgent ones first: finish the first one completely (built, tested, ticked) before you look at the next, then carry on with the next while you can. An item that is already done in the code, or no longer applies, you tick with a one-line note saying why. Tick an item [x] only when it is done and checked: one that is blocked, handed to another lane, or waiting on a person, a reply or a later event you mark [~] with a note of what it waits on, never [x], and a finding is not a done item. Look at the [~] items first: once what one waits on has come in, carry on with it. Never stop because the list is long: another run picks up where you left off. Tick each item [x] in that file as you finish it. When items are done, commit them on your branch, merge origin/main into it, run the tests, and open the pull request yourself with auto-merge on green CI; do not leave finished work uncommitted. Leave an approval card only for a step that is hard to undo (deleting, killing processes, deploying to live). If you need a decision, or have ideas or options for the user, write them to .symbiot/QUESTIONS.md as TASKS.md explains, then skip that item and carry on with the next: a question never ends the run while other items can be done. Read .symbiot/ANSWERS.md first if it exists. Confirm before anything destructive. Ask the user once per job, not once per step: before you ask anything, work out everything the job will need from them to the end and put it all in one question, each thing with the default you will use if they leave it. Never ask them whether something has happened or what state it is in: check it yourself. When the user says go ahead, do it. If something truly stops you, never ask the same question again: name the one thing that blocks you as a step only they can take, with exactly where to do it, and stop there.";
 function handoffCmd() { const cfg = loadConfig(); return migrateOrcaCmd(migrateClaudeCmd(cfg.agentCmd)) || (cfg.ide ? `${cfg.ide} {dir}` : ""); } // ide = legacy
 // Save the template ("" clears it). Either way the legacy `ide` key goes.
 function setHandoffCmd(cmd) {
@@ -197,7 +198,7 @@ function guardSettings() {
   // Symbiot's own settings and keys denied here too (GUARD, as Claude Code reads a rule): a deny
   // holds in every mode, bypassPermissions included, and a run gets it whether or not its folder
   // has a settings.local.json
-  const s = { permissions: { deny: GUARD() }, hooks: { PreToolUse: [{ matcher: "Bash|Read|Edit|Write|MultiEdit|NotebookEdit|Grep|Glob|mcp__claude-in-chrome__.*", hooks: [{ type: "command", command: `node ${JSON.stringify(GUARD_HOOK)}` }] }],
+  const s = { permissions: { deny: GUARD() }, hooks: { PreToolUse: [{ matcher: "Bash|Read|Edit|Write|MultiEdit|NotebookEdit|Grep|Glob|mcp__claude-in-chrome__.*|mcp__.+__(send_message|send_email|send_draft|reply|reply_all|forward|share_file|respond_to_event|create_event|update_event)", hooks: [{ type: "command", command: `node ${JSON.stringify(GUARD_HOOK)}` }] }],
     PostToolUse: [{ matcher: "mcp__claude-in-chrome__.*", hooks: [{ type: "command", command: `node ${JSON.stringify(GUARD_HOOK)}` }] }], // after a Chrome tool: which site each tab is on now (chromegate.mjs seen)
     Stop: [{ hooks: [{ type: "command", command: `node ${JSON.stringify(GUARD_HOOK)}` }] }] } }; // before a run ends: the tabs it left open in the user's Chrome are closed (chromegate.mjs openTabs)
   try { mkdirSync(CONFIG_DIR, { recursive: true }); writeFileSync(GUARD_SETTINGS, JSON.stringify(s, null, 2) + "\n", { mode: 0o600 }); } catch {}
@@ -496,6 +497,33 @@ let shipHold = () => null; const onShipping = (fn) => { shipHold = fn; };
 const STOP_CODES = new Set([null, 130, 143, 137]); // SIGINT, SIGTERM, SIGKILL: stopped (a stall, Stop, an update), not failed
 const WAIT_TIME = /\b(until|tomorrow|tonight|after \d|at \d{1,2}(?::\d\d|h|am|pm)|on (?:mon|tues|wednes|thurs|fri|satur|sun)day|next (?:week|month)|in \d+ (?:min|hour|day))/i;
 const WAIT_USER = /\b(you|your|the user|garth)\b/i;
+// A real someone or something outside the run it waits on: a reply, a review, a check, a service, a
+// device. A [~] naming none of these, nor a lane, a time or the user, isn't waiting on anything: the
+// ship-queued-work-3 rebase needed no change and sat [~] "waiting", and steve's OOM fix waited on
+// "someone with root" when the lane has root (25 Oct 2026). It carries on (paused), never waits.
+const WAIT_OUTSIDE = /\b(repl(?:y|ies|ied)|respon[sd]\w*|review(?:s|ed|er)?|approv\w*|merg\w*|ci|checks?|builds?|e-?mails?|inbox|messages?|calls?|pr\s*#?\d+|pull requests?|google|meta|apple|play (?:store|console)|app store|npm|github|support|vendor|client|customer|bank|payments?|payouts?|propagat\w*|dns|verif\w*|phone|usb|adb|device|timer|scheduled|accept\w*|joins?|releases?|publish\w*|whatsapp|sms|stripe|paypal|cloudflare|aws|outage|quota|rate limit|licen[cs]e|signatures?|sign(?:ed|ing)? (?:in|up)|password|2fa|code)\b/i;
+const WAIT_DATE = /\b\d{4}-\d\d-\d\d\b/;
+// A bare [~] whose run's last words ask the user for something of theirs: that's what it waits on.
+const SAID_USER = /\b(?:need|needs|needed|wait(?:s|ing)? (?:on|for)) (?:your|garth'?s) (?:yes|ok|okay|go|answer|approval|sign-?in|code|password|key|token|decision)\b|\bonly you\b/i;
+// What a [~] note waits on: "lane", "time", "user", "third party", or "" when it names no real blocker.
+function namedBlocker(note, handed = []) {
+  note = String(note || ""); if (!note.trim()) return "";
+  if (handed.some((l) => note.toLowerCase().includes(l.toLowerCase())) || /\b(handed|hand(?:ed)? (?:it )?(?:over|to)|ops)\b/i.test(note)) return "lane";
+  if (WAIT_TIME.test(note) || WAIT_DATE.test(note)) return "time";
+  if (WAIT_USER.test(note)) return "user";
+  return WAIT_OUTSIDE.test(note) ? "third party" : "";
+}
+// A [~] line's note: "(what it waits on) the task", or the newest "waits on: …" anywhere in it (in
+// brackets or after a ";": agents wrote both). "" when it has none: the line is only the task.
+function tildeNote(line) {
+  line = String(line || "").replace(/^\s*-\s*\[~\]\s*/, "");
+  const lead = line.match(/^\(([^)]*)\)\s*/); if (lead) return lead[1].replace(/^(?:waits|waiting) (?:on|for)\b:?\s*/i, "");
+  const tail = [...line.matchAll(/\b(?:waits|waiting) (?:on|for)\b:?\s*/gi)].pop();
+  return tail ? line.slice(tail.index + tail[0].length).replace(/\)\s*$/, "").trim() : "";
+}
+const handedLanes = (path) => [...new Set([...String(readSymbiot(path, "HANDOFF.md") || "").matchAll(/^###\s+([\w.-]+)|→ \*\*([\w.-]+)\*\*/gm)].map((m) => m[1] || m[2]))];
+// The [~] lines of a TASKS.md that name no real blocker: open work, as a [ ] is.
+const idleWaits = (md, handed = []) => String(md || "").split("\n").filter((l) => /^\s*-\s*\[~\]/.test(l) && !namedBlocker(tildeNote(l), handed));
 function runOutcome(path, e = {}, code = 0, { files = null, final = null, questions = null, waiting = undefined, needs = undefined } = {}) {
   const md = readSymbiot(path, "TASKS.md"), lines = md.split("\n");
   const waitLine = lines.find((l) => /^\s*-\s*\[~\]/.test(l)), open = lines.filter((l) => /^\s*-\s*\[ \]/.test(l)).length;
@@ -516,17 +544,19 @@ function runOutcome(path, e = {}, code = 0, { files = null, final = null, questi
     // and a task's words aren't the user's step: the goal card that showed "Move bookly.co.za into a
     // … Copy them into a…" with "I've done it" read as the user's job (22 Oct 2026). bare says so, and
     // the card asks from the run's own last words (goals.mjs); task is the job, for "I'm on it: …".
-    const line = waitLine.replace(/^\s*-\s*\[~\]\s*/, ""), lead = line.match(/^\(([^)]*)\)\s*/), tail = [...line.matchAll(/\((?:waits|waiting) (?:on|for)\b:?\s*/gi)].pop();
+    const line = waitLine.replace(/^\s*-\s*\[~\]\s*/, ""), lead = line.match(/^\(([^)]*)\)\s*/), tail = [...line.matchAll(/\(?\b(?:waits|waiting) (?:on|for)\b:?\s*/gi)].pop();
     const note = lead ? lead[1].replace(/^(?:waits|waiting) (?:on|for)\b:?\s*/i, "") : tail ? line.slice(tail.index + tail[0].length).replace(/\)\s*$/, "") : line;
     const task = clipWords(jobWords(lead ? line.slice(lead[0].length) : tail ? line.slice(0, tail.index) : line), 120), bare = !lead && !tail;
     const out = (state, waitingOn = "", what = "", n = "") => ({ ...outBase(state, waitingOn, what, n), ...(task ? { task } : {}), ...(bare ? { bare } : {}) });
     if (open) return out("paused", "", note, `${open} item${open > 1 ? "s" : ""} left; one waits`); // work it can still do: it carries on with that
-    const handed = [...new Set([...String(readSymbiot(path, "HANDOFF.md") || "").matchAll(/^###\s+([\w.-]+)|→ \*\*([\w.-]+)\*\*/gm)].map((m) => m[1] || m[2]))]; // the lanes it has handed work to
-    const lane = handed.find((l) => note.toLowerCase().includes(l.toLowerCase())) || (/\b(handed|hand(?:ed)? (?:it )?(?:over|to)|ops)\b/i.test(note) ? (handed.includes("ops") ? "ops" : handed[0] || "ops") : "");
-    if (lane) return out("waiting", "lane", note.toLowerCase().startsWith(lane.toLowerCase()) ? note : `${lane}: ${note}`);
-    if (WAIT_TIME.test(note)) return out("waiting", "time", note);
-    if (WAIT_USER.test(note)) return out("waiting", "user", note);
-    return out("waiting", "third party", note);
+    const handed = handedLanes(path); // the lanes it has handed work to
+    // only a real, named blocker makes it wait: any [~] that names none is work it can still do
+    const userSaid = SAID_USER.test(String(said || "")); // its last words ask the user for a yes, a code…: that's named
+    const idle = userSaid ? 0 : lines.filter((l) => /^\s*-\s*\[~\]/.test(l) && !namedBlocker(tildeNote(l), handed)).length;
+    if (idle) return out("paused", "", note, `${idle} item${idle > 1 ? "s" : ""} marked waiting with nothing named in the way: it carries on`);
+    const on = (bare ? "" : namedBlocker(note, handed)) || (userSaid ? "user" : "");
+    if (on === "lane") { const lane = handed.find((l) => note.toLowerCase().includes(l.toLowerCase())) || (handed.includes("ops") ? "ops" : handed[0] || "ops"); return out("waiting", "lane", note.toLowerCase().startsWith(lane.toLowerCase()) ? note : `${lane}: ${note}`); }
+    return out("waiting", on, note);
   }
   if (STOP_CODES.has(code) && code !== 0) return out(open ? "paused" : ch ? "review" : "done", "", "", "stopped");
   if (open) return out("paused", "", "", `${open} item${open > 1 ? "s" : ""} left`);
@@ -546,6 +576,7 @@ const waitsOutside = (path) => { try { const r = runRecord(path); return !!r && 
 // seconds, in four folders, and their reports disagreed. The waiting one starts when the other ends.
 const TWIN_WAIT = new Map(); // running path → paths waiting on it
 const isOps = (p) => /\/drafts\/act-[^/]+$/.test(String(p || ""));
+const isCopy = (p) => String(p || "").startsWith(join(CONFIG_DIR, "worktrees") + "/"); // a run beside the lane's own (parallel.mjs WT_DIR)
 function twinRunning(path, { goals = () => { try { return goalRows(); } catch { return []; } }, running = runningHandoff } = {}) {
   if (!isOps(path)) return null;
   for (const g of goals()) { if (!g || ["done", "failed"].includes(g.state) || !(g.paths || []).includes(path)) continue; const other = (g.paths || []).find((p) => p !== path && isOps(p) && running(p)); if (other) return other; }
@@ -628,7 +659,11 @@ function runHandoff(repoPath, { force = false, lost = false, model = "", onExit 
     if (!critic) try {
       const changed = ((loadRunFiles(repoPath).find((r) => r.id === e.id) || {}).files || []).length;
       const dr = settleDone(repoPath, { log: runSection(readRunLog(e.log), e.startedAt, true), before: tickedBefore, ops: isOps(repoPath), hasTests: hasTestScript(repoPath), changed });
-      if (dr.reopened.length && autoStart(repoPath)) { const t = setTimeout(() => { try { runHandoff(repoPath, { force: true, onExit }); } catch {} }, 300); if (t.unref) t.unref(); return; }
+      // one job, one run: an ops folder (its goal decides what's next) and a copy a run beside the lane worked in
+      // (its item goes back to the lane, parallel.mjs mergeBack) aren't run again here: a second run there took
+      // the same job 0.3 s after the first and did the opposite (the phone item, the failed-skip item, a game's
+      // deploy, steve's size alarm, 25 Oct 2026)
+      if (dr.reopened.length && !isOps(repoPath) && !isCopy(repoPath) && autoStart(repoPath, { key: "reopen:" + dr.reopened.join("\n") })) { const t = setTimeout(() => { try { runHandoff(repoPath, { force: true, onExit }); } catch {} }, 300); if (t.unref) t.unref(); return; }
     } catch {}
     try { uiReview(repoPath, e, { critic }); } catch {} // UI work: Symbiot's design critic judges it, or its verdict is settled (design.mjs)
     if (onExit) try { onExit(code); } catch {} // a run beside the lane's own (parallel.mjs) merges back
@@ -1021,6 +1056,8 @@ const knownRun = (path) => HANDOFFS.some((e) => e.path === path) || loadRuns().s
 // again only when its QUESTIONS.md or ANSWERS.md changed, and one with a question still
 // open is listed like a run: { path, name, startedAt }.
 const QF_EVERY = 30000, QF_MAX_AGE = 30 * 86400000, QF = { at: 0, list: [], seen: new Map() };
+// Which agent a card was, in a few words: its lane for a repo, else its job (an ops run's "Agent: Renew the domain").
+const agentLabel = (path) => { const w = whereOf(path); return w.lane && w.lane !== "ops" && !w.copy ? w.lane : runNameOf(path).replace(/^Agent:\s*/i, "").replace(/^New job:\s*/i, "").slice(0, 60); };
 const runNameOf = (path) => { try { const h = JSON.parse(readSymbiot(path, "handoff.json")) || {}; return String(h.name || "").slice(0, 80) || basename(path); } catch { return basename(path); } };
 function questionFolders(now = Date.now()) {
   if (now - QF.at < QF_EVERY) return QF.list;
@@ -1149,6 +1186,8 @@ function needsOf(path, { final = "", waiting = null, end = Date.now(), start = e
   // still couldn't read): never yours to do again, but its agent's, through the site's API (browserfails.mjs)
   const nb = n.kind !== "approve" && blockedSignIn(`${n.label} ${n.what} ${n.check}`, end);
   if (nb) n = { kind: "approve", what: `The browser can't hold this sign-in: ${nb.host} (${nb.why}). Go ahead, and its agent reads it through ${nb.route} instead.`, check: "", label: `${nb.name}: its API, not the browser`, api: nb.host, say: apiRoute(nb) };
+  // any other step it sends you to the Symbiot Browser for is yours in your own Chrome (browserfails.mjs ownChromeStep)
+  else if (n.kind === "step") n = { ...n, what: ownChromeStep(n.what), ...(n.label ? { label: ownChromeStep(n.label) } : {}) };
   if (n.kind === "approve" && draftRun(path)) return null; // a drafted reply: its card shows it and sends it (watch.mjs draftCard)
   // signing in to, linking or doing by hand on a platform that's linked: the agent's, not yours
   if (n.kind !== "approve" && linkedChore(`${n.label} ${n.what} ${n.check}`, linkedIds())) return null;
@@ -1718,8 +1757,9 @@ function waitingTask(path, text) {
   const k = String(text || "").trim().toLowerCase(); if (!k) return "";
   const l = readSymbiot(path, "TASKS.md").split("\n").find((x) => { if (!WAITING_TASK.test(x)) return false; const t = x.replace(WAITING_TASK, "").trim().toLowerCase(); return t.startsWith(k) || sameTask(t, k); });
   if (!l) return "";
-  const what = l.replace(WAITING_TASK, "").trim(), at = [...what.matchAll(/\((?:waits|waiting) (?:on|for)\b:?\s*/gi)].pop(); // the newest note, nested brackets and all
-  return clipWords(at ? what.slice(at.index + at[0].length).replace(/\)\s*$/, "").replace(/[*`]/g, "").trim() : what, 160);
+  // the newest note, nested brackets and all, or after a ";" (tildeNote); none: the whole line
+  const what = l.replace(WAITING_TASK, "").trim(), note = tildeNote(l);
+  return clipWords((note || what).replace(/[*`]/g, "").trim(), 160);
 }
 function writeTasks(path, md, { fresh = [], reopen = false } = {}) {
   const dir = join(path, ".symbiot"); mkdirSync(dir, { recursive: true });
@@ -1996,15 +2036,20 @@ function track(name, cmd, cwd, onExit, env) {
 const CHANGES = new Map(), CHANGES_FRESH = 15000, CHANGES_MAX = 300;
 const NO_CHANGES = { dirty: 0, stat: "", commits: [] };
 function changesOf(path, startedAt, git) {
+  // An ops run's folder isn't a repo of its own: what git says there is whatever repo holds it, not this run's
+  // work ("What it did · 12 files changed" on a run that only sent an email, UI review 26 Oct 2026).
+  if (String(path).startsWith(ACT_DIR) && !existsSync(join(path, ".git"))) return NO_CHANGES;
   // Don't count Symbiot's own .symbiot/ dir (agent.log, TASKS.md) as the agent's work.
   const since = new Date(startedAt || Date.now()).toISOString();
   const read = ([porcelain, stat, cached, raw]) => {
     porcelain = porcelain.trim(); raw = raw.trim();
-    const dirty = porcelain ? porcelain.split("\n").filter((l) => { const p = l.slice(3); return p !== ".symbiot" && p !== ".symbiot/" && p.indexOf(".symbiot/") !== 0; }).length : 0;
+    const dirty = porcelain ? porcelain.split("\n").filter((l) => !/(^|\/)\.symbiot(\/|$)/.test(l.slice(3))).length : 0;
     const commits = raw ? raw.split("\n").slice(0, 8).map((l) => { const i = l.indexOf("\u0001"); return { hash: l.slice(0, i), msg: l.slice(i + 1) }; }) : [];
     return { dirty, stat: (stat.trim() || cached.trim()).replace(/^\s+/, ""), commits };
   };
-  const asks = [["status", "--porcelain"], ["diff", "--shortstat"], ["diff", "--cached", "--shortstat"], ["log", `--since=${since}`, "--pretty=%h\u0001%s"]];
+  // Only the run's own folder (`-- .`), untracked files one by one: an ops run's drafts folder inside a repo
+  // was credited with that repo's 12 changed files, heading a run that only sent an email.
+  const asks = [["status", "--porcelain", "--untracked-files=all"], ["diff", "--shortstat"], ["diff", "--cached", "--shortstat"], ["log", `--since=${since}`, "--pretty=%h\u0001%s"]].map((a) => [...a, "--", "."]);
   const outs = asks.map((a) => git(["-C", path, ...a]));
   return outs.some((o) => o && typeof o.then === "function") ? Promise.all(outs).then(read) : read(outs);
 }
@@ -2108,10 +2153,11 @@ function skipIdea(path, text) {
 }
 // A question as every screen shows it (plain.mjs): `shown`, its words with no file in them,
 // and `labels`, its choices the same way ("Allow" for an allow list it proposed). q and
-// options stay as the agent wrote them: an answer is saved under the agent's own words.
+// options stay as the agent wrote them: an answer is saved under the agent's own words. One that
+// has the user add a card or claim a credit says money first (needs.mjs moneyNote).
 function plainly(path, x) {
   let p = {}; try { p = plainAsk(path, x, { max: x.options.length }); } catch {}
-  return { ...x, ...(p.raw ? { shown: p.q } : {}), ...(p.labels ? { labels: p.labels } : {}), ...(p.context != null ? { context: p.context } : {}) };
+  return moneyNote({ ...x, ...(p.raw ? { shown: p.q } : {}), ...(p.labels ? { labels: p.labels } : {}), ...(p.context != null ? { context: p.context } : {}), ...(p.go ? { go: p.go } : {}) });
 }
 // A question that names a report of its run ("the full report is on Reports as LOVELINK-FULL-EMAIL-REPORT"):
 // its card links it (Read the report), so it isn't a file name to go and find.
@@ -2123,6 +2169,14 @@ function askReport(path, x) {
 // (triage.mjs): a question judged an agent's, Symbiot's, or already answered is answered here
 // instead (known, autoDecide), and a new one waits for its verdict before it can be a card.
 const GO_ID = /^(?:chrome|phone|push)-go-/;
+// A Go card on a held press in the user's Chrome (chrome-go-<hold>) has its no beside its Go: Don't send
+// closes the hold and tells the agent (answerQuestions). It had only Go, so saying no meant typing it.
+const NO_GO = (w) => `${w.dont}: the user said no, so nothing was pressed. Don't do it, and don't ask for it again unless they ask you to.`;
+function goOptions(x) {
+  const o = x.options.slice(0, OPTIONS_SHOWN), m = String(x.id || "").match(/^chrome-go-([0-9a-f]+)$/); if (!m || o.length > 1) return o;
+  let w = null; try { w = goWords(holdOf(m[1])); } catch {} if (!w) return o;
+  return [o[0] || `🤖 Agent: go ahead: ${w.summary}`, NO_GO(w)];
+}
 function agentQuestions(path, repo, { raw = false } = {}) {
   const p = parseQuestions(readSymbiot(path, "QUESTIONS.md"));
   const heads = [...allAnswers(path).matchAll(/^###\s+(.+)$/gm)].map((m) => m[1]), done = new Set(heads.map((h) => qKey(noId(h)))), doneIds = new Set(heads.map(qId).filter(Boolean));
@@ -2136,7 +2190,7 @@ function agentQuestions(path, repo, { raw = false } = {}) {
   const ideas = p.suggestions.map(suggestionTarget).filter(({ text }) => !skipped.some((s) => sameTask(s, text)))
     .map(({ repo: to, text }) => ({ text, repo: to || repo, other: !!to && to !== repo, added: tasks.some((t) => t.repo === (to || repo) && sameTask(t.text, text)) })).filter((s) => !s.added);
   return {
-    questions: open.slice(0, QUESTIONS_MAX).map((x) => { const talk = talkOf(path, x.q); return plainly(path, { ...x, options: x.options.slice(0, OPTIONS_SHOWN), task: askTask(path, x), ...askReport(path, x), ...(talk.length ? { talk } : {}) }); }), answered: p.questions.length - unanswered.length, ...(known.length ? { known } : {}),
+    questions: open.slice(0, QUESTIONS_MAX).map((x) => { const talk = talkOf(path, x.q); return plainly(path, { ...x, options: goOptions(x), task: askTask(path, x), ...askReport(path, x), ...(talk.length ? { talk } : {}) }); }), answered: p.questions.length - unanswered.length, ...(known.length ? { known } : {}),
     suggestions: ideas, ideasShown: IDEAS_SHOWN,
   };
 }
@@ -2363,13 +2417,19 @@ function saveContinued(o) { try { writeJsonAtomic(CONTINUED_FILE, o, { indent: 0
 // their findings and add their own follow-ups, so the Bookly lane always looked busy and was
 // started 12 times in 45 minutes on the same open item, plus 6 ops runs it handed over (21 Oct 2026).
 // A start held back by the cap is kept as `due` and taken when the hour allows.
-const CONTINUE_AFTER = 2 * 60000, AUTO_MAX = 3, AUTO_HOUR = 3600000;
-const autoStarts = (rec, now) => ((rec && rec.starts) || []).filter((t) => now - t < AUTO_HOUR);
-// Room for another automatic start in this folder this hour? Records it when `take`.
-function autoStart(path, { now = Date.now(), take = true } = {}) {
-  const all = loadContinued(), rec = all[path] || {}, starts = autoStarts(rec, now);
-  if (starts.length >= AUTO_MAX) { if (take && !rec.due) { all[path] = { ...rec, starts, due: true }; saveContinued(all); } return false; }
-  if (take) { all[path] = { ...rec, starts: [...starts, now] }; delete all[path].due; saveContinued(all); }
+// The cap is per piece of work (key: the move, the goal, the handover, the reopened items): one cap
+// for the whole folder let three starts on unrelated work block a fourth, new one for the rest of
+// the hour, and "didn't start: the lane's hourly cap" left real work idle (25 Oct 2026). A folder
+// still takes at most AUTO_FOLDER_MAX in an hour, whatever the work, so nothing can run away.
+const CONTINUE_AFTER = 2 * 60000, AUTO_MAX = 3, AUTO_FOLDER_MAX = 12, AUTO_HOUR = 3600000;
+const startAt = (x) => (typeof x === "number" ? x : (x && x.t) || 0), startKey = (x) => (typeof x === "number" ? "" : (x && x.k) || "");
+const autoStarts = (rec, now) => ((rec && rec.starts) || []).filter((x) => now - startAt(x) < AUTO_HOUR);
+const capKey = (key) => (key ? createHash("sha1").update(String(key)).digest("hex").slice(0, 12) : "");
+// Room for another automatic start on this work in this folder this hour? Records it when `take`.
+function autoStart(path, { now = Date.now(), take = true, key = "" } = {}) {
+  const all = loadContinued(), rec = all[path] || {}, starts = autoStarts(rec, now), k = capKey(key);
+  if (starts.filter((x) => startKey(x) === k).length >= AUTO_MAX || starts.length >= AUTO_FOLDER_MAX) { if (take && !rec.due) { all[path] = { ...rec, starts, due: true }; saveContinued(all); } return false; }
+  if (take) { all[path] = { ...rec, starts: [...starts, k ? { t: now, k } : now] }; delete all[path].due; saveContinued(all); }
   return true;
 }
 function continueLanes({ now = Date.now(), run = runHandoff, runs = loadRuns } = {}) {
@@ -2378,19 +2438,20 @@ function continueLanes({ now = Date.now(), run = runHandoff, runs = loadRuns } =
   for (const path of paths) {
     try {
       if (runningHandoff(path) || isParked(path)) continue;
-      const md = readSymbiot(path, "TASKS.md"), open = (md.match(/^\s*(?:[-*+]|\d+[.)])\s*\[ \]/gm) || []).length;
+      // a [~] that names no real blocker is open work too (idleWaits): nothing would ever start it again
+      const md = readSymbiot(path, "TASKS.md"), open = (md.match(/^\s*(?:[-*+]|\d+[.)])\s*\[ \]/gm) || []).length + idleWaits(md, handedLanes(path)).length;
       if (!open) { delete seen[path]; continue; }
       let ended = 0; try { ended = statSync(join(path, ".symbiot", "agent.log")).mtimeMs; } catch { continue; }
       if (now - ended < CONTINUE_AFTER) continue;
       const ticked = (md.match(/^\s*(?:[-*+]|\d+[.)])\s*\[[xX]\]/gm) || []).length;
-      const tasks = openTasks(path), last = seen[path], starts = autoStarts(last, now);
-      if (starts.length >= AUTO_MAX) continue;
+      const tasks = openTasks(path), last = seen[path], all = autoStarts(last, now), starts = all.filter((x) => !startKey(x)); // its own starts: keyed ones are other work's (autoStart)
+      if (starts.length >= AUTO_MAX || all.length >= AUTO_FOLDER_MAX) continue;
       // its newest run's record says why it stopped: only one that stopped with work it can still do
       // (paused) is started again; one waiting on the user, a lane, a reply or a time isn't (0.68.1)
       const rec = runRecord(path); if (rec && rec.state !== "paused") continue;
       if (last && last.open && !last.due && tasks.length >= last.open.length) continue;
       if (blockedAgain(path, runCmdOf(path))) continue;
-      const e = run(path); if (e && e.id && !e.busy && !e.blocked) { seen[path] = { ticked, open: tasks, at: now, starts: [...starts, now] }; out.push(path); }
+      const e = run(path); if (e && e.id && !e.busy && !e.blocked) { seen[path] = { ticked, open: tasks, at: now, starts: [...all, now] }; out.push(path); }
     } catch {}
   }
   if (JSON.stringify(seen) !== was) saveContinued(seen);
@@ -2403,7 +2464,7 @@ async function triageSweep({ write = aiWrite, runs = loadRuns, rules = () => { t
   if (triaging) return []; triaging = true; const out = [];
   try {
     let judging = false; try { judging = !!resolveProvider(); } catch {}
-    if (!judging && write === aiWrite) return out;
+    const precheckOnly = !judging && write === aiWrite; // no AI to judge: the checks that need none still run (triage.mjs precheck)
     const map = (() => { try { return laneMap(); } catch { return {}; } })();
     for (const path of [...new Set(runs().map((r) => r.path).filter(Boolean))]) {
       let qs = []; try { qs = agentQuestions(path, "", { raw: true }).questions; } catch { continue; }
@@ -2412,7 +2473,7 @@ async function triageSweep({ write = aiWrite, runs = loadRuns, rules = () => { t
         if (verdictOf(path, q.q) || GO_ID.test(q.id || "")) continue; // a Go on a held action needs no judging: it's the user's
         const lane = Object.keys(map).find((k) => map[k] === path) || (path.includes("/drafts/act-") ? "ops" : basename(path));
         let known = ""; try { const M = await import("./mind.mjs"); known = M.recallText(M.recall(`${q.q} ${q.context || ""}`)); } catch {} // what Symbiot remembers: the user's email, number, accounts…
-        let v = null; try { v = await triageJudge(q, { answers: readSymbiot(path, "ANSWERS.md"), rules: rules(), lane, known }, { write }); } catch {}
+        let v = null; try { v = precheckOnly ? triagePrecheck(q, known) : await triageJudge(q, { answers: readSymbiot(path, "ANSWERS.md"), rules: rules(), lane, known }, { write }); } catch {}
         if (!v) continue;
         saveVerdict(path, q.q, v); out.push({ path, q: q.q, verdict: v.verdict });
         if (v.verdict === "symbiot") recordFault({ path, q: q.q, why: v.why, lane });
@@ -2496,7 +2557,30 @@ function answerQuestions(path, answers, opts = {}) {
   // the user's yes on a held action's Go releases it, even when that question was already answered (on
   // another screen, or for them before this rule): on 22 Oct 2026 the LinkedIn hold's card said
   // "answered already" and the hold stayed shut, so the action could never go through
-  for (const x of given) { const m = (String(x.q || "").match(/\{#((?:chrome|phone)-go-[0-9a-f]+)\}/) || [])[1] || ((parseQuestions(readSymbiot(path, "QUESTIONS.md")).questions.find((q) => qKey(q.q) === qKey(noId(x.q))) || {}).id || ""); const g = m.match(/^chrome-go-([0-9a-f]+)$/), p = m.match(/^phone-go-([0-9a-f]+)$/); if ((g || p) && x.a && !/^\W*(?:no|don'?t|do not|skip|stop|cancel|not now)\b/i.test(x.a)) { if (g) goAhead(g[1]); else phoneGo(p[1]); } }
+  const askedQs = parseQuestions(readSymbiot(path, "QUESTIONS.md")).questions, idOf = (q) => (String(q || "").match(/\{#((?:chrome|phone)-go-[0-9a-f]+)\}/) || [])[1] || ((askedQs.find((o) => qKey(o.q) === qKey(noId(q))) || {}).id || "");
+  // A Go card on a press in the user's Chrome opens only for its Go: the button, or a plain yes typed. A no closes
+  // it. Other words are for its agent: said on the card, which stays open, and the hold stays shut. "Not yet" and
+  // "Please don't send it" each opened it for 30 minutes before (UI review, 26 Oct 2026).
+  const by = { path, agent: agentLabel(path) }, talked = [], rowOf = (x) => rows.find((r) => r.a === x.a && qKey(noId(r.q)) === qKey(noId(x.q)));
+  let goSaid = "";
+  for (const x of [...given]) {
+    const id = idOf(x.q), g = id.match(/^chrome-go-([0-9a-f]+)$/), p = id.match(/^phone-go-([0-9a-f]+)$/);
+    if (p && x.a && !/^\W*(?:no|don'?t|do not|skip|stop|cancel|not now)\b/i.test(x.a)) phoneGo(p[1]);
+    if (!g || !x.a) continue;
+    let w = null; try { w = goWords(holdOf(g[1])); } catch {}
+    const q = askedQs.find((o) => o.id === id) || openQs.find((o) => o.id === id) || { options: [] }, said = goAnswer(x.a, { options: q.options, button: w && w.button });
+    if (said === "go") { goAhead(g[1], { by }); if (w) goSaid = w.given; }
+    else if (said === "no") { refuseHold(g[1], { by }); const r = rowOf(x); if (r && !/the user said no, so nothing was pressed/.test(r.a)) r.a = `${r.a}\n\n(Symbiot: that's a no, so the hold is closed and nothing was pressed.)`; }
+    else { const r = rowOf(x); if (r) rows.splice(rows.indexOf(r), 1); given.splice(given.indexOf(x), 1); talked.push({ x, q: q.q || noId(x.q) }); }
+  }
+  for (const t of talked) {
+    addTalk(path, t.q, { from: "you", text: t.x.a });
+    try { mkdirSync(join(path, ".symbiot"), { recursive: true }); writeFileSync(join(path, ".symbiot", "ANSWERS.md"), (readSymbiot(path, "ANSWERS.md") || "# Answers from the user\n").replace(/\s*$/, "\n") + `\n### The user's words on your Go card, not a Go: ${noId(t.q)}\n${t.x.a}\n\nThe hold stays shut and nothing was pressed. Do what they say. If it still has to happen, ask for the Go again; if what it does changes, that's a new card.\n_${new Date().toISOString().slice(0, 10)}_\n`); } catch {}
+  }
+  if (talked.length && !given.length) {
+    let started = null; if (opts.rerun) try { started = runHandoff(path); } catch {}
+    return { ok: true, talk: talkOf(path, talked[0].q), said: "Said to its agent. Nothing was pressed: the card waits for your Go or Don't.", ...(started && started.id ? { rerun: started.id } : {}) };
+  }
   if (!rows.length && given.length) {
     const had = new Map([...allAnswers(path).matchAll(/^###\s+(.+)$/gm)].map((m) => [qKey(noId(m[1])), noId(m[1])]));
     if (given.every((x) => findQuestion(had, x.q))) return { ok: true, saved: 0, already: true, note: "That was answered already: its agent has it." };
@@ -2520,8 +2604,6 @@ function answerQuestions(path, answers, opts = {}) {
   settleRecord(path, "answered"); // what its run waited for came: its record moves on (runOutcome)
   { const lane = whereOf(path).lane; for (const x of rows) recordDone(x.q, x.back || x.a, lane, { back: !!x.back, id: x.id }); }
   for (const x of rows) if (!x.back && closesAsk(x.a)) closeAsk(path, x.q); // "case closed": a later run restating it raises no card (needsOf)
-  // Go on a held action in the user's own Chrome (a question with id chrome-go-<hold>): that one action may go through (chromegate.mjs)
-  for (const x of rows) { const m = String(x.id || "").match(/^chrome-go-([0-9a-f]+)$/); if (m && !/^\W*(?:no|don'?t|do not|skip|stop|cancel|not now)\b/i.test(x.a)) goAhead(m[1]); }
   // Go on an adb command the membrane held, one that opens an app or acts on the screen of the user's phone (phone-go-<hold>): it may go through once (phonegate.mjs)
   for (const x of rows) { const m = String(x.id || "").match(/^phone-go-([0-9a-f]+)$/); if (m && !/^\W*(?:no|don'?t|do not|skip|stop|cancel|not now)\b/i.test(x.a)) phoneGo(m[1]); }
   // A yes to letting agents act on a site in the user's Chrome (chrome-act-<host>), or the first choice of a sign-in ask
@@ -2538,7 +2620,7 @@ function answerQuestions(path, answers, opts = {}) {
   const pushed = pushes.length ? Promise.all(pushes) : null;
   // "Deploy it?" for a lane with a runbook: Symbiot runs it itself (deploy.mjs onDeployAnswer), and the lane's agent is told so
   { const lane = whereOf(path).lane; for (const x of rows) if (/^Deploy /.test(x.q) && runbookOf(lane) && /^\W*(?:🤖\s*)?(?:Agent:\s*)?deploy\b/iu.test(x.a)) { onDeployAnswer(lane, x.q, x.a).catch(() => {}); try { writeFileSync(join(path, ".symbiot", "ANSWERS.md"), readSymbiot(path, "ANSWERS.md").replace(/\s*$/, "\n") + `\n### Symbiot: ${lane}'s deploy\nSymbiot started it itself, from ${lane}'s runbook, and checks it live: don't hand it to ops or deploy it another way.\n_${day}_\n`); } catch {} } }
-  const out = { ok: true, saved: rows.length, ...(vaulted.length ? { vaulted } : {}) };
+  const out = { ok: true, saved: rows.length, ...(vaulted.length ? { vaulted } : {}), ...(goSaid ? { go: goSaid } : {}) };
   // asked for something to read that's already written, since the question: say where it is
   if (rows.some((x) => x.back)) { let since = 0; try { since = statSync(join(path, ".symbiot", "QUESTIONS.md")).mtimeMs - 86400000; } catch {} const r = reportsSince(path, since).find((x) => !x.read); if (r) out.report = r.title; }
   if (opts.share && answered) { try { const to = answered(path, rows) || []; if (to.length) out.also = to.map((r) => r.lane || basename(r.path)); } catch {} }
@@ -2705,7 +2787,13 @@ function agentsList() {
     // a need is a card only while the run's record says it waits on the user: its last words alone made cards the record contradicted
     const needs = first && e.status !== "running" && (!outcome || (outcome.state === "waiting" && outcome.waitingOn === "user")) ? needsOf(e.path, { final: work ? tail : "", waiting, end: e.endedAt || Date.now(), start: e.startedAt }) : null;
     return { id: e.id, ...(outcome ? { outcome } : {}), name: e.name, path: e.path, status: e.status, startedAt: e.startedAt, endedAt: e.endedAt, elapsed: (e.endedAt || Date.now()) - e.startedAt, exitCode: e.exitCode, ...(e.down ? { down: e.down } : {}), ...(e.fault ? { fault: e.fault } : {}), ...(e.relaunched ? { relaunched: true } : {}), tail, work, progress, ...(e.status === "running" && line ? { line } : {}), changed: agentChanges(e.path, e.startedAt, e.endedAt || 0), ask: first ? agentQuestions(e.path, e.name) : null, held: first ? heldTasks(e.path) : null, waiting, needs, remember: facts.length ? facts : null, fromHeld: !!e.fromHeld };
-  }).concat(earlierRuns())).map((a) => ({ ...a, phase: runPhase(a) })).map(oneNeedEach());
+  }).concat(earlierRuns())).map((a) => ({ ...a, phase: runPhase(a) })).map(oneNeedEach()).map(withGoes());
+}
+// The presses its user said Go or Don't to, on the newest run of each folder (its Workdesk block says what
+// came of each: sent at 10:42, the Go lapsed, refused). The holds file is read once for the whole list.
+function withGoes() {
+  let all = []; try { all = goHistory({ n: 200 }); } catch {}
+  return (a) => { if (!a.ask || !all.length) return a; const g = all.filter((h) => h.path === a.path).slice(0, 4); return g.length ? { ...a, goes: g } : a; };
 }
 // One subject is one card: the GitHub billing need came back from five runs, each worded its own
 // way (21 Oct 2026). The newest run's need on a subject stays; an older one on the same subject,
@@ -2731,4 +2819,4 @@ function agentsNow({ now = Date.now() } = {}) {
 }
 const forgetAgents = () => { agentsKept = null; };
 
-export { handBlocked, ensureRunnable, launcherOf, launchFault, opsWalls, walled, OPS_RO, OPS_OWN, OPS_HIDDEN, runOpen, namedRun, twinRunning, TWIN_WAIT, wholeLog, uiReview, onGoalAnswer, runOutcome, settleRecord, waitsOutside, triageSweep, runSection, autoStart, AUTO_MAX, oneNeedEach, NOTHING_FOR_YOU, chaseReport, CHASED, UNMET, heldAsk, onCardGone, withOwnTools, escalation, grantCard, cardRules, cardIsPermission, runPhase, onRunEnd, isClaudeCmd, GUARD, tidyRule, tidyRules, tidySettings, pruneRuns, claudePlugins, idlePlugins, runSettings, archiveAnswers, allAnswers, answersDigest, ANSWERS_ARCHIVE, ANSWERS_KEEP, runsTick, RUN_START, HANG_MIN, noteBlocked, userAnswers, CONTINUED_FILE, onAnswered, CHANGES, toKnownHost, continueLanes, autoPick, autoDecide, FACTS, factsOf, knownRun, withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, linkReach, fillHandoff, runHandoff, nothingToDo, whereOf, whereLine, whereAnswer, askTask, PARKED_NOTE, parkedPaths, isParked, parkLane, agentMissing, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, unchangedStep, waitingFor, startWaiting, noteUntracked, untrackedBefore, forgetUntracked, writeTasks, droppedTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, pickAgent, findOrcaCli, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, routeIdeas, agentQuestions, answerQuestions, agentsList, agentsNow, forgetAgents, AGENTS_KEEP, needsOf, settleNeeds, closeAsk, closedAsk, sameSubject, NEEDS_FOR, readLastWords, readNeeds, parseRead, READ_FILE, autoAllow, autoAllowSweep, allowlistInWork, installAllowlist, inWork, withScope, withTrust, sandboxFor, sandboxLifts, sandboxEnv, sandboxNeeds, sandboxState, sandboxWrites, SANDBOX_DIR, resumeFor, noteSession, tooLong, carryOn, RESUME_CTX, CARRY_PROMPT, trustFull, GUARD_SETTINGS, runCmdOf, claimLock, wideRoot, sandboxDenies, questionFolders, folderState, dirtyState, ANSWERS_SEEN, newAnswers, claudeDownIn, claudePause, noteClaudeDown, resetTime, PAUSE_FILE, startGap, isUrgent, urgentStop, urgentFirst, urgentUndo, urgentDone, urgentSweep, urgentState, licenceGate, stopRun, loadRunFiles, saveRunFiles, forgetRunFiles, withModel, routedModel, userWords, onShipping, waitingTask };
+export { handBlocked, ensureRunnable, launcherOf, launchFault, opsWalls, walled, OPS_RO, OPS_OWN, OPS_HIDDEN, runOpen, namedRun, twinRunning, TWIN_WAIT, wholeLog, uiReview, onGoalAnswer, runOutcome, settleRecord, waitsOutside, triageSweep, runSection, autoStart, AUTO_MAX, AUTO_FOLDER_MAX, oneNeedEach, NOTHING_FOR_YOU, chaseReport, CHASED, UNMET, heldAsk, onCardGone, withOwnTools, escalation, grantCard, cardRules, cardIsPermission, runPhase, onRunEnd, isClaudeCmd, GUARD, tidyRule, tidyRules, tidySettings, pruneRuns, claudePlugins, idlePlugins, runSettings, archiveAnswers, allAnswers, answersDigest, ANSWERS_ARCHIVE, ANSWERS_KEEP, runsTick, RUN_START, HANG_MIN, noteBlocked, userAnswers, CONTINUED_FILE, onAnswered, CHANGES, toKnownHost, continueLanes, autoPick, autoDecide, FACTS, factsOf, knownRun, withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, linkReach, fillHandoff, runHandoff, nothingToDo, whereOf, whereLine, whereAnswer, askTask, PARKED_NOTE, parkedPaths, isParked, parkLane, agentMissing, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, unchangedStep, waitingFor, startWaiting, noteUntracked, untrackedBefore, forgetUntracked, writeTasks, droppedTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, pickAgent, findOrcaCli, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, routeIdeas, agentQuestions, answerQuestions, agentsList, agentsNow, forgetAgents, AGENTS_KEEP, needsOf, settleNeeds, closeAsk, closedAsk, sameSubject, NEEDS_FOR, readLastWords, readNeeds, parseRead, READ_FILE, autoAllow, autoAllowSweep, allowlistInWork, installAllowlist, inWork, withScope, withTrust, sandboxFor, sandboxLifts, sandboxEnv, sandboxNeeds, sandboxState, sandboxWrites, SANDBOX_DIR, resumeFor, noteSession, tooLong, carryOn, RESUME_CTX, CARRY_PROMPT, trustFull, GUARD_SETTINGS, runCmdOf, claimLock, wideRoot, sandboxDenies, questionFolders, folderState, dirtyState, ANSWERS_SEEN, newAnswers, claudeDownIn, claudePause, noteClaudeDown, resetTime, PAUSE_FILE, startGap, isUrgent, urgentStop, urgentFirst, urgentUndo, urgentDone, urgentSweep, urgentState, licenceGate, stopRun, loadRunFiles, saveRunFiles, forgetRunFiles, withModel, routedModel, userWords, onShipping, waitingTask, namedBlocker, tildeNote, idleWaits };

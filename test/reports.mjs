@@ -283,6 +283,11 @@ console.log("REPORTS — what is not an action never sits in 'Read, open actions
   const c = plainAsk(dir, { q: "Can I run Symbiot's Screens command?", options: ["👤 You (only you: a permission): allow the list in .symbiot/allowlist.proposed.json (recommended)", "Not now"] });
   ok("a permission card lists the commands in plain words with Allow, and shows no file path", /run symbiot/.test(c.q) && /run git/.test(c.q) && c.labels[0] === "Allow (recommended)" && !/\.json|\.symbiot/.test(c.q + c.labels.join()), JSON.stringify(c));
   ok("a permission card keeps the agent's own question to answer with, since the shown one is reworded", c.raw === "Can I run Symbiot's Screens command?" && c.q !== c.raw, JSON.stringify(c));
+  const inv = [{ kind: "ask", id: "ask:/r/one", path: "/r/one", q: "Should Sam send the Cloudflare invite to the Acme mailbox himself?", options: ["👤 You (only you: the invite): send it", "Skip this part"] },
+    { kind: "ask", id: "ask:/r/two", path: "/r/two", q: "Can I send the Cloudflare invite to the Acme mailbox now?", options: ["🤖 Agent: send the invite now", "Skip this part"] },
+    { kind: "ask", id: "ask:/r/three", path: "/r/three", q: "Which plan should the pricing page lead with?", options: ["Weekly (recommended)", "Daily"] }];
+  const one = settleAsks(inv);
+  ok("two runs asking about one decision in their own words: one card, the one where the agent does it", one.length === 2 && one[0].path === "/r/two" && one[1].path === "/r/three", one.map((y) => y.path));
   recordDone("Sign in to X as Quartz?", "Done: signed in");
   ok("an ask the user already answered is not raised again, by any agent", settleAsks([{ kind: "ask", id: "ask:z", q: "Sign in to X as Quartz" }]).length === 0, "");
 }
@@ -293,6 +298,14 @@ console.log("REPORTS — what is not an action never sits in 'Read, open actions
   ok("Home chat can say a card's question was answered", r.settled && r.settled.length === 2, JSON.stringify(r.settled));
   const n = settleFromChat({ you: [{ kind: "ask", q, id: "ask:g" }] }, r.settled, "here is the email");
   ok("…only a question really on Home closes, and it's then recorded so no agent asks it again", n === 1 && settleAsks([{ kind: "ask", id: "ask:g", q }]).length === 0, n);
+  // 23 Oct 2026: "send the 100" in chat closed the Send card and sent nothing
+  const told = [], tell = (path, rows, o) => { told.push({ path, rows, o }); return { ok: true }; };
+  const card = { kind: "ask", id: "ask:/w/sms", path: "/w/sms", q: "Send the 100 test messages now?", raw: "Can I send the 100 test messages now?", options: ["🤖 Agent: send the 100 now", "Skip this part"] };
+  settleFromChat({ you: [card] }, [card.q], "send the 100", { reply: tell });
+  ok("a yes in chat that settles a card is that card's yes: its agent gets the card's own option", told.length === 1 && told[0].path === "/w/sms" && told[0].rows[0].q === card.raw && told[0].rows[0].a === "🤖 Agent: send the 100 now" && told[0].o.rerun, told);
+  const card2 = { ...card, id: "ask:/w/sms2", path: "/w/sms2", q: "Send the 50 reminders now?", raw: "Send the 50 reminders now?" };
+  settleFromChat({ you: [card2] }, [card2.q], "send them tomorrow instead", { reply: tell });
+  ok("…anything more than a yes goes to it in their own words", told.length === 2 && /^Answered in chat: "send them tomorrow instead"/.test(told[1].rows[0].a), told[1]);
   const r2 = await converse({ where: "Reports", question: "hi", map: {}, ask: async () => JSON.stringify({ reply: "Hi", settled: [q] }) });
   ok("…and other chats can't settle cards", !r2.settled, "");
 }

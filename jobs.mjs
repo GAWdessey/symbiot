@@ -9,12 +9,12 @@ import { CONFIG_DIR, readState, writeJsonAtomic } from "./core.mjs";
 const FILE = join(CONFIG_DIR, "jobs.json");
 const MAX_KEEP = 300, DAY = 86400e3;
 // asked → queued (its turn is coming) → running → done, or review (done, waits on Approve) → approved
-// (merge queued) → merged → live; email jobs end at sent. failed is a run or step that stopped.
+// (merge queued) → blocked (GitHub won't merge it: conflicts or a failed check, probes.mjs actOn; back to approved when it clears) → merged → live; email jobs end at sent. failed is a run or step that stopped.
 // An agent run ends (agents.mjs runOutcome) as one of: waiting (on the user, a lane, a third party
 // or a time, with what), paused (open work left, nothing waiting), review, done or failed.
-const STATES = ["asked", "queued", "running", "done", "review", "approved", "merged", "live", "sent", "failed", "waiting", "paused"];
+const STATES = ["asked", "queued", "running", "done", "review", "approved", "blocked", "merged", "live", "sent", "failed", "waiting", "paused"];
 const WAITING = ["user", "lane", "third party", "time", ""];
-const SAYS = { asked: "asked, not started", queued: "queued, not started yet", running: "running now", done: "finished, nothing to approve", review: "done, waiting for Approve", approved: "approved, merge queued (not merged yet)", merged: "merged, not live", live: "live and checked", sent: "sent", failed: "failed", waiting: "stopped, waiting", paused: "stopped with work left, nothing waiting"};
+const SAYS = { asked: "asked, not started", queued: "queued, not started yet", running: "running now", done: "finished, nothing to approve", review: "done, waiting for Approve", approved: "approved, merge queued (not merged yet)", blocked: "approved, but GitHub is blocking the merge", merged: "merged, not live", live: "live and checked", sent: "sent", failed: "failed", waiting: "stopped, waiting", paused: "stopped with work left, nothing waiting"};
 const ENDED = new Set(["done", "live", "sent", "failed"]);
 
 const clip = (s, n) => String(s || "").replace(/\s+/g, " ").trim().slice(0, n);
@@ -29,6 +29,16 @@ function saveJobs(jobs, now = Date.now()) {
 }
 // A new state, the old one kept in its history with when it began.
 function shift(j, state, now) { if (state === j.state) return; j.history = [...(j.history || []), { state: j.state, at: j.changed }].slice(-8); j.state = state; j.changed = now; }
+
+// A folder's older run records left waiting or paused are over once a later run there finishes: it
+// worked from the same TASKS.md, and its end is the folder's state now (runRecord reads only the
+// newest). Left as they were, the goal over them (goals.mjs) asked the user for a step the later run
+// had done: "Can I redeploy the server now…" five times on 26 Oct 2026, with three paused records
+// beside it that would have held the goal open for good.
+const FINISHED = new Set(["done", "review"]);
+function supersede(jobs, j, now) {
+  for (const x of jobs) if (x !== j && x.outcome && String(x.key).startsWith("run:") && x.path === j.path && (x.at || 0) < (j.at || 0) && (x.state === "waiting" || x.state === "paused")) { shift(x, "done", now); x.waitingOn = ""; x.note = `superseded: ${j.key}, a later run here, finished`; }
+}
 
 // Record a job's state: one row per key, its first words kept, every change dated.
 // patch: { state, waitingOn?, text?, lane?, path?, kind?, pr?, note? }. Never throws: a job that can't
@@ -56,6 +66,7 @@ function track(key, patch = {}, { now = Date.now() } = {}) {
     if (patch.waitingOn !== undefined) j.waitingOn = WAITING.includes(patch.waitingOn) ? patch.waitingOn : "";
     if (ENDED.has(j.state) && patch.waitingOn === undefined && j.state !== "sent") j.waitingOn = "";
     if (j.state === "sent" && patch.waitingOn === undefined) j.waitingOn = "third party";
+    if (patch.outcome && FINISHED.has(j.state) && j.path && key.startsWith("run:")) supersede(jobs, j, now);
     saveJobs(jobs, typeof now === "number" ? now : Date.now()); return j;
   } catch { return null; }
 }
@@ -191,4 +202,4 @@ const goalRows = ({ jobs = loadJobs() } = {}) => jobs.filter((j) => j.kind === "
 function putGoal(g, { now = Date.now() } = {}) {
   try { const jobs = loadJobs(), i = jobs.findIndex((j) => j.key === g.key); if (i < 0) jobs.push(g); else jobs[i] = g; return saveJobs(jobs, now); } catch { return false; }
 }
-export { parkedJobs, goalRows, putGoal, goalLine, saveJobs, shift, ENDED, runRecord, recordOf, track, loadJobs, jobsNow, jobsLines, jobsText, jobLine, waitingOnUser, syncOnUser, syncTasks, onUser, landed, prKey, isCard, STATES, FILE };
+export { parkedJobs, goalRows, putGoal, FINISHED, goalLine, saveJobs, shift, ENDED, runRecord, recordOf, track, loadJobs, jobsNow, jobsLines, jobsText, jobLine, waitingOnUser, syncOnUser, syncTasks, onUser, landed, prKey, isCard, STATES, FILE };

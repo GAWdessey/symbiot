@@ -2,10 +2,105 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one), for anyone who installs the app: what changed in it, never whose work it was (no projects, people, accounts, services, run ids or task wording of the person who made it). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.94.3 — 2026-10-26
+
+- **A key you made but never pasted is asked for once, plainly.** When you've made a token on a site but its value never reached the vault, you get one line on one card: the token exists, roll it on the site and paste the value in chat. Cards no longer suggest you didn't make it, ask for it again on another card, or tell you to save it to the vault yourself: what you paste in chat or on a card is saved there by itself.
+
+## 0.94.2 — 2026-10-26
+
+- **A pasted password is saved for the site it's on.** Paste a sign-up or new-password page into Home and the password is saved under that page's site and the account shown beside it, even when you already use the same password elsewhere. It's no longer filed under another site's login that happens to match, and an email address right before "password" is read as the account, not the site.
+- **The Vault keeps both logins that share a password.** Two sites' logins with the same password are both real: the Vault says they share it and suggests changing one on its site, instead of telling you to delete one.
+
+## 0.94.1 — 2026-10-26
+
+- **A goal stops asking for a step that's already done.** When a later run on the same work finishes, the earlier runs that were waiting on you, or stopped with work left, are closed with it. Your goal no longer brings back a question you've answered, or one another run has already taken care of, and it can close once its work is done.
+
+## 0.94.0 — 2026-10-26
+
+- **A Go card names what it will press, and lets you say no.** A card for a send, payment, delete or saved-password fill in your Chrome has two buttons: one named for the press (Send, Post, Pay R 289, Delete, Fill password) and its no (Don't send, Don't pay). Don't closes the hold, nothing is pressed, and the agent is told.
+- **You see the real press, not just the agent's heading.** Under the heading, one line from the hold itself says where and what: "In your Chrome, on the site: Clicks Send on the reply". A payment also shows its money line on Home, where you press it.
+- **Only a Go opens the hold.** The button, or a plain yes, lets that one press through. Anything else you type on the card ("not yet", "change the subject first") goes to the agent as words, and the press stays held.
+- **You see what came of each Go.** After a Go, the card says what happens next: the press goes through once, when its agent tries again within 30 minutes. Each agent's block on the Workdesk, and Settings → Connections → Your own Chrome, then list what happened: sent at a time, your Go lapsed, you said Don't, or what went wrong.
+- **The Vault's "Fills only on" can be set and changed.** Add one with its website, or change or clear it later with Edit, as in a password manager. An entry with no website says it asks you before its first fill. Saving the form as it shows no longer renames an entry.
+- **Settings fits a phone.** On a narrow screen, the Your own Chrome button sits under its text, full width.
+## 0.93.2 — 2026-10-26
+
+- **One press answers a question on the Workdesk.** Its choices are buttons now, not round ticks: when an agent asks one thing, pressing Go (or any other choice) sends it and the agent carries on, instead of a pick and then "Send answers & continue". When it asks several, your presses pick an answer for each, and Send answers sends them together. Your own words go with Send answer beside the box, or Enter.
+- **The question card has room to breathe.** Its text no longer sits against the card's left edge, and on a phone each choice is a full-width button.
+- **"Files changed" counts only the agent's own work.** A run kept in a folder inside a project no longer shows that project's changed files as its own, so a run that only sent an email says "No files changed."
+
+## 0.93.1 — 2026-10-26
+
+- **A step that only you can take now says exactly what to do.** A card asking you to sign in names the site, the account to sign in as and what the agent does there next, and its button says what you're confirming ("I'm signed in") instead of something vague like "Access is set up". A card never asks you to grant access to one of Symbiot's own pages.
+- **Vague cards go back to the agent instead of to you.** If a card can't say which site, which account or what happens next, you don't see it. Its agent is asked to write the step again, exactly.
+- **Old cards clear once the work moves on.** A goal's card asking for your step goes away once its agent carries on, once the agent's own card for that step is showing, or once the agent is waiting on a newer step. It used to stay up after the agent had moved on.
+
+## 0.93.0 — 2026-10-26
+
+- **Agents can sign in with a password from your vault, without seeing it.** On a page in your own Chrome, an agent can put a password or code you saved in the Vault into its box with `symbiot screens secret`. Symbiot reads it and the extension fills it in, so the agent never sees it, and it never shows up in a map of the page, an answer or a log. This works even for agents that can't read the vault.
+- **Each saved password fills only on its own site.** As in a password manager, a password fills only on the site it was saved for, or a part of that site: a password saved for example.com fills on accounts.example.com too, and nowhere else. The page checks this again before anything goes in, and it fills only a password box or a box for a code. A password saved without a site asks for your Go on a card the first time it's filled, and the site you allow then stays its own. Saving it again can't move it to another site. To move it, delete it and save it again.
+- **The Vault shows where each one fills.** An entry with a site says "Fills only on" with that site. Its "Last used" line and Recent activity show when it was filled in your Chrome, and where. A set of recovery codes, or a code a site sent you, is spent once it's filled. A password stays.
+
+## 0.92.1 — 2026-10-26
+
+- **The keyboard stays put after you unlock the Vault.** When Copy, Show or Add asks for your PIN, focus goes back to that button once the vault unlocks or you press Escape, instead of falling to the top of the page.
+
+## 0.92.0 — 2026-10-26
+
+- **Everything Symbiot does on a page now works in your own Chrome.** Choose in a menu, Fill a form and press its button, Replace part of a field, Upload a file and Whole page now work there too, along with Press, Type and Scroll. Choose, Fill and Upload use the same page code as Symbiot's own browser. A whole page is drawn as one tall screen.
+- **Sends, payments and deletes wait for your Go.** When an agent wants to press Send, Post, Pay or Delete in your Chrome, or Enter in a message box, you get a card first. Once you say Go, that one press goes through, once. The same holds and cards already cover agents acting in your Chrome another way.
+- **A site you allowed goes to your Chrome by itself.** Once you've pressed Allow for a site on Symbiot's button in Chrome, agents' maps of that site use your Chrome without being told to.
+- **Chrome closed? Symbiot opens it quietly.** If the extension has connected before and you haven't pressed Stop, Symbiot starts Chrome with no window and waits for the extension. It never adds anything that would mark Chrome as automated.
+
+## 0.91.0 — 2026-10-26
+
+- **Symbiot can work in your own Chrome.** Some sites turn away a browser under remote control. Symbiot now has its own Chrome extension, so it can work in your everyday Chrome instead, signed in as you, with nothing that marks it as automated. Set it up in Settings → Connections → Your own Chrome. Set up prepares the extension and connects it to Symbiot, and the card shows how to load it in Chrome once. After that, the card says whether it's connected.
+- **Only the sites you allow, in a window of its own.** The extension can't touch any site until you press Allow for that site on its button in Chrome's toolbar, and Forget there takes a site back. It also only works on sites you've linked in Symbiot. It opens its pages in a window of its own, in a tab group named Symbiot, and never touches your own tabs. Stop on its button closes its tabs and disconnects it.
+- **Agents can map, press, type and scroll there, but some presses stay yours.** An agent never presses Send, Post, Pay or Delete in your Chrome, nor Enter in a message box. It leaves the page ready in the Symbiot tab and tells you so. Chrome lets an extension take pictures of pages only if it has access to every site, so a map from your Chrome is a drawing instead: every button, link and field outlined where it is on the page.
+
+## 0.90.18 — 2026-10-26
+
+- **Sites that refuse this computer's connection are remembered.** When a site's page says this computer's internet address is blocked, or calls it a proxy or VPN, Symbiot notes that site. No browser on this computer gets in there, your own Chrome included, so a step there now asks you to use your phone on mobile data, with the site's own review form when it has one. That step no longer offers a Sign in button, and agents stop retrying the site.
+- **Check your connection in Settings → Connections.** Check asks two free lists whether this computer's address is listed as a proxy, and says what each one found. Below it are the sites that refused this computer, each with Forget for when it's sorted out.
+
+## 0.90.17 — 2026-10-26
+
+- **A copy that fails says so where you pressed.** When this window can't use the clipboard, the Copy button reads Not copied and the line under it says why, in red, instead of a note at the foot of the screen that covered other buttons on a phone. Copy name does the same, beside the name.
+- **The Vault says when your copy leaves the clipboard.** The line under a copied value counts down the seconds until it's wiped, then says it was cleared.
+- **The keyboard stays where you were.** After Copy, Show or Hide, focus returns to the button you pressed, so Tab carries on from there.
+- **Recovery codes stay on one line.** Shown codes sit in two wide columns on a computer, and a code's Copy button no longer changes width when it says Copied, so nothing beside it moves. On a phone, a code's Copy shows its icon alone.
+- **The red Delete button is easier to read in the dark look.** It uses dark text on its light red, as the error notes do.
+- **Page headers are solid.** Nothing shows through the top bar when you scroll a page.
+- **Vault names read right.** "Wi-Fi" keeps its hyphen, and "github.com" shows as GitHub.com.
+
+## 0.90.16 — 2026-10-26
+
+- **The Vault's error note is easy to read in Ferrofluid.** Notes like "This window can't use the clipboard" now use dark text on the red in the dark look, where the white text was faint. Glass and Pearl are unchanged.
+
+## 0.90.15 — 2026-10-26
+
+- **Your own steps on a site happen in your own Chrome.** When only you can do something on a site (a password or a code), the card now tells you to do it in your everyday Chrome, with the exact address and what to enter, instead of signing in through the Symbiot Browser. Cards that still asked for the Symbiot Browser are reworded, and they no longer carry a button that opens it.
+- **Blocked connections are named.** When a site refuses this computer's own internet address (it says you're on a proxy), the card says so and offers your phone on mobile data, since no browser on this computer gets past it.
+
+## 0.90.14 — 2026-10-26
+
+- **Copying in the Vault answers where you pressed.** Copy name now turns to Copied on its own button, as Copy does, instead of a note at the foot of the screen that covered it on a phone, and it's an easier tap on a phone. Unlocking clears a note left from before, so "Locked" no longer shows once it's open.
+
+## 0.90.13 — 2026-10-26
+
+- **The Vault's error screen stands on its own.** When the list can't load, any open unlock box and old notes close, the error sits alone in the middle with Try again (on a phone too, where it was hidden), and Try again shows the list loading while it retries. An empty vault's message now shows on a phone as well.
+
 ## 0.90.12 — 2026-10-25
 
-- Phone: the failed-skip line is cut off under the "Projects · 9" bar ("…the connection was lost" loses "lost").
-- Rebase settle-done onto origin/main (git fetch origin main, then git rebase origin/main settle-done).
+- **Handovers under way shows only live work.** Home's list now holds only handovers whose agent is running, waiting to start, or waiting on your answer.
+- **Approvals pass their tests again.** A merge had dropped three helpers from the design module, so every approval failed its tests and its lane sat waiting. They are back.
+- **Agent runs open their own pull request.** A finished run commits its work, syncs with main, runs the tests and opens the PR with auto-merge on green checks, instead of leaving changes for you to approve.
+- **Queued work starts by itself.** A task whose agent marked it waiting without naming anything real in its way is open work again, and its lane starts on it. A task whose last run ended unfinished starts again on its own a few times an hour instead of waiting for Go.
+- **The hourly cap counts each piece of work on its own.** Three automatic starts on one thing no longer hold back new, unrelated work in the same project for the rest of the hour.
+- **Fixes to Symbiot noted from chat start right away**, like any other task, instead of waiting for Go.
+- **One job, one run.** A run that ended is no longer started again at once in a side copy or a one-off agent folder, a deploy script from the runbook counts as the deploy, and Try again leaves a run that's already at work alone.
+- **A design review holds only its own pull request**, not every merge into the project.
+- **No false correction in Home's chat** when a reply says an agent already running is on the job, and one is.
 
 ## 0.90.11 — 2026-10-25
 

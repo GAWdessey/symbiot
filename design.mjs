@@ -81,22 +81,30 @@ function saveReview(path, r) { try { mkdirSync(join(path, ".symbiot"), { recursi
 // the two. So UI work the critic is still judging, or sent back to be fixed, holds a merge in its
 // repo (guard.mjs, `gh pr merge`) until the critic passes it, or, after MAX_ROUNDS, until it's the
 // user's call (the item waits [~] on them with what still fails). Kept for the guard, by repo, in
-// ui-open.json: { folder: { slug, items, at } }; an entry older than OPEN_MS no longer holds anything.
+// ui-open.json: { folder: { slug, branch, items, at } }; an entry older than OPEN_MS no longer holds anything.
+// Only that work's own branch is held: on 25 Oct 2026 a review of Home's project cards held every PR
+// into the repo, the fix for its red main among them, so all its lanes' approvals sat waiting.
 const OPEN = (home = homedir()) => join(home, ".config", "symbiot", "ui-open.json"), OPEN_MS = 2 * 86400000;
 function slugOf(url) { const m = String(url || "").trim().match(/github\.com[:/]+([^/\s]+)\/([^/\s]+?)(?:\.git)?\/?$/i); return m ? `${m[1]}/${m[2]}`.toLowerCase() : ""; }
 function folderSlug(folder) { try { return slugOf(spawnSync("git", ["-C", folder, "remote", "get-url", "origin"], { encoding: "utf8", timeout: 5000 }).stdout); } catch { return ""; } }
-function noteOpen(path, review, { now = Date.now(), home = homedir(), slug } = {}) {
-  const items = Object.entries(review || {}).filter(([, v]) => v && v.rounds > 0 && !v.passed && !v.failed).map(([k]) => k);
+function folderBranch(folder) { try { return String(spawnSync("git", ["-C", folder, "branch", "--show-current"], { encoding: "utf8", timeout: 5000 }).stdout || "").trim(); } catch { return ""; } }
+// The ones it failed after the last round hold no merge (they're the user's call), but are kept with
+// what still fails, so Home can say a PR isn't ready rather than ask to merge it (reviewHolds).
+function noteOpen(path, review, { now = Date.now(), home = homedir(), slug, branch } = {}) {
+  const e = Object.entries(review || {}).filter(([, v]) => v && v.rounds > 0 && !v.passed), items = e.filter(([, v]) => !v.failed).map(([k]) => k), failed = e.filter(([, v]) => v.failed).map(([k]) => k);
+  const fixes = Object.fromEntries(e.filter(([, v]) => Array.isArray(v.fixes) && v.fixes.length).map(([k, v]) => [k, v.fixes.slice(0, 12)]));
   const f = OPEN(home), all = readJson(f, {}) || {};
-  if (items.length) all[path] = { slug: slug ?? folderSlug(path), items, at: now }; else if (all[path]) delete all[path]; else return;
+  if (e.length) all[path] = { slug: slug ?? folderSlug(path), branch: branch ?? folderBranch(path), items, ...(failed.length ? { failed } : {}), ...(Object.keys(fixes).length ? { fixes } : {}), at: now }; else if (all[path]) delete all[path]; else return;
   try { mkdirSync(join(f, ".."), { recursive: true }); writeFileSync(f, JSON.stringify(all, null, 1), { mode: 0o600 }); } catch {}
 }
-// What holds a merge into this repo (slug "owner/name"): [{ folder, item }], [] when nothing does.
-function holdsMerge(slug, { now = Date.now(), home = homedir() } = {}) {
+// What holds a merge into this repo (slug "owner/name") of the PR from `branch`: [{ folder, item }], [] when
+// nothing does. No branch (the PR's couldn't be found): any open review in the repo holds it, as before.
+function holdsMerge(slug, { now = Date.now(), home = homedir(), branch = "" } = {}) {
   slug = String(slug || "").toLowerCase(); if (!slug) return [];
   const all = readJson(OPEN(home), {}) || {};
   const name = (x) => String(x || "").split("/").pop(); // by its name too: a repo that moved owner keeps an old remote (GitHub redirects it)
-  return Object.entries(all).filter(([, v]) => v && v.slug && (v.slug === slug || name(v.slug) === name(slug)) && now - (v.at || 0) < OPEN_MS).flatMap(([folder, v]) => (v.items || []).map((item) => ({ folder, item })));
+  const mine = (folder, v) => !branch || (v.branch ?? folderBranch(folder)) === branch;
+  return Object.entries(all).filter(([folder, v]) => v && v.slug && (v.slug === slug || name(v.slug) === name(slug)) && now - (v.at || 0) < OPEN_MS && mine(folder, v)).flatMap(([folder, v]) => (v.items || []).map((item) => ({ folder, item })));
 }
 // A step's own brief that came back in as a task line: on 24 Oct 2026 an agent handed the webapp lane
 // "Act as Symbiot's design critic for the webapp lane. Judge the finished job… The job: give each
@@ -112,6 +120,37 @@ const taskOf = (t) => { t = String(t || "").trim(); const g = t.match(GOAL_BRIEF
 // The same job in other words' clothing: "New job: X…" and a brief's "The job: X…", cut at 200.
 const jobNorm = (t) => taskOf(t).replace(/^new job:\s*/i, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 function sameJob(a, b) { const x = jobNorm(a), y = jobNorm(b), n = Math.min(x.length, y.length, 60); return n >= 20 && x.slice(0, n) === y.slice(0, n); }
+// What the critic has against a merge into this repo, for Home's cards: [{ folder, item, fixes, failed }],
+// the items it's still judging or sent back (failed: false) and the ones it failed after the last round.
+function reviewHolds(slug, { now = Date.now(), home = homedir() } = {}) {
+  slug = String(slug || "").toLowerCase(); if (!slug) return [];
+  const all = readJson(OPEN(home), {}) || {}, name = (x) => String(x || "").split("/").pop();
+  return Object.entries(all).filter(([, v]) => v && v.slug && (v.slug === slug || name(v.slug) === name(slug)) && now - (v.at || 0) < OPEN_MS)
+    .flatMap(([folder, v]) => [...(v.items || []).map((item) => ({ item, failed: false })), ...(v.failed || []).map((item) => ({ item, failed: true }))].map((x) => ({ folder, ...x, fixes: ((v.fixes || {})[x.item] || []).map(String) })));
+}
+// A card on Home asking to merge or publish work into a repo whose UI review hasn't passed. On 23 Oct
+// 2026 "Should I merge PR 251 to publish the Vault page?" sat on Home after the critic had sent the
+// page back with ten fixes, and the guard was all that stood in the way. Now, while the critic is
+// still judging it or its builder is fixing it, it's no card at all (it isn't the user's yet); once
+// it has failed the last round, the card says the PR isn't ready and what's still missing, and drops
+// every option but the ones that say no to it. holds(card): reviewHolds for the card's repo.
+const MERGE_ASK = /\b(?:merg(?:e|es|ed|ing)(?!\s+conflicts?\b)|publish(?:es|ed|ing)?|(?:ship|release) (?:it|them|v?\d+\.\d+))\b/i; // not "fix the merge conflicts"
+const NOT_MERGE = /\b(?:without|don['’]?t|do not|not|never|no|close|drop|skip|hold|leave|keep waiting)\b/i;
+function heldMergeCard(y, holds) {
+  if (!y || y.kind !== "ask" || !MERGE_ASK.test([y.raw, y.q, y.sub].filter(Boolean).join(" "))) return y;
+  let h = []; try { h = holds(y) || []; } catch { return y; } if (!h.length) return y;
+  if (h.some((x) => !x.failed)) return null;
+  const opts = y.options || [], keep = opts.map((o, j) => j).filter((j) => [opts[j], y.labels && y.labels[j]].every((t) => !t || NOT_MERGE.test(t))); // on a merge card a yes ("I've done it", "Go ahead") is the merge: only a no stays
+  const pr = ([y.raw, y.q, y.sub].join(" ").match(/\b(?:PR|pull request)\s*#?(\d+)|#(\d+)\b/i) || []).slice(1).find(Boolean);
+  const what = pr ? `PR ${pr}` : "This work", missing = [...new Set(h.flatMap((x) => x.fixes.length ? x.fixes : [x.item]))], said = missing.slice(0, 3).join("; ") + (missing.length > 3 ? `; and ${missing.length - 3} more` : "");
+  const pick = (a) => (a ? keep.map((j) => a[j]) : undefined), rec = y.rec != null && keep.indexOf(y.rec) >= 0 ? keep.indexOf(y.rec) : -1;
+  const { doing: _d, done: _n, labels: _l, tips: _t, rec: _r, ...rest } = y;
+  // each line of a card shows two lines: the count reads first, then what's missing, all of it on hover and when opened
+  const n = missing.length, count = `${n} design review fix${n > 1 ? "es" : ""} left`;
+  return { ...rest, held: true, sub: `${what} isn't ready to merge: ${count}`, q: `${what} isn't ready to merge: ${count}.`,
+    why: `Still missing: ${said}.`, doing: `I'm holding ${what === "This work" ? "it" : what} back until the design review passes.`,
+    options: pick(opts), ...(y.labels ? { labels: pick(y.labels) } : {}), ...(y.tips ? { tips: pick(y.tips) } : {}), ...(rec >= 0 ? { rec } : {}) };
+}
 const itemKey = (t) => String(t || "").replace(/^\s*[-*+]\s*\[[ xX~]\]\s*/, "").replace(/\s+—\s+UI review \(round \d\).*$/, "").trim().slice(0, 200);
 // A run that changed only writing (a report, notes, a description) built no screens, whatever its task said.
 const DOC_FILE = /\.(md|markdown|txt|rst|pdf|docx?|odt|rtf)$/i;
@@ -277,7 +316,7 @@ function startDesign(path, md, { now = Date.now() } = {}) {
 // netWatch, the rule symbiot capture waits by), then its fonts and the images in the window are
 // decoded, all inside SHOOT_MS, and one more frame drawn. Not on Chrome's simulated (virtual time)
 // clock: that one didn't wait for the first request to another site, so a CDN's photos came out
-// late or missing in pictures of a page that was fine (the Daaymn demo, 24 Oct 2026). One browser
+// late or missing in pictures of a page that was fine (a dating app's web demo, 24 Oct 2026). One browser
 // of its own (scratchPage), the page opened again at each size, so what reads the width as it
 // loads sees the size it's shot at. A page that never goes quiet is still shot, with what was
 // still loading in `late`; images that failed are in `broken` (the page's, not the picture's).
@@ -337,4 +376,4 @@ async function shoot(url, { out, sizes = "1440x900,390x844", full = false, bin, 
   return { shots, ...(failed.length ? { failed } : {}), ...(Object.keys(late).length ? { late } : {}), ...(bad.length ? { broken: bad } : {}), ...(note ? { note } : {}) };
 }
 
-export { isBrief, taskOf, looksAt, wroteOnly, writtenBrief, sameJob, dropDesign, designWorthy, toDesign, designerBrief, settleDesign, specsFor, startDesign, designOf, DESIGNER_PROMPT, DESIGN, MIN_SPEC, slugOf, folderSlug, noteOpen, holdsMerge, OPEN_MS, isUiWork, designBrief, CHECKLIST, toReview, criticBrief, CRITIC_PROMPT, settleVerdict, reviewOf, saveReview, itemKey, shoot, shootNote, SHOOT_MS, REVIEW, VERDICT, MAX_ROUNDS };
+export { isBrief, taskOf, sameJob, dropDesign, designWorthy, toDesign, designerBrief, settleDesign, specsFor, startDesign, designOf, DESIGNER_PROMPT, DESIGN, MIN_SPEC, slugOf, folderSlug, noteOpen, holdsMerge, reviewHolds, heldMergeCard, MERGE_ASK, OPEN_MS, isUiWork, designBrief, CHECKLIST, toReview, criticBrief, CRITIC_PROMPT, settleVerdict, reviewOf, saveReview, itemKey, shoot, shootNote, SHOOT_MS, REVIEW, VERDICT, MAX_ROUNDS, looksAt, wroteOnly, writtenBrief };

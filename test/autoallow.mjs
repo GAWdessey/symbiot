@@ -178,9 +178,9 @@ const { homeState } = await import("../home.mjs");
 const hsDeps = { repos: () => ({ whatsapp_module: lane2 }), board: () => ({ cards: [] }), pending: () => [], lanes: () => ({ handoffs: [] }), reports: () => ({ count: 0 }), connected: () => true, waits: () => [], clashes: () => [], agentGone: () => "", signedOut: () => [], stuck: () => [], drafts: () => [], agentCmd: () => "claude", marketing: () => false,
   agents: () => [{ path: lane2, name: "whatsapp_module", status: "done", ask: { questions: [{ q: permQ, context: "", options: ["👤 You (only you: a permission): allow the list in .symbiot/allowlist.proposed.json (recommended)", "ask ops directly"] }] } }] };
 const stale = homeState({ fresh: true, deps: { ...hsDeps, doneSince: (p, q) => doneSince(p, q, { ledger }) } }).you.find((y) => y.kind === "ask");
-ok("...and its card on Home says it's done, with Close it first and the agent's own first choice after it", stale && stale.done && stale.done.lane === "ops" && /^Close it: ops has done this already/.test(stale.options[0]) && stale.labels[0] === "Close it: it's done" && /allowlist\.proposed/.test(stale.options[1]) && stale.labels[1] === "Allow", stale);
+ok("...and its card on Home says it's done, with Close it first and the agent's own first choice after it", stale && stale.doneBy && stale.doneBy.lane === "ops" && /^Close it: ops's agent has done this already/.test(stale.options[0]) && stale.labels[0] === "Close it: it's done" && /allowlist\.proposed/.test(stale.options[1]) && stale.labels[1] === "Allow", stale);
 const live = homeState({ fresh: true, deps: { ...hsDeps, doneSince: () => null } }).you.find((y) => y.kind === "ask");
-ok("...while one still open asks as before", live && !live.done && live.labels[0] === "Allow (recommended)" && live.raw === permQ, live);
+ok("...while one still open asks as before", live && !live.doneBy && live.labels[0] === "Allow (recommended)" && live.raw === permQ, live);
 
 // Allow, with words of your own that sound like git (LoveLink, 2026-10-12): it's still a
 // permission, turned on, never handed back to the agent as "git work is yours".

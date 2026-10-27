@@ -155,17 +155,37 @@ const lastSeen = new Map(); // phone id -> { at, via }
 // The link a QR carries: the site's pairing page, which hands it to the app (the
 // part after # never leaves the phone). Addresses, port, code and key fingerprint.
 function pairLink(code, l = linkCfg()) { return `${PAIR_SITE}#a=${lanAddresses().slice(0, 3).join(",")}&p=${l.port}&c=${code}&k=${fingerprint(linkKeys().pub)}`; }
-function linkState() {
+function linkState({ now = Date.now() } = {}) {
   const l = linkCfg();
-  if (pairing && Date.now() > pairing.until) pairing = null;
+  if (pairing && now > pairing.until) { usbMissed(pairing, now); pairing = null; }
+  const usbFail = usbNote(now);
   const link = pairing && listener ? pairLink(pairing.code, l) : "";
   return { role: "computer", on: l.on, port: l.port, listening: !!listener, ...(listenErr ? { error: listenErr } : {}), ...(listenErr && holder ? { holder } : {}), addresses: lanAddresses(),
     ...(l.pub ? { fp: fingerprint(l.pub) } : {}), relay: { on: l.relay && relayAllowed(), ...(relayAllowed() ? {} : { off: "SYMBIOT_NO_RELAY" }), ...relayState() }, found: !!mdns,
     phones: l.phones.map((p) => ({ id: p.id, name: p.name, added: p.added, ...(p.legacy || !p.pub ? { old: true } : {}), ...(lastSeen.has(p.id) ? { seen: lastSeen.get(p.id).at, via: lastSeen.get(p.id).via } : p.seen ? { seen: p.seen } : {}) })),
-    ...(pairing ? { code: pairing.code, until: pairing.until } : {}), ...(link ? { link, qr: qrSvg(link) } : {}) };
+    ...(pairing ? { code: pairing.code, until: pairing.until, ...(pairing.usb && pairing.pushed.length ? { usbSent: pairing.pushed.length } : {}) } : {}), ...(link ? { link, qr: qrSvg(link) } : {}), ...(usbFail ? { usbFail } : {}) };
 }
-// A new pairing code, good for 10 minutes and 5 tries.
-function newCode() { pairing = { code: String(randomInt(0, 1e6)).padStart(6, "0"), until: Date.now() + CODE_MS, tries: 0 }; return linkState(); }
+// A new pairing code, good for 10 minutes and 5 tries. One the user opened here (Pair a phone,
+// or the link switched on: usb) also goes to a phone plugged in by cable (adbLink), once.
+function newCode({ usb = false, now = Date.now() } = {}) {
+  pairing = { code: String(randomInt(0, 1e6)).padStart(6, "0"), until: now + CODE_MS, tries: 0, ...(usb ? { usb: true, pushed: [] } : {}) };
+  if (usb) { clearUsbFail(); if (adbTimer) setImmediate(() => adbLink()); }
+  return linkState({ now });
+}
+// A code sent to a cable's phone that ran out (or was tried wrong too often) unpaired: said once
+// on Home and in Settings (usbFail), and the phone isn't sent it again until Pair a phone is
+// pressed again. It used to be pushed on each start of this app, so the phone kept asking
+// "Link to <this computer>?" and opening Symbiot, approval after approval (23 Oct 2026).
+const USB_FAIL_MS = 24 * 3600 * 1000;
+function usbMissed(p, now, why = "") {
+  if (!p || !p.usb || !(p.pushed || []).length) return;
+  saveLink({ usbFail: { at: now, why: why || "It was sent to your phone over the cable, but the phone didn't pair within 10 minutes: Cancel was tapped, the phone was locked, or the cable came out." } });
+}
+function clearUsbFail() { if ((loadConfig().phoneLink || {}).usbFail) saveLink({ usbFail: null }); }
+function usbNote(now = Date.now()) {
+  const f = (loadConfig().phoneLink || {}).usbFail;
+  return f && f.at && now - f.at < USB_FAIL_MS ? { at: f.at, why: String(f.why || "").slice(0, 300) } : null;
+}
 // Unpaired: it gets nothing more, and what it had queued (an approve too) is refused.
 // Its key is kept a while, so it's told so, sealed, rather than left guessing.
 function unpairPhone(id) {
@@ -197,10 +217,10 @@ async function handle(req, res) {
     if (!pairing || Date.now() > pairing.until) { pairing = null; return reply(res, 403, { error: "No pairing code is open. In Symbiot on your computer, open Settings → Your phone and click Pair a phone." }); }
     const k = linkKeys(), key = linkKey(k.priv, String(b.pub), String(b.pub), k.pub), m = unseal(key, b, "pair");
     if (!m || !same(String(m.code || "").replace(/\D/g, ""), pairing.code)) {
-      if (++pairing.tries >= CODE_TRIES) pairing = null;
+      if (++pairing.tries >= CODE_TRIES) { usbMissed(pairing, Date.now(), "Your phone tried the code sent over the cable, and it was wrong too often."); pairing = null; }
       return reply(res, 403, { error: pairing ? "That code isn't right. Check it on your computer." : "That code was wrong too many times. Click New code on your computer." });
     }
-    pairing = null;
+    pairing = null; clearUsbFail();
     // the same phone paired again (its install id, inst) replaces its old entry: the old
     // token and key stop working, rather than two "Phone" entries both valid (15 Oct 2026)
     const inst = /^[\w-]{8,64}$/.test(String(m.inst || "")) ? String(m.inst) : "";
@@ -559,27 +579,29 @@ function stopRelay() {
 
 // USB: a phone on adb needs nothing scanned. `adb reverse` lets it reach this computer at
 // 127.0.0.1:7392 over the cable, and the pairing link is pushed to the Android app, which
-// asks "Link to <this computer>?": Approve is the only step. Once per phone while the app
-// runs, over a cable only, and only while no phone is paired: the push opens Symbiot on the
-// phone, and a Wi-Fi adb link (`host:port`, `…._adb-tls-connect._tcp`) drops each time the
-// phone sleeps, so pushing again on each reconnect kept popping it open (22 Oct 2026).
-const adbPushed = new Set();
+// asks "Link to <this computer>?" once (an approved computer pairs without asking again).
+// Only right after the user pressed Pair a phone here (a code opened with usb), once per phone
+// per code, over a cable only: the push opens Symbiot on the phone, so it never goes on its
+// own. It went on each start of this app while no phone was paired, so every update brought
+// the phone's prompt back and opened Symbiot on it mid-use (22-23 Oct 2026). A Wi-Fi adb link
+// (`host:port`, `…._adb-tls-connect._tcp`) is never pushed to.
 const adbWifi = (s) => /:\d+$/.test(s) || /\._adb-tls-connect\._tcp$/.test(s);
 const adbRun = (args) => execFileSync("adb", args, { encoding: "utf8", timeout: 8000, stdio: ["ignore", "pipe", "ignore"] });
-function adbLink({ run = adbRun, has = () => hasCmd("adb") } = {}) {
-  const l = linkCfg();
-  if (!l.on || !listener || l.phones.length || !has()) return [];
+function adbLink({ run = adbRun, has = () => hasCmd("adb"), now = Date.now() } = {}) {
+  const l = linkCfg(), p = pairing;
+  if (p && now > p.until) { linkState({ now }); return []; } // (ran out: said once, usbMissed)
+  if (!l.on || !listener || !p || !p.usb || !has()) return [];
   let serials = [];
   try { serials = run(["devices"]).split("\n").slice(1).map((x) => x.trim().split(/\s+/)).filter((x) => x[1] === "device").map((x) => x[0]); } catch { return []; }
   const did = [];
   for (const s of serials) {
-    if (adbPushed.has(s) || adbWifi(s)) continue;
+    if (p.pushed.includes(s) || adbWifi(s)) continue;
+    p.pushed.push(s); // (tried once: a push that failed isn't retried either)
     try {
       run(["-s", s, "reverse", `tcp:${l.port}`, `tcp:${l.port}`]);
-      if (!pairing || Date.now() > pairing.until) newCode();
-      const link = `symbiot://pair?a=127.0.0.1&p=${l.port}&c=${pairing.code}&k=${fingerprint(linkKeys().pub)}&n=${encodeURIComponent(hostname())}`;
+      const link = `symbiot://pair?a=127.0.0.1&p=${l.port}&c=${p.code}&k=${fingerprint(linkKeys().pub)}&n=${encodeURIComponent(hostname())}`;
       run(["-s", s, "shell", "am", "start", "-a", "android.intent.action.VIEW", "-d", `'${link}'`, "co.symbiot.app"]);
-      adbPushed.add(s); did.push(s);
+      did.push(s);
     } catch {}
   }
   return did;
@@ -651,14 +673,14 @@ async function usePhonePort(port) {
   if (!Number.isInteger(n) || n < 1024 || n > 65535) return { ...linkState(), error: "Pick a port between 1024 and 65535." };
   stopPhoneLink(); saveLink({ port: n }); listenErr = ""; holder = null;
   await startPhoneLink();
-  return listener && !pairing ? newCode() : linkState();
+  return listener && !pairing ? newCode({ usb: true }) : linkState();
 }
 function stopPhoneLink() { clearTimeout(retryTimer); retryTimer = null; if (listener) { listener.close(); if (listener.closeAllConnections) listener.closeAllConnections(); } listener = null; pairing = null; stopMdns(); stopRelay(); clearInterval(adbTimer); adbTimer = null; }
 async function setPhoneLink(on) {
   saveLink({ on: !!on });
   if (!on) { stopPhoneLink(); listenErr = ""; return linkState(); }
   await startPhoneLink();
-  return listener && !pairing ? newCode() : linkState();
+  return listener && !pairing ? newCode({ usb: true }) : linkState();
 }
 
 // ---- the phone -------------------------------------------------------------------------------

@@ -488,7 +488,7 @@ try {
   const { workScene, workGo } = await import("../home.mjs");
   const ws = workScene({ deps: {
     agents: () => [{ name: "symbiot", path: "/s", status: "running", progress: { done: 1, total: 3 }, work: { todos: [{ status: "completed", text: "a", active: "A" }, { status: "in_progress", text: "Fix the reader", active: "Fixing the **WhatsApp** reader" }] }, ask: { questions: [] } },
-      { name: "atlas", path: "/c", status: "running", work: { doing: "Ran npm test", todos: [] }, ask: { questions: [{ q: "?" }] } }, { name: "old", path: "/o", status: "done" }],
+      { name: "atlas", path: "/c", status: "running", work: { doing: "Ran npm test", todos: [] }, ask: { questions: [{ q: "Ship the atlas fix?" }] } }, { name: "old", path: "/o", status: "done" }],
     pending: () => [{ repo: "ChatApp", path: "/g", tasks: [{}, {}], files: [{}] }, { repo: "busy", path: "/b", running: true, tasks: [{}] }],
     tasks: () => [{ id: "1", text: "Add a Skip button to each idea in the Agents tab, so you can turn down an idea you don't want", repo: "symbiot" }, { id: "2", text: "Merge near-duplicates", repo: "whatsapp_module" }, { id: "3", text: "done one", repo: "x", done: true }, { id: "4", text: "no repo", repo: "" }],
   } });
@@ -529,14 +529,20 @@ try {
     let tasks = T();
     const base = { repos: () => map, name: (p, n) => n, pending: () => [], parked: () => [], cmd: () => "claude -p {prompt}", now: NOW, tasks: () => tasks, save: () => {}, config: () => ({}),
       agents: () => [{ name: "symbiot", path: "/s", status: "running", work: { doing: "Fixing the reader", todos: [] }, ask: { questions: [] } }, { name: "atlas", path: "/c", status: "done", ask: { questions: [{ q: "Which docs?" }] } }],
-      brief: (p) => (p === "/s" ? { at: 1, tasks: ["Fix the reader"] } : p === "/g" ? { at: 5, tasks: ["Old one"] } : { at: 0, tasks: [] }), lastRun: (p) => (p === "/g" ? 10 : 0) };
+      brief: (p) => (p === "/s" ? { at: 1, tasks: ["Fix the reader"] } : p === "/g" ? { at: 5, tasks: ["Old one"] } : { at: 0, tasks: [] }), lastRun: (p) => (p === "/g" ? 10 : 0), autoStart: () => true };
     const sc = workScene({ deps: { ...base, fails: {} } }), why = (id) => (sc.waiting.find((w) => w.id === "task:" + id) || {}).why || {};
     ok("in the brief of the run at work in its lane: its agent is on it now", why(1).kind === "working" && /symbiot's agent is on it now/.test(why(1).text), why(1));
     ok("not in it: queued behind that lane's run, named, with what it's doing", why(2).kind === "queued" && /Queued behind symbiot's run: fixing the reader/.test(why(2).text), why(2));
     ok("its lane's last run asked something: waiting on your answer, with the Workdesk card's folder", why(3).kind === "asks" && why(3).path === "/c" && /your answer/.test(why(3).text), why(3));
     ok("an ops task (🤖 Agent: …) is next, as a run of its own; a 👤 one is yours and counts for no Go", why(4).kind === "next" && why(5).kind === "you" && sc.canGo === 4, [why(4), why(5), sc.canGo]);
-    ok("its lane's run ended without ticking it: flagged, not started again and again", why(6).stuck && why(6).ended && /ended without finishing/.test(why(6).text), why(6));
-    ok("a free lane, waiting past a few minutes: flagged as stuck with nothing in its way", why(7).stuck && /Not started after \d+ min/.test(why(7).text) && sc.stuckCount === 2, [why(7), sc.stuckCount]);
+    ok("its lane's run ended without ticking it: it starts again on its own, under that task's cap (25 Oct 2026)", why(6).kind === "next" && why(6).retryKey === "ended:6" && /ended without finishing it, so it starts again/.test(why(6).text), why(6));
+    const capped = workScene({ deps: { ...base, fails: {}, autoStart: () => false } }).waiting.find((w) => w.id === "task:6").why;
+    ok("…and once that cap is used up: flagged, not started again and again", capped.stuck && capped.ended && /ended without finishing/.test(capped.text), capped);
+    ok("a free lane, waiting past a few minutes: flagged as stuck with nothing in its way", why(7).stuck && /Not started after \d+ min/.test(why(7).text) && sc.stuckCount === 1, [why(7), sc.stuckCount]);
+    {
+      const named = workScene({ deps: { ...base, fails: {}, brief: (p) => (p === "/g" ? { at: 5, tasks: ["Old one"] } : { at: 0, tasks: [] }), lastRun: () => 0, waiting: (p) => (p === "/g" ? "someone with root on the VM" : "") } }).waiting.find((w) => w.id === "task:6").why;
+      ok("a task marked [~] that names no real blocker isn't held as waiting: steve's OOM fix sat on 'someone with root' (25 Oct 2026)", named.kind !== "waiting" && !named.noGo, named);
+    }
     ok("a lane Symbiot can't find a folder for: blocked, saying so", why(8).kind === "blocked" && /can't find nowhere's folder/.test(why(8).text), why(8));
     // its agent marked it [~]: waiting on that, not "didn't start", and never started again and again (22 Oct 2026)
     {
@@ -556,8 +562,9 @@ try {
     const ws0 = workScene({ deps: { ...base, cmd: () => "", fails: {} } });
     ok("no agent set: every one says it's blocked on that", ws0.waiting.filter((w) => w.why.kind !== "you").every((w) => /no coding agent/.test(w.why.text)), ws0.waiting.map((w) => w.why.kind));
     const pushed = [], ran = [], acted = [], fails = {};
-    const r = workTick({ deps: { ...base, fails, push: ({ repo }) => (pushed.push(repo), { written: [{ name: repo, path: map[repo] }] }), run: (p) => (ran.push(p), { id: "j" }), act: (t) => (acted.push(t), { ok: true, dir: "/runs/act-1" }) } });
-    ok("the tick starts the free lane's tasks (one run per lane), not a busy, asking or ended one, nor one just added", r.started.join() === "f" && pushed.join() === "f" && ran.join() === "/f", r);
+    const took = [];
+    const r = workTick({ deps: { ...base, fails, autoStart: (p, o) => (o && o.take !== false && took.push([p, o.key]), true), push: ({ repo }) => (pushed.push(repo), { written: [{ name: repo, path: map[repo] }] }), run: (p) => (ran.push(p), { id: "j" }), act: (t) => (acted.push(t), { ok: true, dir: "/runs/act-1" }) } });
+    ok("the tick starts the free lane's tasks (one run per lane), and an ended one under its cap, not a busy or asking one, nor one just added", [...r.started].sort().join() === "f,g" && [...pushed].sort().join() === "f,g" && [...ran].sort().join() === "/f,/g" && took.length === 1 && took[0].join() === "/g,ended:6", [r, took]);
     // peak hours: weekdays 5–11am Pacific = 2–8pm SAST (northern summer)
     {
       const WED = Date.parse("2026-10-14T13:00:00Z"), SAT = Date.parse("2026-10-17T13:00:00Z"), WED_NIGHT = Date.parse("2026-10-14T19:00:00Z");
