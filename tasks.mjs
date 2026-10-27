@@ -25,7 +25,7 @@ import { repoPathMap, laneMap, nearLane, openWork, detectRepo } from "./scan.mjs
 import { afterShip } from "./deploy.mjs";
 import { ruleLines } from "./overrides.mjs";
 import { MARKETING_DIR, ensureMarketing, marketingBrief } from "./marketing.mjs";
-import { laneIdOf, nameOfId, noteLanes } from "./laneids.mjs";
+import { laneIdOf, nameOfId, noteLanes, loadRenamed } from "./laneids.mjs";
 
 // ---- tasks: a persistent checklist (stored by core.mjs) -------------------
 // One line (TASKS.md has a task per line, and a tick only matches a whole one),
@@ -51,11 +51,23 @@ function leadOf(text) {
 // and Home asks you where it goes (home.mjs unplacedCards). names: the lanes there are (laneNames).
 const OPS_FOLDER = /^act-[0-9a-f]{6,}$/i, OPS_LANE = "ops";
 const laneNames = () => { let m = {}; try { m = laneMap(); } catch {} return [...Object.keys(m), ...(OPS_LANE in m ? [] : [OPS_LANE])]; };
-function laneOfRepo(repo, names = laneNames) {
+// Other names a lane answers to: its folder's name (a lane called callforge-ai whose folder is
+// ~/dailify) and a name it had before it was renamed (laneids.mjs noteLanes). { alias: lane }, lower-cased.
+function laneAliases() {
+  const out = {};
+  try {
+    const m = laneMap();
+    for (const [n, p] of Object.entries(m)) { const b = basename(String(p || "")).toLowerCase(); if (b && !(b in out)) out[b] = n; }
+    for (const x of loadRenamed()) if (x.from && x.to in m) out[String(x.from).toLowerCase()] = x.to;
+  } catch {}
+  return out;
+}
+function laneOfRepo(repo, names = laneNames, aliases = names === laneNames ? laneAliases : null) {
   const r = String(repo || "").trim(); if (!r) return "";
   if (OPS_FOLDER.test(r) || r.toLowerCase() === OPS_LANE) return OPS_LANE;
   const all = typeof names === "function" ? names() : names, same = (n) => all.find((x) => x.toLowerCase() === n.toLowerCase()) || "";
-  return same(r) || same(r.replace(/-[0-9a-f]{6}$/i, "")) || (/\s/.test(r) ? "" : nearLane(r, all));
+  const alias = () => { const a = (typeof aliases === "function" ? aliases() : aliases) || {}, to = a[r.toLowerCase()]; return to ? same(to) : ""; };
+  return same(r) || same(r.replace(/-[0-9a-f]{6}$/i, "")) || alias() || (/\s/.test(r) ? "" : nearLane(r, all));
 }
 // Re-file a task in another lane (the lane picker on its Workdesk row): its agent takes it from
 // then on. Not one waiting for your OK: approve it or send it back where it is first.

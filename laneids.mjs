@@ -52,4 +52,6 @@ function noteLanes(map, { now = Date.now(), root = rootOf } = {}) {
 const laneIdOf = (name, d = load()) => { const k = String(name || "").toLowerCase(); const e = Object.entries(d.ids).find(([, v]) => String(v.name).toLowerCase() === k); return e ? e[0] : ""; };
 const nameOfId = (id, d = load()) => (d.ids[id] ? d.ids[id].name : "");
 
-export { rootOf, idsFor, noteLanes, laneIdOf, nameOfId, FILE as LANE_IDS };
+const loadRenamed = () => load().renamed;
+
+export { loadRenamed, rootOf, idsFor, noteLanes, laneIdOf, nameOfId, FILE as LANE_IDS };
