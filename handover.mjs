@@ -289,7 +289,15 @@ function asksNow(s) {
 const COMMANDISH = /`{1,3}[^`\n]{2,}`{1,3}|\$\(|<\(|(?:^|[\s(])~\/|(?:^|\s)\.{0,2}\/[\w.-]+\/[\w.-]|(?:^|[\s:])(?:diff|jq|cat|grep|sudo|npm|npx|node|git|curl|ls|cd|chmod|rm|cp|mv|sed|awk|python3?|bash|ssh|systemctl)\s+(?:-{1,2}\w|[~./<$|])/;
 const commandish = (s) => COMMANDISH.test(String(s || ""));
 // What's left of a sentence once the command in it is gone: "" when that leaves only its lead-in ("To compare them yourself:").
-const noCommand = (s) => { s = String(s || ""); const m = COMMANDISH.exec(s); if (!m) return s; const t = s.slice(0, m.index).replace(/(?:[\s:;,(-]|\b(?:run|type|paste|use|try|with|enter|do)\b)+$/i, "").trim(); return t.split(/\s+/).length < 4 || /\byourself\b/i.test(t) ? "" : t + "."; };
+const noCommand = (s) => { s = String(s || ""); const m = COMMANDISH.exec(s); if (!m) return s; const t = s.slice(0, m.index).replace(/(?:[\s:;,(-]|\b(?:run|type|paste|use|try|with|enter|do)\b)+$/i, "").trim(); return t.split(/\s+/).length < 4 || /\byourself\b/i.test(t) || dangles(t) ? "" : t + "."; };
+// A sentence pointing at questions already asked (their Workdesk anchors, "on the Workdesk", QUESTIONS.md)
+// is no new step: those questions are cards of their own. dailify's "They wait on you for `{#kea-realtime-turns}`
+// and `{#dailify-ns-switch}` on Workdesk" became a card reading "They wait on you for." (27 Oct 2026).
+const ASKED_ALREADY = /\{#[\w-]+\}|\b(?:on|in) (?:the )?Workdesk\b|\bQUESTIONS\.md\b/i;
+// What's left of a sentence that stops on a word needing more after it ("They wait on you for."): no step at all.
+// Not a question ("Which account should I sign in with?"): that one ends where English lets it.
+const DANGLING = /\b(?:for|to|of|with|and|or|the|a|an|by|from|into|about|than|your|my|its|their|as)[\s.,;:…*_`"'’)]*$/i;
+const dangles = (s) => DANGLING.test(String(s || "").trim());
 function leftToYou(text) {
   const points = String(text || "").replace(/```[\s\S]*?```/g, (m) => m.replace(/\s+/g, " ")).split(/\n+|\s+-\s+(?=\*\*)/).map((p) => p.replace(/^\s*[-*•]\s+/, "").trim()).filter(Boolean)
     .map((p) => { const lm = p.match(/^\*\*([^*]{2,60}?):?\*\*:?\s*/), body = lm ? p.slice(lm[0].length) : p;
@@ -297,7 +305,7 @@ function leftToYou(text) {
   const clean = (x, n) => { x = String(x || "").replace(/\*\*/g, "").replace(/\s+/g, " ").trim(); return x.length > n ? x.slice(0, n - 1).replace(/\s+\S*$/, "") + "…" : x; };
   for (let k = 0; k < points.length; k++) {
     const { label, ss, off } = points[k]; if (off) continue;
-    const i = ss.findIndex((s) => !DID.test(s) && asksNow(s));
+    const i = ss.findIndex((s) => !DID.test(s) && !ASKED_ALREADY.test(s) && asksNow(s));
     if (i < 0) continue;
     const s = ss[i], next = points[k + 1] && !points[k + 1].off ? points[k + 1].ss : [];
     // what to check first: the catch it named (in this point, then the next), else what it says next
@@ -309,6 +317,7 @@ function leftToYou(text) {
     const about = !label && SENDS.test(s) ? points.find((p) => p.label && SENDS.test(p.label) && p.ss.length) : null;
     if (commandish(check)) check = noCommand(check);
     const said = label ? `${label}: ${s}` : about ? `${s} ${about.label}: ${about.ss[0]}` : s, what = commandish(said) ? noCommand(said) || said.replace(COMMANDISH, " ") : said;
+    if (dangles(what)) continue;
     return { kind: HELD.test(s) || ACTS.test(s) || gitWork(s + " " + check) ? "approve" : "step", what: clean(what, 240), check: clean(check === s ? "" : check, 240), label: clean(label || (about && about.label), 60) };
   }
   return null;
@@ -347,4 +356,4 @@ function parseHandoffs(md) {
   return out.map((h) => ({ lane: h.lane, text: h.text.trim().slice(0, HANDOVER_MAX) })).filter((h) => h.lane && h.text);
 }
 
-export { lanesJob, agentsMail, mailWork, OPS, MARKETING, HANDOVER_MAX, handoverRules, CLI_LOGIN, ONLY_YOU, HANDBACK, gitWork, agentsGitWork, agentsClicking, agentsCodeWork, heldAsks, sitesOf, PUSH_OK, postsOnLinked, agentsPosting, APPROVE_FIRST, linkedAsks, linkedChore, parseFacts, parseAwaiting, parseHandoffs, leftToYou, commandish, blockedChecks, blockedHandover };
+export { dangles, lanesJob, agentsMail, mailWork, OPS, MARKETING, HANDOVER_MAX, handoverRules, CLI_LOGIN, ONLY_YOU, HANDBACK, gitWork, agentsGitWork, agentsClicking, agentsCodeWork, heldAsks, sitesOf, PUSH_OK, postsOnLinked, agentsPosting, APPROVE_FIRST, linkedAsks, linkedChore, parseFacts, parseAwaiting, parseHandoffs, leftToYou, commandish, blockedChecks, blockedHandover };

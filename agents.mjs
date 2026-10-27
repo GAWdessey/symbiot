@@ -21,7 +21,7 @@ import { apiOptions, blockedSignIn, apiRoute, realChrome, ownChromeStep, CHROME_
 import { actSites, goAhead, refuseHold, holdOf, goWords, goAnswer, goHistory, signInNotNeeded, switchOnAct } from "./chromegate.mjs";
 import { pushGo } from "./pushgate.mjs";
 import { goAhead as phoneGo } from "./phonegate.mjs";
-import { lanesJob, parseFacts, leftToYou, blockedChecks, blockedHandover, OPS, gitWork, agentsGitWork, agentsClicking, agentsCodeWork, agentsMail, agentsPosting, linkedAsks, linkedChore, PUSH_OK } from "./handover.mjs";
+import { dangles, lanesJob, parseFacts, leftToYou, blockedChecks, blockedHandover, OPS, gitWork, agentsGitWork, agentsClicking, agentsCodeWork, agentsMail, agentsPosting, linkedAsks, linkedChore, PUSH_OK } from "./handover.mjs";
 import { scanRoots, repoPathMap, laneMap } from "./scan.mjs";
 import { knowledgeFolders } from "./knowledge.mjs";
 import { pickModel, MODEL } from "./route.mjs";
@@ -1196,7 +1196,7 @@ const NOTHING_FOR_YOU = /\bnothing (?:is |else is )?(?:waiting|waits) (?:on|for)
 function needsOf(path, { final = "", waiting = null, end = Date.now(), start = end - REPORT_WINDOW, now = Date.now() } = {}) {
   if (now - end > NEEDS_FOR) return null;
   let n = waiting ? { kind: "step", what: clipWords(String(waiting.step || "").replace(/^\s*👤\s*(You\s*(\([^)]*\))?:)?\s*/, "").trim(), 240), check: "", label: "", waiting: true } : leftToYou(final) || readNeeds(path, final);
-  if (!n || !n.what) return null;
+  if (!n || !n.what || dangles(n.what)) return null; // "They wait on you for.": no question in it, so no card (27 Oct 2026)
   // its own words say nothing waits on the user: an ops run's "waits for your OK" card said
   // "Nothing is waiting on the user", and its Go ahead only started a run that repeated its report (21 Oct 2026)
   if (!n.waiting && (NOTHING_FOR_YOU.test(`${n.label || ""} ${n.what} ${n.check || ""}`) || (NOTHING_FOR_YOU.test(final) && !/👤|only you/i.test(final)))) return null;

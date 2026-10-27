@@ -90,6 +90,21 @@ try {
     ok(`the count of embers equals the count of things the user can act on (${what}: ${x.lit.length})`, x.lit.length === x.behind.length && (x.lit.length > 0) === (x.cards.length > 0) && (what !== "a step with its card" || x.lit.length === 5), { lit: x.lit.length, behind: x.behind.length, cards: x.cards.length });
   }
 
+  console.log("A CARD WITH NO QUESTION IN IT — never under Needs you, and its lane's tasks say what really holds them");
+  // 27 Oct 2026: "Dailify needs you / They wait on you for." held three dailify tasks: two "prepare this fully,
+  // then ask" tasks and a CI read blocked by GitHub billing
+  const { blankAsk } = await import("../needs.mjs");
+  ok("a card cut off on \"for\" is blank", blankAsk({ kind: "ask", raw: "", q: "They wait on you for.", sub: "They wait on you for." }) && !blankAsk({ kind: "ask", q: "Which account should I sign in with?" }));
+  ok("…and a run whose last words point at its Workdesk questions leaves no card", needsOf(LANE, { final: "Ten items stay [~]. They wait on you for `{#kea-realtime-turns}` and `{#dailify-ns-switch}` on Workdesk.", end: Date.now() - 1000 }) === null);
+  wait(Date.now() + 3000, PHONE_STEP.replace("tap Yes", "tap Allow"));
+  const PREP = { id: "p1", text: "Prepare this fully, then ask the user for their OK in .symbiot/QUESTIONS.md before doing the outward part: switch dailify.co.za's name servers", repo: "symbiot", ts: Date.now() - 3600000 };
+  const CI = { id: "p2", text: "Read the CI result for PR 596", repo: "symbiot", ts: Date.now() - 3600000 };
+  const pd = { ...deps([run()]), tasks: () => [PREP, CI, TASKS[0]], brief: () => ({ at: 0, tasks: [CI.text] }), waiting: (p, t) => (t === CI.text ? "waits on: GitHub billing, which blocks every CI run" : ""), named: () => true };
+  const pw = workScene({ deps: pd }).waiting, whyOf = (id) => (pw.find((x) => x.id === "task:" + id) || {}).why || {};
+  ok("a prepare-then-ask task isn't held by the lane's step: it prepares first and asks after", whyOf("p1").kind !== "step" && !whyOf("p1").noGo, whyOf("p1"));
+  ok("…a task marked [~] on GitHub billing says that, not that it waits on the user", whyOf("p2").kind === "waiting" && /GitHub billing/.test(whyOf("p2").text), whyOf("p2"));
+  ok("…and one the step does hold names the step", whyOf("t0").kind === "step" && /tap Allow/.test(whyOf("t0").text), whyOf("t0"));
+
   console.log("THE ORBS READ HOME'S CARDS FROM THE JOB RECORD");
   const shut = { id: "r9", name: "atlas", path: join(HOME, "atlas"), status: "done", startedAt: Date.now() - 600000, endedAt: Date.now() - 1000, ask: { questions: [{ q: "Can you close the Symbiot Browser so I can carry on?", options: ["Done (recommended)", "Skip"] }] } };
   const CT = [{ id: "c1", text: "Call flow", repo: "atlas", ts: Date.now() - 3600000 }], cd = { ...deps([shut]), repos: () => ({ symbiot: LANE, atlas: shut.path }), tasks: () => CT };

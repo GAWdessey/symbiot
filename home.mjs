@@ -1178,10 +1178,10 @@ function workSceneNow({ deps = {}, full = false } = {}) {
     if (c.kind !== "ask" || (c.fix && c.fix !== "needs") || !c.path) continue; // a question, or a run's OK or step; not a draft, a stuck handover or a failed run
     const a = AG.find((x) => x.path === c.path); if (a && a.status === "running") continue;
     const l = a ? laneOf(a) : c.lane || RUNS_LANE;
-    if (!held[l]) held[l] = { path: c.path, approve: c.fix === "needs" && !!c.ok, step: c.fix === "needs" && !c.ok };
+    if (!held[l]) held[l] = { path: c.path, approve: c.fix === "needs" && !!c.ok, step: c.fix === "needs" && !c.ok, what: plain(c.sub || c.raw || c.q || "", 90) };
   } else {
     const carded = new Set(trouble.filter((t) => t.fix === "needs" && !gone[cardKey(t)] && !isDone(t.q)).map((t) => t.path));
-    for (const a of AG) { if (a.status === "running") continue; const l = laneOf(a), nq = (a.ask && a.ask.questions && a.ask.questions.length) || 0, card = !nq && a.needs && carded.has(a.path); if (!held[l] && (nq || card)) held[l] = { path: a.path, approve: !!card && a.needs.kind === "approve", step: !!card && a.needs.kind !== "approve" }; }
+    for (const a of AG) { if (a.status === "running") continue; const l = laneOf(a), nq = (a.ask && a.ask.questions && a.ask.questions.length) || 0, card = !nq && a.needs && carded.has(a.path); if (!held[l] && (nq || card)) held[l] = { path: a.path, approve: !!card && a.needs.kind === "approve", step: !!card && a.needs.kind !== "approve", what: plain(card ? a.needs.label || a.needs.what : "", 90) }; }
   }
   const why = waitWhy({ map, named, running, held, ready: new Set(ready.map((r) => r.repo)), isParked, deps });
   const waiting = open.map((t) => ({ id: "task:" + t.id, text: plain(t.text, 160), repo: t.repo, busy: busy.has(t.repo), ...(isParked(t.repo) ? { parked: true } : {}), ts: Number(t.ts) || 0, why: why(t) })); // the app shortens it for a tag
@@ -1286,6 +1286,7 @@ function startable(all, now) {
   return { lanes, ops, items, beside };
 }
 const peakHeld = (cfg, now, n) => cfg.peakGuard !== false && n > 1 && isPeak(now);
+const PREPARES = /\bprepare (?:this|it) fully,? then ask\b/i; // intuition.mjs's tasks: the agent's part first, the user's OK after
 const yours = (text) => /^\s*👤/.test(String(text || "")); // "👤 You (only you: …)": the user's step, never an agent's
 // A card that asks you to sign in to a site ("sign in to domains.co.za in Symbiot's browser")
 // carries the site, and shows a button that opens Symbiot's browser window on it (links.mjs).
@@ -1328,14 +1329,18 @@ function waitWhy({ map, named, running, held, ready, isParked, deps = {} }) {
       const v = verdict({ text: t.text, name, active, count: Math.max(mine.length, 1 + beside.length), cap: (deps.cap || laneCap)(undefined, st), pro: isPro(st), dirty: f.dirty, git: f.git });
       return v.ok ? { kind: "beside", text: `Next: starts beside ${name}'s run, in a copy of the repo of its own`, run: run.doing } : { kind: "queued", waitKind: v.kind, text: `Queued behind ${name}'s run: ${plain(run.doing, 60).toLowerCase()}. Why it waits: ${v.text}.${run.eta ? ` Expected wait: ${run.eta}.` : " That run has no time estimate yet."}`, run: run.doing };
     }
-    const h = held[lane];
-    if (h) return h.approve ? { kind: "approve", noGo: true, text: `Waiting on your OK for ${name}'s last run, on the Workdesk`, path: h.path } : h.step ? { kind: "step", noGo: true, text: `Waiting on a step only you can do for ${name}: its card is under Needs you`, path: h.path } : { kind: "asks", noGo: true, text: `Waiting on your answer to ${name}'s question, on the Workdesk`, path: h.path };
-    if (inBrief && ready.has(lane)) return { kind: "approve", noGo: true, text: `Waiting on your OK for ${name}'s work, on the Workdesk`, path };
-    // its agent marked it [~]: it waits on something outside the run, and an answer coming in starts the lane again
-    // only a real, named blocker holds it (agents.mjs namedBlocker): "waits on: someone with root" when
-    // the lane has root left steve's OOM fix idle with no card to release it (25 Oct 2026)
+    // its agent marked it [~]: it waits on something outside the run, and an answer coming in starts the lane again.
+    // Only a real, named blocker holds it (agents.mjs namedBlocker): "waits on: someone with root" when the lane
+    // has root left steve's OOM fix idle with no card to release it (25 Oct 2026). That blocker is what it waits
+    // on, before the lane's card: dailify's CI read, blocked by GitHub billing, read "Waiting on a step only you can do" (27 Oct 2026)
     const on = inBrief ? (deps.waiting || waitingTask)(path, t.text) : "";
-    if (on && (deps.named || namedBlocker)(on)) return { kind: "waiting", noGo: true, text: `Waiting on ${on.replace(/^(?:waits|waiting) (?:on|for):?\s*/i, "").replace(/[.\s]+$/, "")}. ${name}'s agent carries on once that's in` };
+    const blocker = on && (deps.named || namedBlocker)(on) ? on.replace(/^(?:waits|waiting) (?:on|for):?\s*/i, "").replace(/[.\s]+$/, "") : "";
+    if (blocker) return { kind: "waiting", noGo: true, text: `Waiting on ${blocker}. ${name}'s agent carries on once that's in` };
+    // a "prepare this fully, then ask" task does its part first and asks after (intuition.mjs): never held
+    // by the lane's question or step before it has prepared anything (dailify's two, 27 Oct 2026)
+    const h = PREPARES.test(t.text) && held[lane] && !held[lane].approve ? null : held[lane];
+    if (h) return h.approve ? { kind: "approve", noGo: true, text: `Waiting on your OK for ${name}'s last run, on the Workdesk`, path: h.path } : h.step ? { kind: "step", noGo: true, text: `Waiting on a step only you can do for ${name}${h.what ? ` ("${h.what}")` : ""}: its card is under Needs you`, path: h.path } : { kind: "asks", noGo: true, text: `Waiting on your answer to ${name}'s question, on the Workdesk`, path: h.path };
+    if (inBrief && ready.has(lane)) return { kind: "approve", noGo: true, text: `Waiting on your OK for ${name}'s work, on the Workdesk`, path };
     if (fail) return { kind: "blocked", failAt: fail.at, text: `Blocked: ${name}'s agent didn't start: ${String(fail.note).replace(/^Not started:\s*/i, "")}` };
     // its last run ended without finishing it: it starts again by itself, a few times an hour at most
     // (autoStart, keyed to this task), and only then waits for Go: it used to wait for Go at once, and
