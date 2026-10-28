@@ -16,7 +16,7 @@ const ok = (n, c, got) => { if (c) { pass++; console.log("  ✓ " + n); } else {
 const A = await import("../asksdone.mjs");
 
 console.log("nothing rejected: a reply stays as it is");
-const reply = "Why sts-prod looks negative:\n1) the check runs against a cold cache\n2) retry it in the morning\n3) fix CI billing and auto-merge\nWhich one?";
+const reply = "Why the prod box looks negative:\n1) the check runs against a cold cache\n2) retry it in the morning\n3) fix CI billing and auto-merge\nWhich one?";
 ok("unchanged", A.dropRejected(reply).reply === reply && !A.dropRejected(reply).dropped.length);
 ok("no brief section", !A.rejectedBrief().length);
 
