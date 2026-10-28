@@ -17,7 +17,7 @@ let pass = 0, fail = 0;
 const ok = (n, c, got) => { if (c) { pass++; console.log("  ✓ " + n); } else { fail++; console.log("  ✗ " + n + (got !== undefined ? "  got: " + JSON.stringify(got) : "")); } };
 
 const { dispatch, lanesTick, outcome, loadLedger, lanesState, stageOf, underWay, MAX_CHAIN, aboutIt, partlyDone, remoteKey, orcaMoves, orcaRelink, stuckHandovers, allowHandover, skipHandover, namedDirs, handingOf } = await import("../lanes.mjs");
-const { parseHandoffs, handoverRules, CLI_LOGIN, ONLY_YOU, leftToYou, dangles, gitWork, agentsGitWork, agentsClicking, agentsCodeWork, heldAsks, agentsPosting, linkedAsks, linkedChore } =await import("../handover.mjs");
+const { parseHandoffs, handoverRules, CLI_LOGIN, ONLY_YOU, leftToYou, dangles, lanesJob, gitWork, agentsGitWork, agentsClicking, agentsCodeWork, heldAsks, agentsPosting, linkedAsks, linkedChore } =await import("../handover.mjs");
 const { buildTasksMd, mergeWhenGreen } = await import("../tasks.mjs");
 {
   const fake = (buckets, mergeStatus = 0) => { const calls = []; const gh = (a) => { calls.push(a.slice(0, 2).join(" ")); return a[1] === "checks" ? { status: 0, stdout: JSON.stringify(buckets.map((bucket) => ({ bucket }))) } : { status: mergeStatus, stderr: "" }; }; return { gh, calls }; };
@@ -359,6 +359,16 @@ try {
   // 27 Oct 2026: another lane's last words pointed at its open Workdesk questions, and the card read "They wait on you for."
   const dfy = "I ticked four items and opened PR #596.\n\nTen items stay `[~]`, and none has anything new to act on. They wait on you for `{#kea-realtime-turns}` and `{#ns-switch}` on Workdesk, and on the 10 numbers waiting for your verdict on the speech-to-speech re-test.";
   ok("…pointing at questions already on the Workdesk is no new step (never \"They wait on you for.\")", leftToYou(dfy) === null, leftToYou(dfy));
+  // 28 Oct 2026: a run's line about a card already put to the user became a card of its own, "it is waiting on your answer to the
+  // card about…", with no question on it, and its "Check first" was the next point's, another lane's state
+  const cf = "I did no new work this run.\n\n- **Phone code check:** the vault still has no codecheck.dev entry.\n- **Dailify Cloudflare re-plan:** it is waiting on your answer to the card about preparing the three existing domains.\n- **LinkedIn post spacing:** it is still with the marketing lane.";
+  ok("…nor waiting on your answer to a card already asked (that card is the question)", leftToYou(cf) === null, leftToYou(cf));
+  ok("…in other words too", leftToYou("- **Deploy:** it waits on your answer to its question about the domain.") === null && leftToYou("- **Domains:** it needs your OK on the card that asks to move them.") === null);
+  const job = leftToYou("Done.\n\n- **Paddle:** the sign-up still needs your account, and only you can make it.\n- **LinkedIn post spacing:** it is still with the marketing lane.\n- **Docs:** updated.");
+  ok("a check is from its own job, never the next job's line", job && /^Paddle:/.test(job.what) && job.check === "", job);
+  const job2 = leftToYou("- **Paddle:** the sign-up still needs your account, and only you can make it.\n- **Release notes:** written.");
+  ok("…even a plain one", job2 && job2.check === "", job2);
+  ok("\"still with the marketing lane\" is that lane's job, not the user's", lanesJob("it is still with the marketing lane") && lanesJob("It's now with the ops agent."));
   const cut = leftToYou("All done. It needs your sign-in for `https://example.com/login`.");
   ok("…nor a sentence that's cut off once its code is taken out", cut === null || !/\bfor\.?$/.test(cut.what), cut);
   ok("…cut off on \"for\" is a fragment, a question that ends on \"with\" isn't", dangles("They wait on you for.") && dangles("It waits on your OK for **") && !dangles("Which account should I sign in with?") && !dangles("Only you can do that."));

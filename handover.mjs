@@ -273,7 +273,7 @@ const NOT_THEIRS = /\bconnectors?\b|\bclaude\.ai\b/i; // a connector to sign in 
 // handed it on (HANDOFF.md), so it's on its way and never the user's to do: bookly's "Ops has
 // to load it on prod, which this lane can't reach." showed as a card with "I've done this"
 // though ops had it, and had done it (14 Oct 2026). Unless it says only the user can.
-const LANE_JOB = /\b(?:ops|marketing)(?:['’]s?)?(?: (?:lane|agent|run))? (?:has to|have to|must|needs? to|will|would|is (?:to|going to|doing|on)|does|do(?:es)? it|can|then|loads?|runs?|deploys?|applies|sets?|restarts?|ships?)\b|\b(?:hand(?:ed|ing)?|passed|sent|gave|given|went) (?:it |this |that |the [\w-]+ )?(?:over |back )?to (?:the )?(?:ops|marketing|[\w-]+(?:['’]s)? (?:lane|agent))\b|\b(?:this|my|our|the [\w-]+) lane can(?:['’]t|not) (?:reach|do|get to|touch)\b|\b(?:another|other|ops['’]?s?) lane\b|\bops['’]s? (?:job|work|side)\b/i;
+const LANE_JOB = /\b(?:ops|marketing)(?:['’]s?)?(?: (?:lane|agent|run))? (?:has to|have to|must|needs? to|will|would|is (?:to|going to|doing|on)|does|do(?:es)? it|can|then|loads?|runs?|deploys?|applies|sets?|restarts?|ships?)\b|\b(?:hand(?:ed|ing)?|passed|sent|gave|given|went) (?:it |this |that |the [\w-]+ )?(?:over |back )?to (?:the )?(?:ops|marketing|[\w-]+(?:['’]s)? (?:lane|agent))\b|\b(?:this|my|our|the [\w-]+) lane can(?:['’]t|not) (?:reach|do|get to|touch)\b|\b(?:another|other|ops['’]?s?) lane\b|\bops['’]s? (?:job|work|side)\b|\b(?:still |now )?with (?:the )?(?:ops|marketing|[\w-]+)(?:['’]s)? (?:lane|agent)\b/i;
 const lanesJob = (t) => LANE_JOB.test(String(t || "")) && !/\bonly you\b/i.test(String(t || ""));
 const SENDS = /draft|reply|email|mail|message|post/i;
 // "when / if / once / until …" before it: it says how something behaves, not that
@@ -293,7 +293,10 @@ const noCommand = (s) => { s = String(s || ""); const m = COMMANDISH.exec(s); if
 // A sentence pointing at questions already asked (their Workdesk anchors, "on the Workdesk", QUESTIONS.md)
 // is no new step: those questions are cards of their own. another lane's "They wait on you for `{#kea-realtime-turns}`
 // and `{#ns-switch}` on Workdesk" became a card reading "They wait on you for." (27 Oct 2026).
-const ASKED_ALREADY = /\{#[\w-]+\}|\b(?:on|in) (?:the )?Workdesk\b|\bQUESTIONS\.md\b/i;
+// So is one waiting on the user's answer to a card already put to them: "it is waiting on your answer to the card about
+// preparing the three existing domains" became a card of its own with no question on it, only I've done this and Skip (28 Oct 2026).
+const ASKED_ALREADY = /\{#[\w-]+\}|\b(?:on|in) (?:the )?Workdesk\b|\bQUESTIONS\.md\b|\byour (?:answer|reply|ok|okay|yes|go-ahead|decision|say-so|pick|choice) (?:to|on|for|in) (?:the|its|a|an|that|this|their|his|her|another|one) (?:[\w-]+ ){0,3}?(?:card|question|ask)s?\b|\b(?:the|its|a|that|their) (?:[\w-]+ ){0,2}?card (?:about|for|on|asking|that asks)\b/i;
+const askedAlready = (s) => ASKED_ALREADY.test(String(s || ""));
 // What's left of a sentence that stops on a word needing more after it ("They wait on you for."): no step at all.
 // Not a question ("Which account should I sign in with?"): that one ends where English lets it.
 const DANGLING = /\b(?:for|to|of|with|and|or|the|a|an|by|from|into|about|than|your|my|its|their|as)[\s.,;:…*_`"'’)]*$/i;
@@ -307,12 +310,15 @@ function leftToYou(text) {
     const { label, ss, off } = points[k]; if (off) continue;
     const i = ss.findIndex((s) => !DID.test(s) && !ASKED_ALREADY.test(s) && asksNow(s));
     if (i < 0) continue;
-    const s = ss[i], next = points[k + 1] && !points[k + 1].off ? points[k + 1].ss : [];
+    const s = ss[i], next = points[k + 1] && !points[k + 1].off && (!label || !points[k + 1].label) ? points[k + 1].ss : [];
     // what to check first: the catch it named (in this point, then the next), else what it says next
     const catches = ss.filter((x, j) => j !== i && CATCH.test(x) && !DID.test(x));
-    const elsewhere = points.filter((p, j) => j !== k && !p.off && !BLOCKED_LABEL.test(p.label)).flatMap((p) => p.ss.filter((x) => /\byourself\b|\bbefore you\b|\bcatch\b/i.test(x) && !DID.test(x) && !commandish(x)).map((x) => (p.label ? `${p.label}: ${x}` : x)));
+    // …and only ever from this job: a point with a name of its own ("**LinkedIn post spacing:** it is still with the
+    // marketing lane") is another job, and was the Cloudflare card's "Check first" (28 Oct 2026)
+    const sameJob = (p) => !label || !p.label;
+    const elsewhere = points.filter((p, j) => j !== k && !p.off && sameJob(p) && !BLOCKED_LABEL.test(p.label)).flatMap((p) => p.ss.filter((x) => /\byourself\b|\bbefore you\b|\bcatch\b/i.test(x) && !DID.test(x) && !commandish(x)).map((x) => (p.label ? `${p.label}: ${x}` : x)));
     let check = (catches.length ? catches.slice(0, 2).join(" ") : elsewhere[0]) || ss[i + 1] || next[0] || "";
-    if (/:$/.test(check)) { const seq = [...ss.slice(i + 1), ...next, ...((points[k + 2] && points[k + 2].ss) || [])], at = seq.indexOf(check); if (at >= 0 && seq[at + 1]) check += " " + seq[at + 1]; } // "paste this:" and then the command
+    if (/:$/.test(check)) { const seq = [...ss.slice(i + 1), ...next, ...((next.length && points[k + 2] && (!label || !points[k + 2].label) && points[k + 2].ss) || [])], at = seq.indexOf(check); if (at >= 0 && seq[at + 1]) check += " " + seq[at + 1]; } // "paste this:" and then the command
     // "The draft isn't sent." says which draft only in its own point ("**Draft:** it's in Gmail, to …")
     const about = !label && SENDS.test(s) ? points.find((p) => p.label && SENDS.test(p.label) && p.ss.length) : null;
     if (commandish(check)) check = noCommand(check);
@@ -356,4 +362,4 @@ function parseHandoffs(md) {
   return out.map((h) => ({ lane: h.lane, text: h.text.trim().slice(0, HANDOVER_MAX) })).filter((h) => h.lane && h.text);
 }
 
-export { dangles, lanesJob, agentsMail, mailWork, OPS, MARKETING, HANDOVER_MAX, handoverRules, CLI_LOGIN, ONLY_YOU, HANDBACK, gitWork, agentsGitWork, agentsClicking, agentsCodeWork, heldAsks, sitesOf, PUSH_OK, postsOnLinked, agentsPosting, APPROVE_FIRST, linkedAsks, linkedChore, parseFacts, parseAwaiting, parseHandoffs, leftToYou, commandish, blockedChecks, blockedHandover };
+export { dangles, askedAlready, lanesJob, agentsMail, mailWork, OPS, MARKETING, HANDOVER_MAX, handoverRules, CLI_LOGIN, ONLY_YOU, HANDBACK, gitWork, agentsGitWork, agentsClicking, agentsCodeWork, heldAsks, sitesOf, PUSH_OK, postsOnLinked, agentsPosting, APPROVE_FIRST, linkedAsks, linkedChore, parseFacts, parseAwaiting, parseHandoffs, leftToYou, commandish, blockedChecks, blockedHandover };
