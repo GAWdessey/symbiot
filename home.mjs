@@ -17,7 +17,7 @@ import { pillOf, blockerOf, nowLine, plainSummary, handWords, laneName, looksShe
 const cmdFree = (s) => (looksShell(s) ? nowLine(s) : s); // a running agent's step, never its command: "Ran ssh -i ~/.ssh/…" read on Home's spheres too
 import { join, basename, isAbsolute } from "node:path";
 import { homedir } from "node:os";
-import { readFileSync, writeFileSync, mkdirSync, statSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, statSync, existsSync } from "node:fs";
 import { watchBoard, draftReply, draftCards, draftAnswer } from "./watch.mjs";
 import { pendingReview, pushTasks, addTask, taskType, releaseNotIn, unplacedTasks } from "./tasks.mjs";
 import { estimate, estimateWords } from "./estimate.mjs";
@@ -70,6 +70,7 @@ const RUNS_LANE = "ops"; // what the work scene calls them all, together
 
 // The lane a folder is: the repo it is (by the scan's map), or an ops run.
 const projectFor = (path, map, ledger) => { const l = laneOfPath(path, map); if (l) return l; if (!String(path || "").startsWith(RUNS)) return ""; try { return projectOf(path, { map, ledger }); } catch { return ""; } };
+const goneCopy = (path) => !!parallelLane(path) && !existsSync(join(String(path), ".git")); // a copy (parallel.mjs) that isn't there any more
 const laneOfPath = (path, map) => Object.keys(map || {}).find((n) => map[n] === path) || parallelLane(path) || (String(path || "").startsWith(RUNS) ? "" : null);
 
 // A run that failed shows for a day, until you run it again or skip it; one
@@ -134,6 +135,7 @@ function troubles({ stuck = [], list = [], map = {}, named = displayName, now = 
       continue;
     }
     if (a.status !== "failed" || dropped.has(a.id) || stoppedFor.has(a.id) || a.down || (a.endedAt && now - a.endedAt > FAILED_FOR)) continue; // down: Claude itself was out, and Home has one card for that
+    if (goneCopy(a.path)) continue; // a run beside whose copy was removed: its task goes back in the lane's queue by itself (parallel.mjs requeueGone), so there is nothing to ask
     if (a.relaunched) continue; // its launcher was made runnable, and it started again by itself
     // the agent never started (its launcher couldn't run): Symbiot's fault, and a rerun as it was changes nothing
     const fault = a.fault || launchFault(a.exitCode, a.tail);
