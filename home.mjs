@@ -1315,7 +1315,7 @@ function workSceneNow({ deps = {}, full = false } = {}) {
     // A run that ended "waiting on <lane>" after a handover that is now done isn't waiting on anyone else:
     // its badge names the real blocker from its words ("Needs your merge: PR #612"), else it's idle (28 Oct 2026)
     if (/^waiting on (?!you\b)/.test(p.state || "") && !p.running && !(p.handing || []).some((x) => x.gone && !/run ended/.test(x.why || ""))) {
-      // a PR it names waits on a merge only while GitHub says it's open, in this lane's own repo: dailify's #612 read
+      // a PR it names waits on a merge only while GitHub says it's open, in this lane's own repo: lanex's #612 read
       // "Needs your merge" after Garth had merged it (28 Oct 2026). Merged or closed reads Done; not looked at yet, no claim.
       let b = blockerOf(p.summary); const n = (b.match(/#(\d+)/) || [])[1];
       const gh = n ? (deps.prLive || prLive)(map[p.repo] || "", n) : "";
