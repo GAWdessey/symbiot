@@ -351,13 +351,16 @@ function outcome(e, { tasks = loadTasks(), running = runningHandoff } = {}) {
 // handed to another lane that hasn't come back (the ledger, or HANDOFF.md not
 // picked up yet). The review card says what it waits on, rather than calling its
 // changes "uncommitted, with no ticked task". null when it waits on nothing.
+// Each question goes with its words and options (asks), so the card shows what it
+// counts: a Workdesk card said "1 question for you" and never showed it (28 Oct 2026).
 function partlyDone(path, { ledger = loadLedger() } = {}) {
   if (!path) return null;
-  let questions = 0; try { questions = agentQuestions(path, "").questions.length; } catch {}
+  let asks = []; try { asks = agentQuestions(path, "").questions.filter((x) => x && x.q).map((x) => ({ q: x.q, ...(x.context ? { context: x.context } : {}), options: (x.options || []).slice() })); } catch {}
+  const questions = asks.length;
   const mine = ledger.handoffs.filter((h) => h.from.path === path);
   const handed = mine.filter((h) => !h.reportedAt && h.status !== "error").map((h) => ({ lane: h.to.lane, text: clipWords(firstLine(h.text), 90) }));
   for (const h of parseHandoffs(readSym(path, "HANDOFF.md"))) if (!mine.some((x) => x.to.lane.toLowerCase() === h.lane.toLowerCase() && x.text === h.text)) handed.push({ lane: h.lane, text: clipWords(firstLine(h.text), 90) });
-  return questions || handed.length ? { questions, handed: handed.slice(0, 3) } : null;
+  return questions || handed.length ? { questions, asks, handed: handed.slice(0, 3) } : null;
 }
 // What a folder handed over that hasn't come back yet, each with where it stands,
 // for that lane's block (Agents, Home): the sections of its HANDOFF.md not sent
