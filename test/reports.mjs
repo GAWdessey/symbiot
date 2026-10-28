@@ -395,5 +395,43 @@ console.log("REPORTS — usable rows (2026-10-16): honest 'still writing', reada
   const w2 = R.withNeeds(R.listReports({ map, folders, running: none }), { seenFile: join(CFG, "seen-rows.json"), tasks: [] }).find((r) => r.id === r0.id);
   ok("a report whose steps are all done moves to Read and done by itself", w2.needs === "" && w2.steps.length === 0, w2);
 }
+
+console.log("ONE REPORT, MANY COPIES — a decision on any copy holds for all, and after a restart (28 Oct 2026)");
+{
+  const dly = join(HOME, "code", "dailify"), seenFile = join(CFG, "seen-copies.json"), none = () => false, map = { dailify: dly };
+  const body = "# Broker terms and SLA draft\n\nTerms here.\n\n## Next\n\n- Send the broker terms to the first ten brokers on Monday morning\n";
+  const mark = "_(from a run beside dailify on \"x\")_\n";
+  put(dly, "BROKER-TERMS-AND-SLA-DRAFT.md", body, 5000);
+  put(dly, "BROKER-TERMS-AND-SLA-DRAFT-c0c3e8.md", body.replace(/\n/, "\n" + mark), 3000);
+  put(dly, "BROKER-TERMS-AND-SLA-DRAFT-0b4daf-c0c3e8.md", body.replace(/\n/, "\n" + mark), 1000);
+  put(dly, "OTHER-DRAFT.md", "# Other draft\n\nSomething else.\n", 2000);
+  const list = () => R.withNeeds(R.listReports({ map, folders: [dly], running: none }), { seenFile, tasks: [] });
+  const l0 = list(), broker = l0.filter((r) => /BROKER-TERMS/.test(r.name));
+  ok("copies with run ids collapse into one row", broker.length === 1 && broker[0].copies.length === 3 && l0.length === 2, l0.map((r) => r.name));
+  ok("...undecided, it waits on the OK", broker[0].needs === "draft", broker[0].needs);
+  R.decide(broker[0], "approved", seenFile);
+  ok("approving it settles it", list().find((r) => /BROKER-TERMS/.test(r.name)).needs === "", list());
+  ok("...an unrelated draft still waits", list().find((r) => r.name === "OTHER-DRAFT.md").needs === "draft");
+  put(dly, "BROKER-TERMS-AND-SLA-DRAFT-abc94d.md", body.replace(/\n/, "\n" + mark)); // another copy lands later, same content
+  const b2 = list().find((r) => /BROKER-TERMS/.test(r.name));
+  ok("a later copy of the same report is already approved", b2.needs === "" && b2.copies.length === 4, [b2.needs, b2.copies.length]);
+  const again = JSON.parse(readFileSync(seenFile, "utf8")); // a restart: all from the file
+  ok("the decision lives in the file, by identity", Object.keys(again.decided).length === 1 && !Object.keys(again.decided).includes(broker[0].id), again.decided);
+  put(dly, "BROKER-TERMS-AND-SLA-DRAFT.md", body + "\nNew clause: payment in 7 days.\n");
+  ok("a report that really changed asks again", list().find((r) => /BROKER-TERMS/.test(r.name)).needs === "draft");
+  // a decision made on one copy's file name before this (id + mtime) holds for the rest
+  const legacy = join(CFG, "seen-legacy.json"); put(dly, "JURGEN-PREVIEW.md", "# Jurgen preview\n\nx\n", 4000); put(dly, "JURGEN-PREVIEW-0b4daf.md", "# Jurgen preview\n\nx\n", 3000);
+  const jl = R.listReports({ map, folders: [dly], running: none }).filter((r) => /JURGEN/.test(r.name)); const c = jl[0].copies.find((x) => x.id !== jl[0].id);
+  writeFileSync(legacy, JSON.stringify({ seen: {}, decided: { [c.id]: { status: "approved", mtime: c.mtime } }, handed: {} }));
+  ok("an Approve recorded on one copy's file name settles them all", jl.length === 1 && R.decidedOn(jl[0], legacy) === "approved", jl);
+  // read: opening one copy reads them all; dropped steps stay dropped across copies
+  const w = list().find((r) => /BROKER-TERMS/.test(r.name)); R.readReport(w.id, { list: [w], seenFile });
+  ok("reading it reads every copy", R.listReports({ map, folders: [dly], running: none, seen: JSON.parse(readFileSync(seenFile, "utf8")) }).find((r) => /BROKER-TERMS/.test(r.name)).new === false);
+  const step = "Send the broker terms to the first ten brokers on Monday morning";
+  R.markIdeas(w, [step], "dismissed", seenFile);
+  put(dly, "BROKER-TERMS-AND-SLA-DRAFT-9f8e7d.md", body.replace(/\n/, "\n" + mark) + "\nNew clause: payment in 7 days.\n");
+  const w3 = R.listReports({ map, folders: [dly], running: none }).find((r) => /BROKER-TERMS/.test(r.name));
+  ok("a dropped step stays dropped on another copy of the same content", R.handledIdeas(w3, seenFile)[step] === "dismissed", R.handledIdeas(w3, seenFile));
+}
 console.log(`\n${fail ? "✗" : "✓"} reports: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

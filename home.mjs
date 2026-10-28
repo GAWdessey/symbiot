@@ -962,7 +962,7 @@ async function homeAsk(question, { ask, now = Date.now(), state, images = [], ac
 // ---- acting on a report, where you read it (reports.mjs reportIdeas) -------------------
 // A report ends with ideas drawn from it, and a box to ask about it: you shouldn't have
 // to copy its "Top 3 next" into Home's chat to act on it (2026-10-08).
-const reportById = (id, deps = {}) => (deps.list || listReports)().find((r) => r.id === String(id || ""));
+const reportById = (id, deps = {}) => (deps.list || listReports)().find((r) => r.id === String(id || "") || (r.copies || []).some((c) => c.id === String(id || "")));
 // The ideas you ticked, onto the Workdesk in the report's lane (an ops run's: the ops
 // lane), each saying which report it came from. { ok, added, lane, said } or { error }.
 function reportIdeasAdd(id, ideas, deps = {}) {

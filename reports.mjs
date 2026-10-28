@@ -31,6 +31,26 @@ const MAX_READ = 512 * 1024, MAX_LIST = 200;
 const WRITING_FOR = 15 * 60 * 1000; // a run is "still writing" a report only if the file changed in the last 15 minutes
 const idOf = (file) => createHash("sha1").update(file).digest("hex").slice(0, 12);
 
+// One report, one identity (28 Oct 2026): a run beside a lane copied back every report under a new name
+// (BROKER-TERMS-0b4daf-c0c3e8.md beside BROKER-TERMS-c0c3e8.md and BROKER-TERMS.md), so an Approve or Drop on
+// one copy left the others asking again. A report is its folder plus its name without the run ids parallel.mjs
+// appended (-6 hex, one or more); the run-id marker line is no part of its content. Decisions are kept by that.
+const RUN_SUFFIX = /(?:-[0-9a-f]{6})+$/;
+const RUN_MARK = /^_\(from a run beside [^\n]*\)_\n/m;
+const slugOf = (name, names) => {
+  const base = String(name).replace(/\.md$/i, ""), m = base.match(RUN_SUFFIX); if (!m) return base.toLowerCase();
+  const stem = base.slice(0, m.index);
+  // a real word of six hex letters ("-decade") is no run id unless it has a digit or the report without it is there
+  return stem && (/\d/.test(m[0]) || (names && names.has(stem.toLowerCase() + ".md"))) ? stem.toLowerCase() : base.toLowerCase();
+};
+const hashOf = (text) => createHash("sha1").update(String(text).replace(RUN_MARK, "").replace(/\s+$/, "")).digest("hex").slice(0, 12);
+const hashes = new Map(); // file:mtime:size -> content hash
+function contentHash(file, st) {
+  const k = `${file}:${st.mtimeMs}:${st.size}`; if (hashes.has(k)) return hashes.get(k);
+  let h = ""; try { h = hashOf(readFileSync(file, "utf8").slice(0, MAX_READ)); } catch {}
+  if (hashes.size > 2000) hashes.clear(); hashes.set(k, h); return h;
+}
+
 const obj = (x) => (x && typeof x === "object" && !Array.isArray(x) ? x : {});
 function loadSeen(file = SEEN_FILE) { const d = readState(file, (v) => !!v && typeof v === "object" && !Array.isArray(v)); return { seen: obj(d && d.seen), decided: obj(d && d.decided), handed: obj(d && d.handed) }; }
 // Whole or not at all (writeJsonAtomic): torn, it read as "nothing seen", and every report came back unread (15 Oct 2026).
@@ -57,29 +77,38 @@ function titleOf(text, name) {
 // (the tests do).
 function listReports({ map, folders, running = runningHandoff, seen } = {}) {
   if (!folders) { map = map || laneMap(); folders = runFolders(map); }
-  const s = (seen || loadSeen()).seen, out = [];
+  const s = (seen || loadSeen()).seen, all = [];
   for (const folder of folders) {
     const dir = join(folder, ".symbiot");
     let names = []; try { names = readdirSync(dir).filter((f) => /\.md$/i.test(f) && !NOT_REPORTS.test(f)); } catch { continue; }
+    const have = new Set(names.map((n) => n.toLowerCase()));
     for (const name of names) {
       const file = join(dir, name);
       let st; try { st = statSync(file); } catch { continue; }
       if (!st.isFile() || !st.size) continue;
       let head = ""; try { head = readFileSync(file, "utf8").slice(0, 4000); } catch { continue; }
-      const id = idOf(file), mtime = Math.round(st.mtimeMs);
-      out.push({ id, title: titleOf(head, name), name, file, folder, lane: map ? laneOf(folder, map) : basename(folder), run: runTitle(folder), size: st.size, mtime, new: s[id] !== mtime, running: Date.now() - mtime < WRITING_FOR && !!running(folder), source: sourceOf(folder) });
+      const id = idOf(file), mtime = Math.round(st.mtimeMs), hash = contentHash(file, st);
+      all.push({ id, key: "k" + idOf(folder + "\0" + slugOf(name, have)), hash, title: titleOf(head, name), name, file, folder, lane: map ? laneOf(folder, map) : basename(folder), run: runTitle(folder), size: st.size, mtime, running: Date.now() - mtime < WRITING_FOR && !!running(folder), source: sourceOf(folder) });
     }
   }
+  // copies of one report collapse into the newest (else the plainest name), which carries the others' ids
+  const groups = new Map(); for (const r of all) (groups.get(r.key) || groups.set(r.key, []).get(r.key)).push(r);
+  const out = [...groups.values()].map((g) => {
+    g.sort((a, b) => b.mtime - a.mtime || a.name.length - b.name.length);
+    const r = g[0], seenIt = (x) => s[x.id] === x.mtime || (!!x.hash && s[x.key] === x.hash);
+    return { ...r, copies: g.map((x) => ({ id: x.id, mtime: x.mtime })), new: !g.some(seenIt) };
+  });
   return out.sort((a, b) => b.mtime - a.mtime).slice(0, MAX_LIST);
 }
 
 // One report, by its id: its text, as HTML too. Opening it marks it read.
+function seeIt(d, r) { d.seen[r.id] = r.mtime; for (const c of r.copies || []) d.seen[c.id] = c.mtime; if (r.key && r.hash) d.seen[r.key] = r.hash; }
 function readReport(id, { list, mark = true, seenFile = SEEN_FILE } = {}) {
-  const r = (list || listReports()).find((x) => x.id === String(id || ""));
+  const r = (list || listReports()).find((x) => x.id === String(id || "") || (x.copies || []).some((c) => c.id === String(id || "")));
   if (!r) return { error: "No report by that id: it may have been moved or deleted." };
   let text = ""; try { text = readFileSync(r.file, "utf8"); } catch (e) { return { error: `Couldn't read ${r.file}: ${e.message}` }; }
   const cut = text.length > MAX_READ; if (cut) text = text.slice(0, MAX_READ);
-  if (mark) { const d = loadSeen(seenFile); d.seen[r.id] = r.mtime; saveSeen(d, seenFile); }
+  if (mark) { const d = loadSeen(seenFile); seeIt(d, r); saveSeen(d, seenFile); }
   const draft = isDraftReport(r.title, r.name), cards = draftCardsIn(text, { lane: r.folder === MARKETING_DIR });
   return { ...r, new: false, ...(cards.length ? { cards } : {}), text, html: mdHtml(text, { id: r.id, base: dirname(r.file), roots: imageRoots(r) }) + (cut ? "<p class='muted'>(cut at 512 KB: open the file for the rest)</p>" : ""), draft, ...(draft ? { decided: decidedOn(r, seenFile) } : { ideas: openIdeas(r, text, seenFile), handled: handledIdeas(r, seenFile) }) };
 }
@@ -89,6 +118,7 @@ function readReport(id, { list, mark = true, seenFile = SEEN_FILE } = {}) {
 function withNeeds(list, { seenFile = SEEN_FILE, tasks } = {}) {
   try { sweepSuperseded({ list, seenFile, tasks }); } catch { /* the list still shows */ }
   const ctx = supersedeContext({ list, tasks, file: seenFile });
+  try { carryDecisions(list, seenFile); } catch { /* the list still shows */ }
   return list.map((r) => {
     if (isDraftReport(r.title, r.name)) return { ...r, needs: decidedOn(r, seenFile) ? "" : "draft", ideas: 0, steps: [], draft: true };
     let text = ""; try { text = readFileSync(r.file, "utf8").slice(0, MAX_READ); } catch { /* gone: nothing to act on */ }
@@ -121,7 +151,7 @@ function phoneReport(pc, id, { fetched = null, mark = true, seenFile = SEEN_FILE
 const phoneReportNeedsText = (pc, id) => { const raw = pc && pc.copy && Array.isArray(pc.copy.reports) && pc.copy.reports.find((x) => "pc:" + x.id === String(id || "")); return !!raw && typeof raw.text !== "string"; };
 // Mark them all read (the list's "Mark all read").
 function markAllRead({ list, seenFile = SEEN_FILE } = {}) {
-  const d = loadSeen(seenFile); for (const r of list || listReports()) d.seen[r.id] = r.mtime;
+  const d = loadSeen(seenFile); for (const r of list || listReports()) seeIt(d, r);
   return saveSeen(d, seenFile) ? { ok: true } : { error: "Couldn't write " + seenFile };
 }
 
@@ -171,7 +201,7 @@ function image(alt, src, o) {
 }
 // A report's image, for its <img>: only a src the report itself shows, only under its roots.
 function reportImage(id, src, { list, roots } = {}) {
-  const r = (list || listReports()).find((x) => x.id === String(id || ""));
+  const r = (list || listReports()).find((x) => x.id === String(id || "") || (x.copies || []).some((c) => c.id === String(id || "")));
   if (!r) return { error: "No report by that id." };
   let text = ""; try { text = readFileSync(r.file, "utf8").slice(0, MAX_READ); } catch { return { error: "Couldn't read the report." }; }
   const want = String(src || ""), seen = [...escHtml(text.replace(/\r?\n/g, " ")).matchAll(IMG)].some((m) => unEsc(m[2]).replace(/^<(.*)>$/, "$1") === want);
@@ -280,10 +310,14 @@ function reportIdeas(text, max = IDEAS_MAX) {
 const SAME_IDEA = 30, HANDLED = /^(?:handed|done|dismissed)$/;
 function handledIdeas(r, file = SEEN_FILE) {
   // Keys are trimmed: an idea cut at IDEAS' length keeps or loses its last space from one copy to the next (ed54e8, 25 Oct 2026).
-  const all = loadSeen(file).handed, h = all[r.id], out = {};
-  if (h && h.mtime === r.mtime && h.done && typeof h.done === "object") for (const [t, st] of Object.entries(h.done)) out[t.trim()] = st;
+  const all = loadSeen(file).handed, out = {}, mine = new Set([r.id, r.key, ...(r.copies || []).map((c) => c.id)]);
+  // this report's own, by identity and content (or, as kept before, by a copy's id and mtime)
+  for (const [id, h] of Object.entries(all)) {
+    if (!mine.has(id) || !h || !h.done || typeof h.done !== "object") continue;
+    if (id === r.key ? (h.hash ? h.hash === r.hash : h.mtime === r.mtime) : (r.copies || [r]).some((c) => c.id === id && c.mtime === h.mtime)) for (const [t, st] of Object.entries(h.done)) out[t.trim()] = st;
+  }
   for (const [id, x] of Object.entries(all)) {
-    if (id === r.id || !x || typeof x.done !== "object" || !x.done) continue;
+    if (mine.has(id) || !x || typeof x.done !== "object" || !x.done) continue;
     for (const [t, st] of Object.entries(x.done)) if (t.trim().length >= SAME_IDEA && HANDLED.test(st) && !out[t.trim()]) out[t.trim()] = st;
   }
   return out;
@@ -365,9 +399,9 @@ function sweepSuperseded({ list, seenFile = SEEN_FILE, tasks } = {}) {
   return cleared;
 }
 function markIdeas(r, ideas, status, file = SEEN_FILE) {
-  const d = loadSeen(file), h = d.handed[r.id] && d.handed[r.id].mtime === r.mtime ? d.handed[r.id] : { mtime: r.mtime, done: {} };
+  const d = loadSeen(file), id = r.key || r.id, h = d.handed[id] && (d.handed[id].hash ? d.handed[id].hash === r.hash : d.handed[id].mtime === r.mtime) ? d.handed[id] : { mtime: r.mtime, ...(r.hash ? { hash: r.hash } : {}), done: {} };
   for (const t of ideas) h.done[String(t)] = status;
-  d.handed[r.id] = h; return saveSeen(d, file);
+  d.handed[id] = h; return saveSeen(d, file);
 }
 // The Marketing drafts a report is about, as their own cards (the user, 2026-10-16: a report said
 // "approve both drafts under Marketing" and there was nothing to press). A report that names a
@@ -393,8 +427,26 @@ function draftCardsIn(text, { dir = MARKETING_DIR, lane = false } = {}) {
 // Reject rather than ideas.
 const isDraftReport = (title, name) => /\bdrafts?\b|\bpreviews?\b/i.test(`${title} ${String(name || "").replace(/[-_.]+/g, " ")}`);
 // What the user decided on a draft report, kept by its mtime (a changed draft asks again).
-function decidedOn(r, file = SEEN_FILE) { const d = loadSeen(file).decided[r.id]; return d && d.mtime === r.mtime ? d.status : ""; }
-function decide(r, status, file = SEEN_FILE) { const d = loadSeen(file); d.decided[r.id] = { status, mtime: r.mtime, at: Date.now() }; return saveSeen(d, file); }
+// Kept by the report's identity and its content (a copy under another name, or the same report written again, is
+// still decided; a report that really changed asks again). Decisions made on a file name before (id + mtime) count
+// for the report that file was a copy of.
+function decidedOn(r, file = SEEN_FILE) {
+  const all = loadSeen(file).decided, k = r.key && all[r.key];
+  if (k && (k.hash ? k.hash === r.hash : k.mtime === r.mtime)) return k.status;
+  for (const c of r.copies || [{ id: r.id, mtime: r.mtime }]) { const d = all[c.id]; if (d && d.mtime === c.mtime) return d.status; }
+  return "";
+}
+// An Approve or Reject kept on a copy's file name moves to the report's identity, once, so it holds for later copies too.
+function carryDecisions(list, file = SEEN_FILE) {
+  const d = loadSeen(file); let n = 0;
+  for (const r of list) {
+    if (!r.key || d.decided[r.key] || !isDraftReport(r.title, r.name)) continue;
+    const c = (r.copies || []).find((x) => d.decided[x.id] && d.decided[x.id].mtime === x.mtime); if (!c) continue;
+    d.decided[r.key] = { status: d.decided[c.id].status, mtime: r.mtime, hash: r.hash, at: d.decided[c.id].at || Date.now() }; n++;
+  }
+  return n && saveSeen(d, file);
+}
+function decide(r, status, file = SEEN_FILE) { const d = loadSeen(file); d.decided[r.key || r.id] = { status, mtime: r.mtime, ...(r.hash ? { hash: r.hash } : {}), at: Date.now() }; return saveSeen(d, file); }
 
 // How many reports are new, and the newest one's title (Home's droplet).
 function reportsNews(opts) { const l = listReports(opts).filter((r) => r.new); return { count: l.length, latest: l[0] ? l[0].title : "" }; }

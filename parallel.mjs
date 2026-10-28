@@ -280,7 +280,13 @@ function keepOutput(m) {
   let names = []; try { names = readdirSync(join(wt, ".symbiot")).filter((f) => /\.md$/i.test(f) && !NOT_REPORTS.test(f)); } catch {}
   for (const f of names) {
     let text = ""; try { text = readFileSync(join(wt, ".symbiot", f), "utf8"); } catch { continue; } if (!text.trim()) continue;
-    const to = existsSync(join(sd, f)) ? f.replace(/\.md$/i, `-${m.id}.md`) : f;
+    // Only what this run wrote: a report the copy inherited (the lane's own, tracked in git) is already there, and was copied back
+    // under a new name every run (BROKER-TERMS-0b4daf-c0c3e8.md, 28 Oct 2026), each copy asking for the same Approve again.
+    const had = readIn(repo, f), strip = (t) => String(t).replace(/^_\(from a run beside [^\n]*\)_\n/m, "").trim();
+    if (had && strip(had) === strip(text)) continue;
+    const was = git(repo, ["show", `${m.base}:.symbiot/${f}`]);
+    if (was.status === 0 && strip(was.stdout) === strip(text)) continue; // unchanged since the copy was made
+    const to = had && was.status !== 0 ? f.replace(/\.md$/i, `-${m.id}.md`) : f; // the run rewrote a report that was there: the same report, not a second
     try { mkdirSync(sd, { recursive: true }); writeFileSync(join(sd, to), text.replace(/^(#\s.*\n)/, `$1_(from ${mark})_\n`)); out.reports++; } catch {}
   }
   return out;

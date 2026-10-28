@@ -152,6 +152,26 @@ console.log("THE BASE — a copy starts from the lane's tree as it is, uncommitt
   ok("a clean tree starts from HEAD itself", P.snapshot(repo, sh(repo, "rev-parse", "HEAD").stdout.trim(), []).dirty === false);
 }
 
+console.log("A REPORT THE COPY INHERITED — never copied back under a new name (28 Oct 2026)");
+{
+  const repo = join(HOME, "repo-inh"); mkdirSync(join(repo, ".symbiot"), { recursive: true });
+  sh(repo, "init", "-q", "-b", "main"); writeFileSync(join(repo, "a.mjs"), "a1\n");
+  writeFileSync(join(repo, ".symbiot", "BROKER-TERMS-DRAFT.md"), "# Terms draft\nv1\n"); writeFileSync(join(repo, ".symbiot", "SLA-DRAFT.md"), "# SLA draft\nv1\n");
+  sh(repo, "add", "-A", "-f"); sh(repo, "commit", "-qm", "init");
+  writeFileSync(join(repo, ".symbiot", "TASKS.md"), "## Tasks\n- [ ] Tidy the terms\n");
+  const run = () => ({ id: "r" });
+  P.startParallel("repo-inh", repo, { id: "q1", text: "Tidy the terms" }, { run });
+  const wt = P.inflight()[0].wt;
+  ok("the copy starts with the lane's tracked reports", existsSync(join(wt, ".symbiot", "BROKER-TERMS-DRAFT.md")));
+  writeFileSync(join(wt, ".symbiot", "SLA-DRAFT.md"), "# SLA draft\nv2 rewritten\n");
+  P.keepOutput(JSON.parse(readFileSync(join(wt, ".symbiot", "par.json"), "utf8")));
+  const names = readdirSync(join(repo, ".symbiot")).filter((f) => /DRAFT/.test(f)).sort();
+  ok("an inherited, unchanged report is not copied back", names.join() === "BROKER-TERMS-DRAFT.md,SLA-DRAFT.md", names);
+  ok("one the run rewrote replaces the same report, not a second name", /v2 rewritten/.test(readFileSync(join(repo, ".symbiot", "SLA-DRAFT.md"), "utf8")));
+  P.keepOutput(JSON.parse(readFileSync(join(wt, ".symbiot", "par.json"), "utf8")));
+  ok("keeping the same output twice adds nothing", readdirSync(join(repo, ".symbiot")).filter((f) => /DRAFT/.test(f)).length === 2);
+  P.drop(repo, JSON.parse(readFileSync(join(wt, ".symbiot", "par.json"), "utf8")));
+}
 console.log("WHAT A COPY LEAVES — handovers, questions, waits, facts and reports land in the lane before the copy goes");
 {
   const repo = join(HOME, "repo4"); mkdirSync(repo, { recursive: true });
