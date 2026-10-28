@@ -164,7 +164,7 @@ function lqBuild(){var a=LQ.adapt||{},h=LQ.home||{},S=lqSize(),list=[];LQ.bw=S.w
 var ask=$('lqask'),nar=S.w<520;if(ask&&LQ.askNarrow!==nar){LQ.askNarrow=nar;ask.setAttribute('placeholder',nar?'Tell Symbiot what to do':'Talk to Symbiot, or tell it what to do (paste a screenshot to show it)');}
 if(lqPhone(h))return;
 // the band first: everything else sits under it, round a core centred in what's left
-var need=lqNeeds(h,S),band=lqRunBand(h,S,need.bottom),top=band.bottom||need.bottom,cx=S.w/2,cy=top?Math.max(S.h*0.47,(top+60+S.h-200)/2):S.h*0.47;LQ.cy=cy;LQ.top=top;LQ.need=need;
+var need=lqNeeds(h,S),band=lqRunBand(h,S,need.bottom),top=band.bottom||need.bottom,cx=S.w/2,cy=top?Math.max(S.h*0.47,(top+60+S.h-200)/2):S.h*0.47;LQ.cy=cy;LQ.top=top;LQ.need=need;if(document.body&&document.body.style)document.body.style.setProperty('--lqneedb',(need.items.length?need.bottom:0)+'px');
 // Marketing only once posts can be drafted, or are (home.mjs): a new user meets what they watch first
 var mk=function(id){return id!=='agents'&&(id!=='marketing'||!!h.marketing);}; // and Agents is the Workdesk (tasks), one orb
 var feeds=(h.feeds||[]).slice(0,2),lay=((a.layout&&a.layout.items)||[]).filter(function(it){return mk(it.id);}),more=((a.layout&&a.layout.more)||[]).filter(mk);
