@@ -85,6 +85,38 @@ try {
   const s3 = A.uiReview(lane, { id: "c3" }, { ...go, critic: true });
   ok("passed: kept as passed, nothing reopened, and not reviewed again", s3.passed.join() === "Redesign the landing page" && D.reviewOf(lane)["Redesign the landing page"].passed && A.uiReview(lane, { id: "r5" }, go) === null);
 
+  console.log("DESIGN — a run beside the lane's: the critic gets a copy of its own, never an empty folder (28 Oct 2026)");
+  {
+    const P = await import("../parallel.mjs"), { spawnSync } = await import("node:child_process");
+    const g = (cwd, ...a) => spawnSync("git", ["-C", cwd, ...a], { encoding: "utf8", env: { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t" } });
+    const repo = join(HOME, "work", "webapp"); mkdirSync(join(repo, ".symbiot"), { recursive: true });
+    g(repo, "init", "-q"); writeFileSync(join(repo, ".gitignore"), ".symbiot/\n"); writeFileSync(join(repo, "home.html"), "<p>old</p>\n"); g(repo, "add", "-A"); g(repo, "commit", "-qm", "init");
+    const PITEM = "Fix the Home page layout so the chat and the card don't overlap";
+    writeFileSync(join(repo, ".symbiot", "TASKS.md"), `## Tasks\n- [x] ${PITEM}\n`);
+    const wt = join(P.WT_DIR, "webapp-abc123"), head = g(repo, "rev-parse", "HEAD").stdout.trim();
+    g(repo, "worktree", "add", "-q", "-b", "symbiot/par-abc123", wt, head); mkdirSync(join(wt, ".symbiot"), { recursive: true });
+    writeFileSync(join(wt, ".symbiot", "par.json"), JSON.stringify({ id: "abc123", lane: "webapp", repo, wt, branch: "symbiot/par-abc123", base: head, head, task: PITEM, startedAt: now }));
+    writeFileSync(join(wt, ".symbiot", "TASKS.md"), `## Tasks\n- [x] ${PITEM}\n`); writeFileSync(join(wt, "home.html"), "<p>new</p>\n");
+    const st = [], rr = [], gp = { start: (p) => st.push(p), rerun: (p) => rr.push(p), cap: () => true, later: (f) => f(), now };
+    const u = A.uiReview(wt, { id: "p1" }, gp), cw = st[0] || "";
+    ok("the critic starts in a copy of its own: a git checkout of the finished work with its brief, not the run's copy", u && st.length === 1 && cw !== wt && existsSync(join(cw, ".git")) && readFileSync(join(cw, "home.html"), "utf8").includes("new") && existsSync(join(cw, ".symbiot", "UI-CRITIC.md")) && P.criticOf(cw).repo === repo, [u, st]);
+    P.drop(repo, P.metaOf ? P.metaOf(wt) : { wt, branch: "symbiot/par-abc123" });
+    ok("…which outlives the merge back deleting the run's copy", !existsSync(wt) && existsSync(join(cw, ".symbiot", "UI-CRITIC.md")) && existsSync(join(cw, "home.html")));
+    ok("…and isn't swept as an orphan while its critic runs", !P.pruneOrphans(now + 2 * 3600000).includes(cw) && existsSync(cw));
+    writeFileSync(join(cw, ".symbiot", D.VERDICT), JSON.stringify({ items: [{ item: PITEM, pass: false, fixes: ["the card still covers the chat at 390 px"] }] }));
+    writeFileSync(join(cw, ".symbiot", "UI-REVIEW.md"), "# UI review\n");
+    const sv = A.uiReview(cw, { id: "p2" }, { ...gp, critic: true }), lt = readFileSync(join(repo, ".symbiot", "TASKS.md"), "utf8");
+    ok("at its end the verdict is the lane's: the item reopens in the lane's folder with the fixes, its builder starts there, and the critic's copy goes", sv && sv.reopened.join() === PITEM && /- \[ \] Fix the Home page layout.*the card still covers the chat/.test(lt) && rr.join() === repo && !existsSync(cw) && existsSync(join(repo, ".symbiot", "UI-REVIEW.md")), [sv, lt, rr]);
+    const wt2 = join(P.WT_DIR, "webapp-def456"); mkdirSync(join(wt2, ".symbiot"), { recursive: true }); writeFileSync(join(wt2, ".symbiot", "TASKS.md"), `## Tasks\n- [x] ${PITEM} again\n`);
+    const st2 = [], u2 = A.uiReview(wt2, { id: "p3" }, { ...gp, start: (p) => st2.push(p) });
+    ok("no copy to be had (a folder that's no worktree): the review is dropped quietly, no critic in an empty folder", u2 === null && st2.length === 0, [u2, st2]);
+  }
+
+  console.log("DESIGN — setting up a worktree is never the user's step, and every run has a browser");
+  ok("an ask to recreate a worktree or copy a repo is no Home card", ["Recreate the worktree as a copy of the symbiot repo with the finished work and UI-CRITIC.md", "Set up the project folder for the critic", "clone the repo into the critic's folder"].every(A.setupChore) && !["Approve the opt-out wording", "Press the switch on the phone card", "Create a hosting account for the shop"].some(A.setupChore));
+  ok("a run saying it has no browser is told it has one; a site refusing this computer is not that", A.saysNoBrowser("This session has no tool that can drive a browser.") && A.saysNoBrowser("the setup needs a run with browser access") && !A.saysNoBrowser("no browser on this computer gets past it") && /symbiot screens/.test(A.BROWSER_NOTE) && !/["'`$]/.test(A.BROWSER_NOTE));
+  ok("…and an ops brief says Screens fills forms on any site", /screens fill/.test(actBrief("Enter the company details on the booking site", { lanes: [] })));
+
   console.log("DESIGN — symbiot shoot");
   ok("only a page's address", /http/.test((await D.shoot("file:///etc/passwd", { out: join(HOME, "s"), bin: "chrome" })).error));
   // a fake browser: what it was asked, in order. open() stands for headless.mjs's, which
