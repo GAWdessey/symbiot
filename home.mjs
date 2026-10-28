@@ -1346,12 +1346,12 @@ function waitWhy({ map, named, running, held, ready, isParked, deps = {} }) {
     // its agent marked it [~]: it waits on something outside the run, and an answer coming in starts the lane again.
     // Only a real, named blocker holds it (agents.mjs namedBlocker): "waits on: someone with root" when the lane
     // has root left steve's OOM fix idle with no card to release it (25 Oct 2026). That blocker is what it waits
-    // on, before the lane's card: dailify's CI read, blocked by GitHub billing, read "Waiting on a step only you can do" (27 Oct 2026)
+    // on, before the lane's card: another lane's CI read, blocked by GitHub billing, read "Waiting on a step only you can do" (27 Oct 2026)
     const on = inBrief ? (deps.waiting || waitingTask)(path, t.text) : "";
     const blocker = on && (deps.named || namedBlocker)(on) ? on.replace(/^(?:waits|waiting) (?:on|for):?\s*/i, "").replace(/[.\s]+$/, "") : "";
     if (blocker) return { kind: "waiting", noGo: true, text: `Waiting on ${blocker}. ${name}'s agent carries on once that's in` };
     // a "prepare this fully, then ask" task does its part first and asks after (intuition.mjs): never held
-    // by the lane's question or step before it has prepared anything (dailify's two, 27 Oct 2026)
+    // by the lane's question or step before it has prepared anything (another lane's two, 27 Oct 2026)
     const h = PREPARES.test(t.text) && held[lane] && !held[lane].approve ? null : held[lane];
     if (h) return h.approve ? { kind: "approve", noGo: true, text: `Waiting on your OK for ${name}'s last run, on the Workdesk`, path: h.path } : h.step ? { kind: "step", noGo: true, text: `Waiting on a step only you can do for ${name}${h.what ? ` ("${h.what}")` : ""}: its card is under Needs you`, path: h.path } : { kind: "asks", noGo: true, text: `Waiting on your answer to ${name}'s question, on the Workdesk`, path: h.path };
     if (inBrief && ready.has(lane)) return { kind: "approve", noGo: true, text: `Waiting on your OK for ${name}'s work, on the Workdesk`, path };
