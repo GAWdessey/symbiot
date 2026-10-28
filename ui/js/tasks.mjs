@@ -120,7 +120,7 @@ pendTimer=setTimeout(function(){pendTimer=null;if(current!=='tasks')return;api('
 // click away, PENDALL), with its Approve button first and its tasks one line each, three
 // shown (RTASKS). Clicking Review and approve on Home met the whole list: every project's
 // card, every task in full, 3600px before the button (2026-10-12).
-var PENDALL=false,RTASKS=3;
+var PENDALL=false,RTASKS=3,PQASKS={};
 // Approved work that didn't get as far as a PR (the server's unsent): why, in words, and
 // a retry, kept on the card until it's sent. bookly's four Approves were committed and
 // never pushed, and the page said "nothing to merge" (2026-10-13).
@@ -149,8 +149,11 @@ r.tasks.forEach(function(t,i){PENDTASKS.push(t);if(i===RTASKS)h+="<div class='rm
 if(nt>RTASKS)h+="</div><button type='button' class='ghost rmorebtn'>Show the other "+(nt-RTASKS)+"</button>";
 if(nt)h+="</div>";
 // a run that stopped on questions or a handover: partly done, and what it waits on, in plain words
-var pd=r.partly,pq=pd&&pd.questions||0,ph=(pd&&pd.handed)||[];
+// each question it counts is shown in full with its answers (pd.asks): a card said "1 question for you" and never showed it
+// (28 Oct 2026), and one it can't find isn't counted
+var pd=r.partly,pa=(pd&&pd.asks)||[],pq=pd&&pd.asks?pa.length:pd&&pd.questions||0,ph=(pd&&pd.handed)||[];if(pd&&!pq&&!ph.length)pd=null;PQASKS[r.repo]=pa;
 if(pd)h+="<div class='partly'><b>Partly done:</b> "+esc([pq?pq+" question"+(pq>1?"s":"")+" for you":"",ph.length?ph.map(function(x){return x.lane+" is on “"+x.text+"”";}).join(', '):""].filter(Boolean).join(', and '))+". "+(r.untasked?"The changes so far can be approved now, or once it's finished.":"")+"</div>";
+if(pd&&pa.length)h+=pa.map(function(q,i){return "<div class='pqask' data-i='"+i+"'><div class='pqq'>"+esc(q.q)+"</div>"+(q.context?"<div class='muted pqwhy'>"+esc(q.context)+"</div>":"")+(q.options&&q.options.length?"<div class='row pqopts'>"+q.options.map(function(o,j){return "<button type='button' class='"+(j?'ghost':'act')+" pqopt' data-j='"+j+"'>"+esc(o)+"</button>";}).join('')+"</div>":"")+"</div>";}).join('');
 else if(r.round)h+="<div class='muted' style='margin:6px 0'>A finished round of &ldquo;"+esc(r.round.text.length>160?r.round.text.slice(0,159).replace(/\\s+\\S*$/,'')+'\u2026':r.round.text)+"&rdquo;, which is still going. Approve it and this round goes out as a PR; the task stays open for the rest.</div>";
 // where changes no task is ticked for came from (which run, when) and what to do, in one line (tasks.mjs origin)
 else if(r.untasked&&!r.running)h+="<div class='muted rorigin' style='margin:6px 0'>"+esc(r.origin||"Uncommitted changes with no ticked task behind them. Check the diff before you approve.")+"</div>";
@@ -179,7 +182,7 @@ h=top+bsel+act+body+"</div>";});
 if(others.length)h+="<div class='muted rothers'>Also waiting for your OK: "+others.map(function(r){return esc(r.repo);}).join(', ')+" <button type='button' class='ghost rallbtn'>Show them</button></div>";
 el.innerHTML=h;
 var ra=el.querySelector('.rallbtn');if(ra)ra.addEventListener('click',function(){PENDALL=true;loadPending();});
-el.querySelectorAll('.rcard').forEach(function(card){var repo=card.getAttribute('data-repo');
+el.querySelectorAll('.rcard').forEach(function(card){var repo=card.getAttribute('data-repo'),aq0=card.querySelector('.answerq');
 var rmb=card.querySelector('.rmorebtn'),rm=card.querySelector('.rmore');if(rmb&&rm)rmb.addEventListener('click',function(){var shut=rm.classList.toggle('hidden');rmb.textContent=shut?'Show the other '+rm.children.length:'Show fewer';});
 card.querySelectorAll('.task').forEach(function(row){wireAsk(row,row.getAttribute('data-id'));});
 card.querySelectorAll('.sendback').forEach(function(b){b.addEventListener('click',function(){api('/api/pending/sendback',{id:b.closest('.task').getAttribute('data-id')}).then(loadTasks);});});
@@ -198,6 +201,11 @@ var lo=ap&&ap.getAttribute('data-leftover'); // changes no task is ticked for: A
 function apLabel(){var n=ticks().length,w=n?", with "+n+" finished task"+(n>1?"s":""):"";if(ap&&lo)ap.className=(n?'act':'ghost')+' approve';if(ap&&!ap.disabled)ap.innerHTML=so?"Approve the changes so far"+w+" &rarr; PR":rd?"Approve this round"+w+" &rarr; PR":n?"Approve changes with "+n+" finished task"+(n>1?"s":"")+" &rarr; PR":"Approve changes without a task &rarr; PR";}
 if(tk.length||so)apLabel();
 var dc=card.querySelector('.dropchg');if(dc)dc.addEventListener('click',function(){if(!confirm('Drop these changes in '+repo+'? They are put aside in git\u2019s stash, so they can be brought back.'))return;dc.disabled=true;dc.textContent='Dropping...';api('/api/pending/drop',{repo:repo}).then(function(r){var o=document.getElementById('reviewout');if(o)o.innerHTML=r&&r.ok?"<div class='note ok'>&#10003; <b>"+esc(repo)+"</b>: "+r.dropped+" file"+(r.dropped>1?'s':'')+" dropped (kept in git\u2019s stash)</div>":"<div class='note err'>"+esc(repo)+": "+esc((r&&(r.error||r.said))||'failed')+"</div>";loadPending();});});
+// an answer picked on the card goes to the agent as one from Home or the Agents tab does, and it carries on with it
+card.querySelectorAll('.pqask .pqopt').forEach(function(b){b.addEventListener('click',function(){var box=b.closest('.pqask'),q=(PQASKS[repo]||[])[+box.getAttribute('data-i')],path=aq0&&aq0.getAttribute('data-path');if(!q||!path)return;
+box.querySelectorAll('button').forEach(function(x){x.disabled=true;});api('/api/agents/answer',{path:path,answers:[{q:q.q,a:q.options[+b.getAttribute('data-j')]}],rerun:true}).then(function(r){var o=document.getElementById('reviewout');
+if(!r||r.error){box.querySelectorAll('button').forEach(function(x){x.disabled=false;});if(o)o.innerHTML="<div class='note err'>"+esc(repo)+": "+esc((r&&r.error)||'failed')+"</div>";return;}
+if(o)o.innerHTML="<div class='note ok'>&#10003; <b>"+esc(repo)+"</b>: answer saved"+(r.rerun?", and its agent is picking it up now.":".")+"</div>";loadPending();});});});
 var aq=card.querySelector('.answerq');if(aq)aq.addEventListener('click',function(){lqFocus({kind:'ask',repo:repo,path:aq.getAttribute('data-path')});});
 if(ap)ap.addEventListener('click',function(){var tick=ticks(),yes={};ap.disabled=true;ap.textContent='Committing & pushing...';
 function go(){api(ap.getAttribute('data-untasked')?'/api/pending/approve-changes':'/api/pending/approve',{repo:repo,bump:bs?bs.value:'',tick:tick,confirm:yes.confirm,allowShared:yes.allowShared}).then(done);}

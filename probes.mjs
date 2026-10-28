@@ -59,6 +59,30 @@ async function prItems({ prs = openedPrs(), gh = (args) => run("gh", args) } = {
   return out;
 }
 
+// What GitHub says now about the PRs a text names ("PR 321", "#322", "PRs 321 and 322", or a pull URL): agents' last words
+// said #321 and #322 were "written but never merged" when both were merged (28 Oct 2026). A bare number is looked up on
+// the repo's current remote (git remote get-url origin), never one remembered from before it moved owners.
+const remoteSlug = (cwd, git = (args) => run("git", args, { cwd })) => Promise.resolve(git(["remote", "get-url", "origin"])).then((u) => { const m = String(u || "").trim().match(/github\.com[:/]([^/]+\/[^/.\s]+?)(?:\.git)?$/); return m ? m[1] : ""; });
+function prRefs(text) {
+  const t = String(text || ""), out = new Map();
+  for (const m of t.matchAll(/github\.com\/([^/\s]+\/[^/\s]+)\/pull\/(\d+)/g)) out.set(`${m[1]}#${m[2]}`, { slug: m[1], n: m[2] });
+  for (const m of t.matchAll(/\bPRs?\s*#?(\d+(?:\s*(?:,|and|&|\/)\s*#?\d+)*)|(?<![\w&/])#(\d{2,5})\b/gi)) for (const n of String(m[1] || m[2]).match(/\d+/g)) out.set(`#${n}`, { slug: "", n });
+  return [...out.values()].slice(0, 8);
+}
+async function prFacts(text, { cwd = new URL(".", import.meta.url).pathname, gh = (args) => run("gh", args), git } = {}) {
+  const refs = prRefs(text); if (!refs.length) return [];
+  const own = refs.some((r) => !r.slug) ? await remoteSlug(cwd, git) : "";
+  const lines = [];
+  for (const r of refs) {
+    const slug = r.slug || own; if (!slug) continue;
+    const raw = await gh(["pr", "view", r.n, "-R", slug, "--json", "state,mergedAt,title"]);
+    let v = null; try { v = JSON.parse(raw); } catch {}
+    const word = v ? (v.state === "MERGED" ? `merged${v.mergedAt ? ` on ${String(v.mergedAt).slice(0, 10)}` : ""}` : v.state === "CLOSED" ? "closed, not merged" : "open") : raw === null ? "" : "no such PR";
+    if (word) lines.push(`PR #${r.n} (${slug}): ${word}${v && v.title ? `, "${String(v.title).slice(0, 80)}"` : ""}`);
+  }
+  return lines;
+}
+
 // ---- npm ------------------------------------------------------------------------------
 // A lane's package that's published (publishConfig), or Symbiot's own: { lane, name, version }.
 function packagesOf(map = {}) {
@@ -149,4 +173,4 @@ function actOn(items, { map = {}, add, run, merged, now = Date.now() } = {}) {
   return did;
 }
 
-export { STATUS_URL, readStates, actOn, prItems, prState, openedPrs, npmItems, packagesOf, metaItems, metaOf, envOf };
+export { prRefs, prFacts, STATUS_URL, readStates, actOn, prItems, prState, openedPrs, npmItems, packagesOf, metaItems, metaOf, envOf };

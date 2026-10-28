@@ -304,6 +304,7 @@ try {
   put(ghost, "QUESTIONS.md", "## Questions\n### Rename the folder?\nwhy\n- yes (recommended)\n- no\n### Which key?\nwhy\n- the new one (recommended)\n- the old one\n");
   const pd = partlyDone(ghost);
   ok("partly done: its open questions and the handover not back yet, in its own words", pd && pd.questions === 2 && pd.handed.length === 2 && pd.handed[0].lane === "ops" && /^Move the folder/.test(pd.handed[0].text) && /release APK/.test(pd.handed[1].text), pd);
+  ok("…each question it counts goes with its words, why and answers, for the card to show (28 Oct 2026)", pd && pd.asks.length === pd.questions && pd.asks[0].q === "Rename the folder?" && pd.asks[0].context === "why" && pd.asks[0].options.length === 2 && /the new one/.test(pd.asks[1].options[0]), pd && pd.asks);
   put(ghost, "QUESTIONS.md", ""); put(ghost, "HANDOFF.md", "");
   L3.handoffs.find((h) => h.id === "w").reportedAt = Date.now(); writeFileSync(join(CFG, "lanes.json"), JSON.stringify(L3));
   ok("nothing open and the handover back: not partly done", partlyDone(ghost) === null, partlyDone(ghost));

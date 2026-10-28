@@ -163,6 +163,11 @@ body.lq-light #quit{border-color:rgba(20,30,45,.16);background:rgba(255,255,255,
 /* a review card for a run that stopped partway: what it waits on, and its questions first */
 .rcard .partly{margin:8px 0 4px;padding:8px 10px;border-left:3px solid var(--amber);border-radius:0 10px 10px 0;background:rgba(242,165,65,.08);color:var(--bone);font-size:13px;line-height:1.45}
 .rcard .partly b{color:var(--amber)}
+.rcard .pqask{margin:4px 0 8px;padding:8px 10px;border-left:3px solid var(--amber);border-radius:0 10px 10px 0;background:rgba(242,165,65,.05)}
+.rcard .pqq{color:var(--bone);font-size:14px;line-height:1.45;font-weight:600}
+.rcard .pqwhy{font-size:13px;line-height:1.45;margin-top:4px}
+.rcard .pqopts{flex-wrap:wrap;gap:8px;margin-top:8px}
+.rcard .pqopts button{min-height:40px;text-align:left;white-space:normal}
 body.lq-pooled #lqtalk,body.lq-pooled #lqmore,body.lq-pooled #lqcore{display:none}
 /* the work view says where things stand in its line under the heading, not in the core */
 body.lq-work #lqcore{display:none}

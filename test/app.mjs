@@ -432,5 +432,29 @@ try {
   ok("once sent, its box empties before the redraw saves drafts, on both the saved and the talk path", empty > sent && empty < wa.indexOf("if(r.talk)", sent) && empty < redraw, [sent, empty, redraw]);
   ok("and the picked option is let go before the redraw", wa.lastIndexOf("pickOpt(b,false);});loadAgents();") > sent);
 }
+{
+  console.log("A RUN CARD'S QUESTION IS ON THE CARD — 'Partly done: 1 question for you' showed no question (28 Oct 2026)");
+  const { EMBEDDED_UI } = await import("../ui.mjs");
+  const src = EMBEDDED_UI.slice(EMBEDDED_UI.indexOf("var PENDALL=false"), EMBEDDED_UI.indexOf("function loadArchived("));
+  const render = (row) => {
+    const el = { innerHTML: "", querySelector: () => null, querySelectorAll: () => [] };
+    const document = { getElementById: () => el };
+    const api = () => ({ then: (f) => f([row]) });
+    const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/'/g, "&#39;").replace(/"/g, "&quot;");
+    new Function("document", "api", "esc", "TFILTER", "LQ", "pendRunning", "pendPoll", "lqLight", "PENDTASKS", "PENDRUN", `${src}\nloadPending();`)(document, api, esc, { repo: "" }, {}, () => false, () => {}, () => {}, [], false);
+    return el.innerHTML;
+  };
+  const base = { repo: "symbiot", path: "/tmp/symbiot", branch: "symbiot/pr-claims-live", files: ["a.mjs", "b.mjs", "c.mjs"], stat: "+13 -2", tasks: [], untasked: true };
+  const Q = "Publish Symbiot 0.94.5 to npm so the answered-card fixes reach this PC?";
+  const h = render({ ...base, partly: { questions: 1, asks: [{ q: Q, context: "0.94.5 is prepared in PR #323.", options: ["🤖 Agent: go ahead: merge #323 and publish 0.94.5 (recommended)", "Skip this part: leave 0.94.4 installed"] }], handed: [{ lane: "ops", text: "The ops run on the phone" }] } });
+  ok("the card counts it and shows its words in full", /1 question for you/.test(h) && h.includes(Q.replace(/'/g, "&#39;")), h.slice(0, 400));
+  ok("…with why, and each answer as a button on the card", h.includes("0.94.5 is prepared in PR #323.") && (h.match(/class='[a-z]+ pqopt'/g) || []).length === 2 && /go ahead: merge #323/.test(h) && /leave 0\.94\.4 installed/.test(h));
+  const lost = render({ ...base, partly: { questions: 1, asks: [], handed: [{ lane: "ops", text: "The ops run on the phone" }] } });
+  ok("a question it can't find isn't counted: no 'question for you', no Answer button, the handover still said", !/question for you/.test(lost) && !/Answer its question/.test(lost) && /ops is on/.test(lost), lost.slice(0, 400));
+  const none = render({ ...base, partly: { questions: 1, asks: [], handed: [] } });
+  ok("…and with nothing else to wait on, no 'Partly done' at all", !/Partly done/.test(none) && !/question for you/.test(none));
+  const old = render({ ...base, partly: { questions: 1, handed: [] } });
+  ok("a server from before (a count, no asks) still shows its count", /1 question for you/.test(old));
+}
 console.log(`\n${fail ? "✗" : "✓"} app: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
