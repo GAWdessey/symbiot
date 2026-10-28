@@ -361,7 +361,7 @@ try {
   ok("…pointing at questions already on the Workdesk is no new step (never \"They wait on you for.\")", leftToYou(dfy) === null, leftToYou(dfy));
   // 28 Oct 2026: a run's line about a card already put to the user became a card of its own, "it is waiting on your answer to the
   // card about…", with no question on it, and its "Check first" was the next point's, another lane's state
-  const cf = "I did no new work this run.\n\n- **Phone code check:** the vault still has no codecheck.dev entry.\n- **Dailify Cloudflare re-plan:** it is waiting on your answer to the card about preparing the three existing domains.\n- **LinkedIn post spacing:** it is still with the marketing lane.";
+  const cf = "I did no new work this run.\n\n- **Phone code check:** the vault still has no codecheck.dev entry.\n- **Client Cloudflare re-plan:** it is waiting on your answer to the card about preparing the three existing domains.\n- **LinkedIn post spacing:** it is still with the marketing lane.";
   ok("…nor waiting on your answer to a card already asked (that card is the question)", leftToYou(cf) === null, leftToYou(cf));
   ok("…in other words too", leftToYou("- **Deploy:** it waits on your answer to its question about the domain.") === null && leftToYou("- **Domains:** it needs your OK on the card that asks to move them.") === null);
   const job = leftToYou("Done.\n\n- **Paddle:** the sign-up still needs your account, and only you can make it.\n- **LinkedIn post spacing:** it is still with the marketing lane.\n- **Docs:** updated.");

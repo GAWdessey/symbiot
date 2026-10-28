@@ -96,7 +96,7 @@ try {
   const { blankAsk } = await import("../needs.mjs");
   ok("a card cut off on \"for\" is blank", blankAsk({ kind: "ask", raw: "", q: "They wait on you for.", sub: "They wait on you for." }) && !blankAsk({ kind: "ask", q: "Which account should I sign in with?" }));
   ok("…and a run whose last words point at its Workdesk questions leaves no card", needsOf(LANE, { final: "Ten items stay [~]. They wait on you for `{#kea-realtime-turns}` and `{#ns-switch}` on Workdesk.", end: Date.now() - 1000 }) === null);
-  ok("…nor one whose last words say a job waits on your answer to a card already put to you (28 Oct 2026)", needsOf(LANE, { final: "- **Dailify Cloudflare re-plan:** it is waiting on your answer to the card about preparing the three existing domains.\n- **LinkedIn post spacing:** it is still with the marketing lane.", end: Date.now() - 1000 }) === null);
+  ok("…nor one whose last words say a job waits on your answer to a card already put to you (28 Oct 2026)", needsOf(LANE, { final: "- **Client Cloudflare re-plan:** it is waiting on your answer to the card about preparing the three existing domains.\n- **LinkedIn post spacing:** it is still with the marketing lane.", end: Date.now() - 1000 }) === null);
   wait(Date.now() + 3000, PHONE_STEP.replace("tap Yes", "tap Allow"));
   const PREP = { id: "p1", text: "Prepare this fully, then ask the user for their OK in .symbiot/QUESTIONS.md before doing the outward part: switch another lane.co.za's name servers", repo: "symbiot", ts: Date.now() - 3600000 };
   const CI = { id: "p2", text: "Read the CI result for PR 596", repo: "symbiot", ts: Date.now() - 3600000 };
