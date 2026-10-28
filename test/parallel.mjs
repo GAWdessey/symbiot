@@ -309,7 +309,7 @@ console.log("A COPY REMOVED UNDER ITS RUN — nothing is removed while a run use
   const run = () => ({ id: "r" });
   const start = (id) => P.startParallel("repo7", repo, { id, text: "Rework a.mjs " + id }, { run });
   // 1) a run on the copy (its lock), or one about to start again: mergeEnded leaves the copy alone
-  const a = start("u1"), wtA = P.inflight().find((m) => m.taskId === "u1").wt;
+  start("u1"); const wtA = P.inflight().find((m) => m.taskId === "u1").wt;
   writeFileSync(join(wtA, "a.mjs"), "beside\n"); writeFileSync(join(wtA, ".symbiot", "TASKS.md"), "## Tasks\n- [x] Rework a.mjs u1\n");
   const seen = [], merge = (m, o) => (seen.push(m.wt), { merged: false });
   P.mergeEnded({ merge, running: (p) => p === wtA, sweeping: false });
@@ -318,7 +318,7 @@ console.log("A COPY REMOVED UNDER ITS RUN — nothing is removed while a run use
   P.mergeEnded({ merge, running: () => false, sweeping: false });
   ok("a copy nothing is on is merged", seen.join() === wtA);
   // 2) the copy is gone while its run was using it: the task goes back, once
-  const b = start("u2"), mB = P.inflight().find((m) => m.taskId === "u2");
+  start("u2"); const mB = P.inflight().find((m) => m.taskId === "u2");
   ok("started: on record as on it now", P.besideAgain(repo, "u2").kind === "working");
   rmSync(mB.wt, { recursive: true, force: true });
   const gone1 = P.mergeBack(mB, { ended: true }), gone2 = P.mergeBack(mB, { ended: true });
@@ -326,7 +326,7 @@ console.log("A COPY REMOVED UNDER ITS RUN — nothing is removed while a run use
   ok("…its record is forgotten, so it starts again in a fresh copy", P.besideAgain(repo, "u2") === null && !rec().u2);
   ok("the lane named by the removed copy's folder is still the lane", P.parallelLane(mB.wt) === "repo7");
   // 3) a task that finished, clashed or was handed on meanwhile keeps its word
-  const c = start("u3"), mC = P.inflight().find((m) => m.taskId === "u3");
+  start("u3"); const mC = P.inflight().find((m) => m.taskId === "u3");
   P.noteTried(repo, "u3", "", { how: "merged" }); rmSync(mC.wt, { recursive: true, force: true });
   ok("a task already merged isn't put back", P.mergeBack(mC, { ended: true }).requeued === false && P.besideAgain(repo, "u3").kind === "merged");
   // 4) removed before it began: no record in this copy, nothing is requeued twice
