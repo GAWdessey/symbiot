@@ -311,6 +311,9 @@ function lastWords(path) {
 // When the newest run in a folder started (its log header), or 0.
 function lastRunStart(path) { return runStarted(readSym(path, "agent.log")); }
 const openQuestions = (path) => /^###\s+/m.test(readSym(path, "QUESTIONS.md").split(/^##\s+Suggestions/m)[0]);
+// A question the user can see: one Home shows as a card (not answered, not judged an agent's or Symbiot's).
+// A handover row said "it has a question for you" for a QUESTIONS.md heading Home had no card for (28 Oct 2026).
+const shownQuestions = (path) => { if (!openQuestions(path)) return false; try { return agentQuestions(path, "").questions.length > 0; } catch { return true; } };
 // A repo lane's run does a whole brief, so its last words cover every task in it,
 // not just the one handed over (ops heard about a first-run audit and a posting
 // test, three times, in reply to its four gaps). Only the lines about this one
@@ -388,7 +391,7 @@ function handingOf(path, { ledger, map, running = runningHandoff, now = Date.now
     // Handed on again by the lane it went to (symbiot → steve → ops): the row names both lanes, and
     // says where the second stands when that's a question for you (spec of 25 Oct 2026: the chain was hard to follow).
     const on = e.to.path ? ledger.handoffs.filter((x) => x.from.path === e.to.path && (x.at || 0) >= (e.at || 0) && !x.skipped && !x.reportedAt && x.status !== "done" && x.status !== "error").pop() : null;
-    const then = on && on.to && on.to.lane && on.to.lane !== e.to.lane ? { then: on.to.lane, ...(on.to.path && openQuestions(on.to.path) ? { askLane: on.to.lane, thenAsks: true } : {}) } : {};
+    const then = on && on.to && on.to.lane && on.to.lane !== e.to.lane ? { then: on.to.lane, ...(on.to.path && shownQuestions(on.to.path) ? { askLane: on.to.lane, thenAsks: true } : {}) } : {};
     const row = (gone, why, more = {}) => out.push({ lane: e.to.lane, text: short(e.text), gone, why: then.thenAsks ? "Sent: its agent asked you something first" : why, ...more, ...then });
     if (e.status === "error") { row(false, `Couldn't hand it over: ${e.error || "it didn't start"}`); continue; }
     const p = e.to.path, going = !!(p && running(p)), began = p ? lastRunStart(p) : 0;
@@ -396,7 +399,7 @@ function handingOf(path, { ledger, map, running = runningHandoff, now = Date.now
     else if (began < e.at && e.status === "blocked") row(false, `Sent, but it didn't start: ${e.note || "its agent didn't start"}`);
     else if (began < e.at) row(true, `Sent: ${e.to.lane}'s agent starts on it when it's free`);
     else if (going) { const w = work(p) || {}; row(true, "Sent: its agent is on it now", { ...(w.doing ? { doing: w.doing } : {}), ...(w.progress ? { progress: w.progress } : {}) }); }
-    else if (openQuestions(p)) row(true, "Sent: its agent asked you something first");
+    else if (shownQuestions(p)) row(true, "Sent: its agent asked you something first");
     else row(true, "Sent: its run ended, and what it did comes back within 20 seconds");
   }
   return out.slice(0, 6);

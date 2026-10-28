@@ -672,6 +672,9 @@ try {
     ok("…once it ends and starts on the new version: sent, on it now", hv()[0].gone && /on it now/.test(hv()[0].why), hv());
     going = new Set(); put(wOps, "QUESTIONS.md", "## Questions\n### The code Meta sent?\nwhy\n- paste it (recommended)\n- not yet\n");
     ok("…its run ended asking you: sent, and it asked you first", /asked you something first/.test(hv()[0].why), hv());
+    put(wOps, "ANSWERS.md", "# Answers\n### The code Meta sent?\npasted\n");
+    ok("…a question already answered is no question: the row says its run ended, never 'a question for you' with no card behind it", !/asked you something first/.test(hv()[0].why), hv());
+    rmSync(join(wOps, ".symbiot", "ANSWERS.md"), { force: true }); rmSync(join(wOps, "ANSWERS.md"), { force: true });
     led.handoffs[0].reportedAt = Date.now(); led.handoffs[0].status = "done";
     ok("…and once it came back: nothing waiting", hv().length === 0, hv());
     put(wa, "HANDOFF.md", "### payroll\nPay the WhatsApp bill.\n"); const acts0 = acts.length; dispatch(wa, wd());
