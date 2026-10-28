@@ -59,22 +59,40 @@ async function prItems({ prs = openedPrs(), gh = (args) => run("gh", args) } = {
   return out;
 }
 
-// What GitHub says now about the PRs a text names ("PR 321", "#322", "PRs 321 and 322", or a pull URL): agents' last words
-// said #321 and #322 were "written but never merged" when both were merged (28 Oct 2026). A bare number is looked up on
-// the repo's current remote (git remote get-url origin), never one remembered from before it moved owners.
-const remoteSlug = (cwd, git = (args) => run("git", args, { cwd })) => Promise.resolve(git(["remote", "get-url", "origin"])).then((u) => { const m = String(u || "").trim().match(/github\.com[:/]([^/]+\/[^/.\s]+?)(?:\.git)?$/); return m ? m[1] : ""; });
-function prRefs(text) {
-  const t = String(text || ""), out = new Map();
-  for (const m of t.matchAll(/github\.com\/([^/\s]+\/[^/\s]+)\/pull\/(\d+)/g)) out.set(`${m[1]}#${m[2]}`, { slug: m[1], n: m[2] });
-  for (const m of t.matchAll(/\bPRs?\s*#?(\d+(?:\s*(?:,|and|&|\/)\s*#?\d+)*)|(?<![\w&/])#(\d{2,5})\b/gi)) for (const n of String(m[1] || m[2]).match(/\d+/g)) out.set(`#${n}`, { slug: "", n });
-  return [...out.values()].slice(0, 8);
+// What GitHub says now about the PRs a text names ("PR 321", "#322", "PRs 321 and 322", "owner/repo#612", or a pull URL):
+// agents' last words said #321 and #322 were "written but never merged" when both were merged (28 Oct 2026). A bare number
+// is looked up in the repo of the lane its line names (that lane's folder: git remote get-url origin), never in the folder
+// Symbiot runs from: installed under ~/.nvm, that answered from nvm-sh/nvm, and dailify's #612 went unchecked (28 Oct 2026).
+// A bare number no line ties to a lane is left out rather than looked up in a guessed repo.
+const remoteSlug = (cwd, git = (args, dir) => run("git", args, { cwd: dir })) => Promise.resolve(git(["remote", "get-url", "origin"], cwd)).then((u) => { const m = String(u || "").trim().match(/github\.com[:/]([^/]+\/[^/.\s]+?)(?:\.git)?$/); return m ? m[1] : ""; });
+const escRe = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+function prRefs(text, lanes = {}) {
+  const names = Object.keys(lanes || {}).filter((n) => n.length > 1).sort((a, b) => b.length - a.length);
+  const res = names.map((n) => [n, new RegExp(`(?:^|[^\\w/-])${escRe(n)}(?![\\w-])`, "i")]);
+  const out = new Map(); let cur = "";
+  for (const line of String(text || "").split("\n")) {
+    const named = (res.find(([, re]) => re.test(line)) || [])[0];
+    if (named) cur = named; else if (!/^\s{2,}/.test(line)) cur = ""; // an indented line goes on about the lane above it
+    let t = line;
+    for (const m of t.matchAll(/github\.com\/([^/\s]+\/[^/\s]+)\/pull\/(\d+)/g)) out.set(`${m[1]}#${m[2]}`, { slug: m[1], n: m[2] });
+    t = t.replace(/github\.com\/[^/\s]+\/[^/\s]+\/pull\/\d+/g, " ");
+    for (const m of t.matchAll(/\b([\w.-]+\/[\w.-]+)#(\d+)\b/g)) out.set(`${m[1]}#${m[2]}`, { slug: m[1], n: m[2] });
+    t = t.replace(/\b[\w.-]+\/[\w.-]+#\d+\b/g, " ");
+    for (const m of t.matchAll(/\bPRs?\s*#?(\d+(?:\s*(?:,|and|&|\/)\s*#?\d+)*)|(?<![\w&/])#(\d{2,5})\b/gi)) for (const n of String(m[1] || m[2]).match(/\d+/g)) {
+      const key = `${cur}#${n}`; if (!out.has(key)) out.set(key, { slug: "", lane: cur, n });
+    }
+  }
+  // a number one line ties to a lane and another doesn't (the user's "did 612 merge?") is that lane's
+  const tied = new Set([...out.values()].filter((r) => r.lane).map((r) => r.n));
+  return [...out.values()].filter((r) => r.slug || r.lane || !tied.has(r.n)).slice(0, 8);
 }
-async function prFacts(text, { cwd = new URL(".", import.meta.url).pathname, gh = (args) => run("gh", args), git } = {}) {
-  const refs = prRefs(text); if (!refs.length) return [];
-  const own = refs.some((r) => !r.slug) ? await remoteSlug(cwd, git) : "";
-  const lines = [];
+async function prFacts(text, { lanes = {}, gh = (args) => run("gh", args), git } = {}) {
+  const refs = prRefs(text, lanes); if (!refs.length) return [];
+  const slugs = new Map(), lines = [];
   for (const r of refs) {
-    const slug = r.slug || own; if (!slug) continue;
+    let slug = r.slug;
+    if (!slug && r.lane && lanes[r.lane]) { if (!slugs.has(r.lane)) slugs.set(r.lane, await remoteSlug(lanes[r.lane], git)); slug = slugs.get(r.lane); }
+    if (!slug) continue;
     const raw = await gh(["pr", "view", r.n, "-R", slug, "--json", "state,mergedAt,title"]);
     let v = null; try { v = JSON.parse(raw); } catch {}
     const word = v ? (v.state === "MERGED" ? `merged${v.mergedAt ? ` on ${String(v.mergedAt).slice(0, 10)}` : ""}` : v.state === "CLOSED" ? "closed, not merged" : "open") : raw === null ? "" : "no such PR";
@@ -82,6 +100,25 @@ async function prFacts(text, { cwd = new URL(".", import.meta.url).pathname, gh 
   }
   return lines;
 }
+
+// A lane's PR as GitHub said within the last few minutes, for what reads synchronously (a lane card's
+// badge): "open", "merged", "closed", or "" until a look has come back, which this starts. A card names
+// "Needs your merge: PR #612" only when this says open: never from a run's words alone (28 Oct 2026).
+const PR_LIVE = new Map(), PR_LIVE_MS = 5 * 60000;
+function prLive(dir, n, { now = Date.now(), gh = (args) => run("gh", args), git } = {}) {
+  const key = `${dir}#${n}`, had = PR_LIVE.get(key);
+  if (!had || (now - had.at > PR_LIVE_MS && !had.busy)) {
+    const rec = { state: had ? had.state : "", at: now, busy: true }; PR_LIVE.set(key, rec);
+    rec.done = (async () => {
+      const slug = dir ? await remoteSlug(dir, git) : ""; if (!slug) return;
+      const raw = await gh(["pr", "view", String(n), "-R", slug, "--json", "state"]); let v = null; try { v = JSON.parse(raw); } catch {}
+      if (v && v.state) rec.state = String(v.state).toLowerCase();
+    })().catch(() => {}).finally(() => { rec.busy = false; });
+  }
+  return PR_LIVE.get(key).state;
+}
+prLive.wait = (dir, n) => (PR_LIVE.get(`${dir}#${n}`) || {}).done;
+prLive.clear = () => PR_LIVE.clear();
 
 // ---- npm ------------------------------------------------------------------------------
 // A lane's package that's published (publishConfig), or Symbiot's own: { lane, name, version }.
@@ -173,4 +210,4 @@ function actOn(items, { map = {}, add, run, merged, now = Date.now() } = {}) {
   return did;
 }
 
-export { prRefs, prFacts, STATUS_URL, readStates, actOn, prItems, prState, openedPrs, npmItems, packagesOf, metaItems, metaOf, envOf };
+export { prRefs, prFacts, prLive, STATUS_URL, readStates, actOn, prItems, prState, openedPrs, npmItems, packagesOf, metaItems, metaOf, envOf };

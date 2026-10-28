@@ -89,12 +89,28 @@ try {
     const gh = async (a) => { asked.push(a.join(" ")); const n = a[2]; return states[n] ? JSON.stringify(states[n]) : "no pull requests found"; };
     const git = async () => "https://github.com/GAWdessey/symbiot.git\n";
     ok("PR numbers are read in each wording", JSON.stringify(P.prRefs("PRs 321 and 322, then PR #400 and #55 and issue#9").map((r) => r.n)) === JSON.stringify(["321", "322", "400", "55"]), P.prRefs("PRs 321 and 322, then PR #400 and #55"));
-    const f = await P.prFacts("they were written but never merged: PRs 321 and 400, and #999", { gh, git });
+    const lanes = { symbiot: "/p/symbiot", dailify: "/p/dailify" };
+    const f = await P.prFacts("- [symbiot] they were written but never merged: PRs 321 and 400, and #999", { gh, git, lanes });
     ok("merged says merged, with the day", /^PR #321 \(GAWdessey\/symbiot\): merged on 2026-10-28/.test(f[0]), f);
     ok("closed says closed, not merged", /^PR #400 .*: closed, not merged/.test(f[1]), f);
     ok("a number GitHub does not know says no such PR", /^PR #999 .*: no such PR/.test(f[2]), f);
     ok("it asks the current remote's repo", asked.every((a) => a.includes("-R GAWdessey/symbiot")), asked);
-    ok("gh unreachable says nothing rather than guessing", (await P.prFacts("PR 321", { gh: async () => null, git })).length === 0);
+    ok("gh unreachable says nothing rather than guessing", (await P.prFacts("symbiot: PR 321", { gh: async () => null, git, lanes })).length === 0);
+    // dailify's #612 (28 Oct 2026): looked up in nvm-sh/nvm, the git repo Symbiot's install folder sits in
+    const asked2 = [], dirs = [];
+    const gh2 = async (a) => { asked2.push(a.join(" ")); return JSON.stringify({ state: "MERGED", mergedAt: "2026-10-28T09:00:00Z", title: "Realtime pitch" }); };
+    const git2 = async (_a, dir) => { dirs.push(dir); return dir === "/p/dailify" ? "git@github.com:GarthGhostai/dailify.git\n" : "https://github.com/GAWdessey/symbiot.git\n"; };
+    const ctx = "- dailify [dailify] (finished)\n    said: I pushed to PR #612, the only open PR… needs Garth's hand merge\n- symbiot [symbiot] (finished)\n    outcome: #322 merged";
+    const g = await P.prFacts(ctx + "\nhas #612 merged?", { gh: gh2, git: git2, lanes });
+    ok("a bare number is looked up in the repo of the lane its line names", g.some((x) => /^PR #612 \(GarthGhostai\/dailify\): merged/.test(x)) && g.some((x) => /^PR #322 \(GAWdessey\/symbiot\)/.test(x)), g);
+    ok("…the user's own mention of it is that same PR, asked once", asked2.filter((a) => / 612 /.test(a)).length === 1, asked2);
+    ok("…and never in the folder Symbiot runs from", dirs.every((d) => d === "/p/dailify" || d === "/p/symbiot"), dirs);
+    ok("a bare number no line ties to a lane is not looked up in a guessed repo", (await P.prFacts("PR 310 is open", { gh: async () => { throw new Error("called"); }, git, lanes })).length === 0);
+    ok("owner/repo#n is read as that repo's PR", JSON.stringify(P.prRefs("see GarthGhostai/dailify#612")) === JSON.stringify([{ slug: "GarthGhostai/dailify", n: "612" }]));
+    P.prLive.clear();
+    const live0 = P.prLive("/p/dailify", 612, { gh: gh2, git: git2 });
+    await P.prLive.wait("/p/dailify", 612);
+    ok("a card's PR state is unknown until GitHub answers, then GitHub's word", live0 === "" && P.prLive("/p/dailify", 612, { gh: gh2, git: git2 }) === "merged");
     ok("no PR named, no call", (await P.prFacts("nothing here", { gh: async () => { throw new Error("called"); }, git })).length === 0);
   }
 } catch (e) { ok("ran", false, String((e && e.stack) || e)); }

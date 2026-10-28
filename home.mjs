@@ -9,7 +9,7 @@
 // The app's sections (Map, Tasks, Agents, Week…) are shaped by adapt.mjs from
 // how you use them; this is the live data around them. Home's talk goes to the
 // same Symbiot as every chat (mind.mjs converse), told what home shows.
-import { prFacts } from "./probes.mjs";
+import { prFacts, prLive } from "./probes.mjs";
 import { claudeSetup } from "./claudesetup.mjs";
 import { heldAsks } from "./handover.mjs";
 import { plainAsk } from "./plain.mjs";
@@ -970,7 +970,7 @@ async function homeAsk(question, { ask, now = Date.now(), state, images = [], ac
   const role = "Here they're on Symbiot's home: one liquid surface that shows what only they can do, what's new on what they watch, and the lanes. Answer from what it shows, and act on what they ask.";
   let open = []; try { open = loadTasks().filter((t) => t && !t.done && !t.archived && !t.review).map((t) => ({ id: t.id, text: t.text, repo: t.repo })); } catch {}
   // a PR named anywhere in what they see or ask is checked on GitHub now, so no run's old words decide whether it merged (28 Oct 2026)
-  const ctx = homeContext(h); let live = []; try { live = await prFacts(`${ctx}\n${question}`); } catch {}
+  const ctx = homeContext(h); let live = []; try { live = await prFacts(`${ctx}\n${question}`, { lanes: map }); } catch {}
   const r = await converse({ where: "Home", role, nav: true, settle: true, control: true, tasks: open, context: ctx + (live.length ? `\nPull requests checked on GitHub just now (the only source for whether a PR is open, merged or closed; they override anything an agent said):\n${live.map((x) => "- " + x).join("\n")}` : ""), question: question + (pics.length ? `\n(The user attached ${pics.length} screenshot${pics.length > 1 ? "s" : ""}: you can see ${pics.length > 1 ? "them" : "it"}.)` : ""), map, now, images: pics.map(({ mime, data, path }) => ({ mime, data, path })), ...(ask ? { ask } : {}),
     act: {
       agent: (req, known, repo, said, kind) => { const d = repo ? actIn(req + shotNote, repo, { map, known, title: "Home", said, kind }) : actNow(req + shotNote, { title: "Home", known }); noteHanded(d, req); return d; },
@@ -1315,7 +1315,11 @@ function workSceneNow({ deps = {}, full = false } = {}) {
     // A run that ended "waiting on <lane>" after a handover that is now done isn't waiting on anyone else:
     // its badge names the real blocker from its words ("Needs your merge: PR #612"), else it's idle (28 Oct 2026)
     if (/^waiting on (?!you\b)/.test(p.state || "") && !p.running && !(p.handing || []).some((x) => x.gone && !/run ended/.test(x.why || ""))) {
-      const b = blockerOf(p.summary);
+      // a PR it names waits on a merge only while GitHub says it's open, in this lane's own repo: dailify's #612 read
+      // "Needs your merge" after Garth had merged it (28 Oct 2026). Merged or closed reads Done; not looked at yet, no claim.
+      let b = blockerOf(p.summary); const n = (b.match(/#(\d+)/) || [])[1];
+      const gh = n ? (deps.prLive || prLive)(map[p.repo] || "", n) : "";
+      if (n && gh !== "open") { b = ""; if (gh === "merged" || gh === "closed") p.state = "done"; }
       if (b) p.blocker = b; else if ((p.handing || []).length && p.handing.every((x) => /run ended/.test(x.why || ""))) p.state = "done";
     }
     p.pill = pillOf(p); // one of the 7 (cardwords.mjs): never a raw state
