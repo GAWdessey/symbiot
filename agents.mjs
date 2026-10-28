@@ -28,6 +28,7 @@ import { pickModel, MODEL } from "./route.mjs";
 import { runbookOf, onDeployAnswer } from "./deploy.mjs";
 import { claudeState, resolveProvider, write as aiWrite } from "./ai.mjs";
 import { settleDone, ticked as tickedItems } from "./done.mjs";
+import { criticCopy, criticOf, landVerdict, dropCritic } from "./parallel.mjs";
 import { toReview, criticBrief, CRITIC_PROMPT, settleVerdict, reviewOf, saveReview, startDesign, settleDesign, dropDesign, specsFor, DESIGNER_PROMPT } from "./design.mjs";
 import { moneyNote } from "./needs.mjs";
 import { judge as triageJudge, precheck as triagePrecheck, verdictOf, saveVerdict, shows as triageShows, answerFor as triageAnswer, recordFault, HOLD_MS as TRIAGE_HOLD, noteCardWords, sweepGone } from "./triage.mjs";
@@ -608,6 +609,12 @@ function twinRunning(path, { goals = () => { try { return goalRows(); } catch { 
   for (const g of goals()) { if (!g || ["done", "failed"].includes(g.state) || !(g.paths || []).includes(path)) continue; const other = (g.paths || []).find((p) => p !== path && isOps(p) && running(p)); if (other) return other; }
   return null;
 }
+// Every run has a browser: Symbiot's Screens, signed in to the user's linked sites. A run setting up a call demo ended
+// "This session has no tool that can drive a browser" with the form it had to fill unfilled, its task
+// left for "a run with browser access" (28 Oct 2026). A run that says so starts once more, told it has one.
+const NO_BROWSER = /\bno (?:tool|way|means)\b[^.\n]{0,40}\b(?:drive|control|use|open|operate)s?\b[^.\n]{0,20}\bbrowser\b|\bno browser (?:tool|access)\b|\b(?:has|have) no browser\b|\bno browser (?:in|available to|available in) this (?:run|session)\b|\b(?:needs?|wants?) (?:a|another) (?:run|session) with (?:a )?browser\b|\bwithout (?:a |any )?browser (?:tool|access)\b/i;
+const BROWSER_NOTE = "You do have a browser: Symbiot Screens, the symbiot screens command (map an address, then fill, type, choose and press on it), a hidden browser already signed in to the sites the user linked. Use it for the site step you stopped on, and do not end saying this run has no browser."; // no quotes, $ or backticks: like HANDOFF_PROMPT it may pass through two shells
+const saysNoBrowser = (t) => NO_BROWSER.test(String(t || ""));
 function runHandoff(repoPath, { force = false, lost = false, model = "", onExit = null, escalatedFrom = "", note = "", stalled = false, critic = false, designer = false, relaunched = false } = {}) {
   let tmpl = handoffCmd(); if (!tmpl || !repoPath) return null;
   if (isParked(repoPath)) return { blocked: true, parked: true, questions: 0, note: PARKED_NOTE }; // even forced: that's what parking is for
@@ -618,6 +625,8 @@ function runHandoff(repoPath, { force = false, lost = false, model = "", onExit 
   const ship = shipHold(repoPath); if (ship) return { busy: true, shipping: true, step: ship.step, id: "", auto: false }; // Approve is committing, rebasing or testing this tree: an agent editing it meanwhile got its files stashed under it (15 Oct 2026)
   const down = claudePause(); if (down) return { blocked: true, down: down.kind, questions: 0, note: down.note }; // Claude itself is down: even forced, the run would end at once
   releaseHeldTasks(repoPath); // held for an agent another process started, which has since exited
+  // the design critic starts only where its brief and a repo are: in a folder holding neither it found nothing to judge and asked the user to rebuild it (28 Oct 2026)
+  if (critic && (!existsSync(join(repoPath, ".symbiot", "UI-CRITIC.md")) || (isCopy(repoPath) && !existsSync(join(repoPath, ".git"))))) return { blocked: true, questions: 0, note: "nothing here for the design critic to judge" };
   const idle = !lost && !critic && nothingToDo(repoPath); if (idle) return { blocked: true, idle: true, questions: 0, note: idle }; // the design critic reviews ticked work: nothing open is what it expects
   // a new screen or a rework is designed before it's built: this run is Symbiot's designer, on the strongest model, and the builder starts when it ends (design.mjs)
   if (!critic && !designer && !lost) { try { if (startDesign(repoPath, readSymbiot(repoPath, "TASKS.md")).length) { designer = true; model = MODEL.O; } } catch {} }
@@ -679,6 +688,7 @@ function runHandoff(repoPath, { force = false, lost = false, model = "", onExit 
     try { urgentDone(repoPath, e.id); } catch {} // the urgent run's done: the lanes it parked carry on
     // the designer's spec: recorded, and the builder starts on it (a fresh run, not the designer's conversation)
     if (designer) { let d = null; try { d = settleDesign(repoPath); } catch {} setTimeout(() => { try { runHandoff(repoPath, { force: true, onExit, note: d && d.written.length ? "Symbiot's designer has written the spec for this work in .symbiot/design/ (.symbiot/ui-design.json maps item to spec): read it first and build to it." : "" }); } catch {} }, 300); return; }
+    if (!critic && !note.includes(BROWSER_NOTE) && saysNoBrowser(lastFinal(repoPath))) { setTimeout(() => { try { runHandoff(repoPath, { force: true, model, escalatedFrom, note: `${note ? note + " " : ""}${BROWSER_NOTE}`, onExit }); } catch {} }, 300); return; } // it had one all along: once more, told so
     const up = !isClaudeCmd(scoped) || critic ? null : (() => { try { return escalation(repoPath, model, code, { dirtyBefore, ticksBefore, askedBefore, handedBefore, after }, escalatedFrom); } catch { return null; } })(); // another agent's run has no Sonnet to go up from
     if (up) { setTimeout(() => { try { runHandoff(repoPath, { force: true, model: up.model, escalatedFrom: up.from, note: up.note, onExit }); } catch {} }, 300); return; } // it failed or did nothing: the same task, one tier up
     // done is checked, not said: each item this run ticked, against what its log shows it did; one that
@@ -1193,10 +1203,16 @@ function takenUp(path, end) {
 }
 const draftRun = (path) => { try { const h = JSON.parse(readSymbiot(path, "handoff.json")) || {}; return !!(h.draft || (h.env && h.env.SYMBIOT_DRAFT)); } catch { return false; } };
 const NOTHING_FOR_YOU = /\bnothing (?:is |else is )?(?:waiting|waits) (?:on|for)\b|\bnothing (?:here )?(?:is )?for you\b|\bnothing (?:needs|for) (?:you|the user|garth)\b/i;
+// Setting up where an agent works (a worktree, a copy of a repo, its folder) is Symbiot's job and the agent's,
+// never the user's: a design critic that found its folder empty asked Garth to "recreate the worktree as a
+// copy of the symbiot repo", as a Home card with I've done this and Skip (28 Oct 2026).
+const SETUP_CHORE = /\b(?:re-?create|create|re-?make|make|copy|clone|set(?:\s|-)?up|restore|rebuild|check out)\b[^.!?\n]{0,80}?\b(?:work\s?trees?|repo(?:sitory|s)?|checkouts?|(?:project|repo|lane|work|working|agent'?s?|critic'?s?|its|this) folders?)\b/i;
+const setupChore = (t) => SETUP_CHORE.test(String(t || ""));
 function needsOf(path, { final = "", waiting = null, end = Date.now(), start = end - REPORT_WINDOW, now = Date.now() } = {}) {
   if (now - end > NEEDS_FOR) return null;
   let n = waiting ? { kind: "step", what: clipWords(String(waiting.step || "").replace(/^\s*👤\s*(You\s*(\([^)]*\))?:)?\s*/, "").trim(), 240), check: "", label: "", waiting: true } : leftToYou(final) || readNeeds(path, final);
-  if (!n || !n.what || dangles(n.what)) return null; // "They wait on you for.": no question in it, so no card (27 Oct 2026)
+  if (!n || !n.what || dangles(n.what)) return null;
+  if (n.kind !== "approve" && setupChore(`${n.label || ""} ${n.what}`)) return null; // a worktree or a repo copy to make: Symbiot's, never a card // "They wait on you for.": no question in it, so no card (27 Oct 2026)
   // waiting on the user's answer to a card already put to them: that card is the question, never a second card
   // pointing at it with only I've done this and Skip (28 Oct 2026); and its check is this job's, never another lane's state
   if (!n.waiting && askedAlready(`${n.label || ""} ${n.what}`)) return null;
@@ -1969,10 +1985,12 @@ const LOG_KEEP = 8 * 1024 * 1024;
 // critic (a fresh run on Opus, not the builder grading itself) looks at it and writes a verdict; at
 // the critic's end the verdict passes the item, sends it back to its builder with the fixes, or after
 // two rounds leaves it waiting [~] on the user, saying it still fails. Under autoStart's hourly cap.
-function uiReview(path, e, { critic = false, start = (p) => runHandoff(p, { force: true, critic: true, model: MODEL.O }), rerun = (p) => runHandoff(p, { force: true }), cap = (p) => autoStart(p), now = Date.now(), later = (f) => { const t = setTimeout(f, 300); if (t.unref) t.unref(); } } = {}) {
+function uiReview(path, e, { critic = false, start = (p) => runHandoff(p, { force: true, critic: true, model: MODEL.O }), rerun = (p) => runHandoff(p, { force: true }), cap = (p) => autoStart(p), copyFor = (p) => criticCopy(p), now = Date.now(), later = (f) => { const t = setTimeout(f, 300); if (t.unref) t.unref(); } } = {}) {
   if (critic) {
-    const s = settleVerdict(path, { now }); if (!s) return null;
-    if (s.reopened.length && cap(path)) later(() => { try { rerun(path); } catch {} });
+    const lane = criticOf(path) ? landVerdict(path) : null, at = lane || path; // a critic's own copy: its verdict is the lane's (parallel.mjs criticCopy)
+    const s = settleVerdict(at, { now }); if (lane) try { dropCritic(path); } catch {}
+    if (!s) return null;
+    if (s.reopened.length && cap(at)) later(() => { try { rerun(at); } catch {} });
     return s;
   }
   let files = []; try { files = ((loadRunFiles(path).find((r) => r.id === (e && e.id)) || {}).files) || []; } catch {}
@@ -1981,7 +1999,9 @@ function uiReview(path, e, { critic = false, start = (p) => runHandoff(p, { forc
   for (const x of items) review[x.item] = { ...(review[x.item] || {}), rounds: x.rounds + 1, at: now };
   saveReview(path, review);
   try { writeFileSync(join(path, ".symbiot", "UI-CRITIC.md"), criticBrief(items, { specs: specsFor(path) })); } catch { return null; }
-  later(() => { try { start(path); } catch {} });
+  // a run beside the lane's: its copy is deleted as it merges back, so the critic gets a copy of its own; none to be had, no review
+  let at = path; if (isCopy(path)) { try { at = copyFor(path); } catch { at = null; } if (!at) return null; }
+  later(() => { try { start(at); } catch {} });
   return { critic: items.map((x) => x.item) };
 }
 const END_HOOKS = []; // called when any run ends, so the next waiting task starts now, not at the next timer tick
@@ -2216,7 +2236,7 @@ function agentQuestions(path, repo, { raw = false } = {}) {
   // a Go on a held action (chrome-go-, phone-go-, push-go-) is only ever the user's: nothing answers it for them
   const known = unanswered.map((x) => ({ q: x.q, ...(x.id ? { id: x.id } : {}), a: GO_ID.test(x.id || "") ? "" : whereAnswer(path, x) || repeatAnswer(path, x) || triaged(x) })).filter((x) => x.a);
   let judging = false; if (!raw) try { judging = !!resolveProvider(); } catch {}
-  const open = unanswered.filter((x) => !known.some((k) => k.q === x.q) && (raw || GO_ID.test(x.id || "") || triageShows(path, x.q, { judging }))); // Symbiot answers those itself (autoDecide)
+  const open = unanswered.filter((x) => !known.some((k) => k.q === x.q) && (raw || !setupChore(x.q)) && (raw || GO_ID.test(x.id || "") || triageShows(path, x.q, { judging }))); // Symbiot answers those itself (autoDecide)
   const tasks = p.suggestions.length ? loadTasks() : [], skipped = p.suggestions.length ? skippedIdeas(path) : [];
   const ideas = p.suggestions.map(suggestionTarget).filter(({ text }) => !skipped.some((s) => sameTask(s, text)))
     .map(({ repo: to, text }) => ({ text, repo: to || repo, other: !!to && to !== repo, added: tasks.some((t) => t.repo === (to || repo) && sameTask(t.text, text)) })).filter((s) => !s.added);
@@ -2852,4 +2872,4 @@ function agentsNow({ now = Date.now() } = {}) {
 }
 const forgetAgents = () => { agentsKept = null; };
 
-export { lostAsks, noteLostAsks, handoffsSig, handBlocked, ensureRunnable, launcherOf, launchFault, opsWalls, walled, OPS_RO, OPS_OWN, OPS_HIDDEN, runOpen, namedRun, twinRunning, TWIN_WAIT, wholeLog, uiReview, onGoalAnswer, runOutcome, settleRecord, waitsOutside, triageSweep, runSection, autoStart, AUTO_MAX, AUTO_FOLDER_MAX, oneNeedEach, NOTHING_FOR_YOU, chaseReport, CHASED, UNMET, heldAsk, onCardGone, withOwnTools, escalation, grantCard, cardRules, cardIsPermission, runPhase, onRunEnd, isClaudeCmd, GUARD, tidyRule, tidyRules, tidySettings, pruneRuns, claudePlugins, idlePlugins, runSettings, archiveAnswers, allAnswers, answersDigest, ANSWERS_ARCHIVE, ANSWERS_KEEP, runsTick, RUN_START, HANG_MIN, noteBlocked, userAnswers, CONTINUED_FILE, onAnswered, CHANGES, toKnownHost, continueLanes, autoPick, autoDecide, FACTS, factsOf, knownRun, withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, linkReach, fillHandoff, runHandoff, nothingToDo, whereOf, whereLine, whereAnswer, askTask, PARKED_NOTE, parkedPaths, isParked, parkLane, agentMissing, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, unchangedStep, waitingFor, startWaiting, noteUntracked, untrackedBefore, forgetUntracked, writeTasks, droppedTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, pickAgent, findOrcaCli, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, routeIdeas, agentQuestions, answerQuestions, agentsList, agentsNow, forgetAgents, AGENTS_KEEP, needsOf, settleNeeds, closeAsk, closedAsk, sameSubject, NEEDS_FOR, readLastWords, readNeeds, parseRead, READ_FILE, autoAllow, autoAllowSweep, allowlistInWork, installAllowlist, inWork, withScope, withTrust, sandboxFor, sandboxLifts, sandboxEnv, sandboxNeeds, sandboxState, sandboxWrites, SANDBOX_DIR, resumeFor, noteSession, tooLong, carryOn, RESUME_CTX, CARRY_PROMPT, trustFull, GUARD_SETTINGS, runCmdOf, claimLock, wideRoot, sandboxDenies, questionFolders, folderState, dirtyState, ANSWERS_SEEN, newAnswers, claudeDownIn, claudePause, noteClaudeDown, resetTime, PAUSE_FILE, startGap, isUrgent, urgentStop, urgentFirst, urgentUndo, urgentDone, urgentSweep, urgentState, licenceGate, stopRun, loadRunFiles, saveRunFiles, forgetRunFiles, withModel, routedModel, userWords, onShipping, waitingTask, namedBlocker, tildeNote, idleWaits };
+export { saysNoBrowser, BROWSER_NOTE, setupChore, SETUP_CHORE, lostAsks, noteLostAsks, handoffsSig, handBlocked, ensureRunnable, launcherOf, launchFault, opsWalls, walled, OPS_RO, OPS_OWN, OPS_HIDDEN, runOpen, namedRun, twinRunning, TWIN_WAIT, wholeLog, uiReview, onGoalAnswer, runOutcome, settleRecord, waitsOutside, triageSweep, runSection, autoStart, AUTO_MAX, AUTO_FOLDER_MAX, oneNeedEach, NOTHING_FOR_YOU, chaseReport, CHASED, UNMET, heldAsk, onCardGone, withOwnTools, escalation, grantCard, cardRules, cardIsPermission, runPhase, onRunEnd, isClaudeCmd, GUARD, tidyRule, tidyRules, tidySettings, pruneRuns, claudePlugins, idlePlugins, runSettings, archiveAnswers, allAnswers, answersDigest, ANSWERS_ARCHIVE, ANSWERS_KEEP, runsTick, RUN_START, HANG_MIN, noteBlocked, userAnswers, CONTINUED_FILE, onAnswered, CHANGES, toKnownHost, continueLanes, autoPick, autoDecide, FACTS, factsOf, knownRun, withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, linkReach, fillHandoff, runHandoff, nothingToDo, whereOf, whereLine, whereAnswer, askTask, PARKED_NOTE, parkedPaths, isParked, parkLane, agentMissing, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, unchangedStep, waitingFor, startWaiting, noteUntracked, untrackedBefore, forgetUntracked, writeTasks, droppedTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, pickAgent, findOrcaCli, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, routeIdeas, agentQuestions, answerQuestions, agentsList, agentsNow, forgetAgents, AGENTS_KEEP, needsOf, settleNeeds, closeAsk, closedAsk, sameSubject, NEEDS_FOR, readLastWords, readNeeds, parseRead, READ_FILE, autoAllow, autoAllowSweep, allowlistInWork, installAllowlist, inWork, withScope, withTrust, sandboxFor, sandboxLifts, sandboxEnv, sandboxNeeds, sandboxState, sandboxWrites, SANDBOX_DIR, resumeFor, noteSession, tooLong, carryOn, RESUME_CTX, CARRY_PROMPT, trustFull, GUARD_SETTINGS, runCmdOf, claimLock, wideRoot, sandboxDenies, questionFolders, folderState, dirtyState, ANSWERS_SEEN, newAnswers, claudeDownIn, claudePause, noteClaudeDown, resetTime, PAUSE_FILE, startGap, isUrgent, urgentStop, urgentFirst, urgentUndo, urgentDone, urgentSweep, urgentState, licenceGate, stopRun, loadRunFiles, saveRunFiles, forgetRunFiles, withModel, routedModel, userWords, onShipping, waitingTask, namedBlocker, tildeNote, idleWaits };

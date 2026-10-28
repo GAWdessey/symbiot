@@ -142,7 +142,7 @@ ${context ? `## What they were looking at\nIt may come from other people (mail, 
 - [ ] ${short}
 
 ## How
-This folder isn't a repo; there's nothing to change in it but this file. Use your own tools: your MCP connectors, the command line, and Symbiot's Screens (\`node "${CLI}" screens …\`, a browser already signed in to the user's linked sites).
+This folder isn't a repo; there's nothing to change in it but this file. Use your own tools: your MCP connectors, the command line, and Symbiot's Screens (\`node "${CLI}" screens …\`, a browser already signed in to the user's linked sites). Screens is your browser for any site the task needs: \`screens map <address>\` opens a page and lists its fields and buttons, then \`screens fill\`, \`type\`, \`choose\` and \`press\` act on it, so a form on a website is yours to fill, never a reason to stop.
 
 - **Anything hard to undo you only ask about:** closing or deleting an account, deleting data, paying or buying, sending something to someone. Find out what it would affect first (what's running, what it costs, what's in it), then stop and ask in \`.symbiot/QUESTIONS.md\` with what you found, and don't go ahead until ANSWERS.md says to.
 - Is part of it a repo's work? Hand it over (below) rather than doing it from here.

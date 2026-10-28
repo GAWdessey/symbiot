@@ -19,6 +19,7 @@ import { CONFIG_DIR, loadConfig, loadTasks, saveTasks } from "./core.mjs";
 import { runHandoff, runningHandoff, loadRunFiles, saveRunFiles, answersDigest, ANSWERS_ARCHIVE, loadRuns } from "./agents.mjs";
 import { parseHandoffs, parseFacts, parseAwaiting } from "./handover.mjs";
 import { licenceState, isPro } from "./licence.mjs";
+import { REVIEW, VERDICT } from "./design.mjs";
 
 const WT_DIR = join(CONFIG_DIR, "worktrees"), DEFAULT_CAP = 3, MAX_CAP = 8;
 const GIT_ENV = { ...process.env, GIT_TERMINAL_PROMPT: "0" };
@@ -139,7 +140,9 @@ function snapshot(path, head, dirty = dirtyFiles(path)) {
   const gd = git(path, ["rev-parse", "--absolute-git-dir"]); if (gd.status !== 0) return { sha: head, dirty: false };
   const idx = join(gd.stdout.trim(), `symbiot-par-${randomBytes(3).toString("hex")}.index`), env = { ...GIT_ENV, GIT_INDEX_FILE: idx, GIT_AUTHOR_NAME: "Symbiot", GIT_AUTHOR_EMAIL: "symbiot@localhost", GIT_COMMITTER_NAME: "Symbiot", GIT_COMMITTER_EMAIL: "symbiot@localhost" };
   try {
-    if (git(path, ["read-tree", head], { env }).status !== 0 || git(path, ["add", "-A", "--", ".", ":(exclude).symbiot"], { env }).status !== 0) return { sha: head, dirty: false };
+    // a repo that ignores .symbiot/ has git add say so and exit 1, having added the rest: the tree still counts (28 Oct 2026)
+    const add = () => { const r = git(path, ["add", "-A", "--", ".", ":(exclude).symbiot"], { env }); return r.status === 0 || /paths are ignored by one of your \.gitignore/i.test(r.stderr || ""); };
+    if (git(path, ["read-tree", head], { env }).status !== 0 || !add()) return { sha: head, dirty: false };
     const tree = git(path, ["write-tree"], { env }); if (tree.status !== 0) return { sha: head, dirty: false };
     if (tree.stdout.trim() === git(path, ["rev-parse", head + "^{tree}"]).stdout.trim()) return { sha: head, dirty: false };
     const c = git(path, ["commit-tree", tree.stdout.trim(), "-p", head, "-m", "Symbiot: the lane's tree when a run beside it started"], { env });
@@ -405,7 +408,7 @@ function pruneOrphans(now = Date.now(), dir = WT_DIR) {
   const gone = []; let names = []; try { names = readdirSync(dir); } catch { return gone; }
   for (const n of names) {
     const wt = join(dir, n); let st; try { st = statSync(wt); } catch { continue; }
-    if (!st.isDirectory() || metaOf(wt) || now - st.mtimeMs < ORPHAN_AFTER) continue;
+    const c = criticOf(wt); if (!st.isDirectory() || metaOf(wt) || (c && now - (Number(c.startedAt) || 0) < CRITIC_KEEP) || now - st.mtimeMs < ORPHAN_AFTER) continue; // a critic's copy lives while its critic runs (criticCopy)
     let common = ""; if (existsSync(join(wt, ".git"))) { const r = git(wt, ["rev-parse", "--git-common-dir"]); common = r.status === 0 ? r.stdout.trim() : ""; }
     killUnder(wt);
     try { rmSync(wt, { recursive: true, force: true }); gone.push(wt); } catch {}
@@ -449,4 +452,45 @@ function mergeEnded({ merge = mergeBack, addTask = null, running = runningHandof
   return done;
 }
 
-export { waitedIn, waitInMain, besideAgain, noteTried, noteStarted, laneFacts, dropHeld, WT_DIR, DEFAULT_CAP, laneCap, claims, clash, isMergeTask, verdict, peel, inflight, inflightIds, parallelLane, openTasksOf, dirtyFiles, isGit, snapshot, startParallel, mergeBack, mergeEnded, briefFor, tickInMain, markReview, attachPatch, keepOutput, killUnder, prunePatches, pruneOrphans, sweep, exitOf, drop };
+// ---- the design critic's own copy ---------------------------------------------------
+// UI work a run beside the lane's ticked is judged by the design critic after the run ends, and
+// the merge back deletes the run's copy at once: on 28 Oct 2026 the critic started 0.3 s later in
+// a folder that held only its own log, no repo and no brief, and its "recreate the worktree as a
+// copy of the repo" reached Home as a step for Garth. So the critic gets a copy of its own: the
+// finished tree as a commit, checked out under worktrees/ with its brief, the ticked list, the
+// review record and the specs. At its end the verdict lands in the lane's folder and the copy goes
+// (landVerdict, dropCritic). null when it can't be made: the review is dropped, quietly.
+const CRITIC_META = "critic.json", CRITIC_CARRY = ["UI-CRITIC.md", "TASKS.md", REVIEW, "ui-design.json", "design", "ANSWERS.md"], CRITIC_KEEP = 86400000;
+const criticOf = (cw) => { try { const c = JSON.parse(readFileSync(join(cw, ".symbiot", CRITIC_META), "utf8")); return c && c.repo ? c : null; } catch { return null; } };
+function criticCopy(wt, { dir = WT_DIR, now = Date.now() } = {}) {
+  const m = metaOf(wt); if (!m || !m.repo || !existsSync(join(wt, ".symbiot", "UI-CRITIC.md"))) return null;
+  const head = git(wt, ["rev-parse", "HEAD"]); if (head.status !== 0) return null;
+  const from = snapshot(wt, head.stdout.trim()), cw = join(dir, `${basename(wt)}-critic`);
+  if (existsSync(cw)) dropCritic(cw, m.repo);
+  if (git(m.repo, ["worktree", "add", "-q", "--detach", cw, from.sha]).status !== 0) { try { rmSync(cw, { recursive: true, force: true }); } catch {} return null; }
+  try {
+    const sd = join(cw, ".symbiot"); mkdirSync(sd, { recursive: true });
+    for (const f of CRITIC_CARRY) { const src = join(wt, ".symbiot", f); if (existsSync(src)) cpSync(src, join(sd, f), { recursive: true }); }
+    writeFileSync(join(sd, "handoff.json"), JSON.stringify({ name: `Design critic: ${m.lane}` }));
+    writeFileSync(join(sd, CRITIC_META), JSON.stringify({ repo: m.repo, lane: m.lane, from: wt, task: m.task, startedAt: now }));
+  } catch { dropCritic(cw, m.repo); return null; }
+  return existsSync(join(cw, ".symbiot", "UI-CRITIC.md")) ? cw : (dropCritic(cw, m.repo), null);
+}
+// The critic's verdict, its report, its screenshots and the review record go to the lane's folder,
+// where the item was ticked. Returns the lane's folder, or null for a folder that isn't a critic's copy.
+function landVerdict(cw) {
+  const c = criticOf(cw); if (!c || !existsSync(c.repo)) return null;
+  const sd = join(c.repo, ".symbiot"), from = join(cw, ".symbiot"); mkdirSync(sd, { recursive: true });
+  for (const f of [VERDICT, "UI-REVIEW.md"]) if (existsSync(join(from, f))) try { copyFileSync(join(from, f), join(sd, f)); } catch {}
+  if (existsSync(join(from, "shots"))) try { cpSync(join(from, "shots"), join(sd, "shots"), { recursive: true }); } catch {}
+  const read = (d) => { try { const o = JSON.parse(readFileSync(join(d, REVIEW), "utf8")); return o && typeof o === "object" && !Array.isArray(o) ? o : {}; } catch { return {}; } };
+  try { writeFileSync(join(sd, REVIEW), JSON.stringify({ ...read(sd), ...read(from) }, null, 1)); } catch {}
+  return c.repo;
+}
+function dropCritic(cw, repo = (criticOf(cw) || {}).repo) {
+  killUnder(cw); if (repo) git(repo, ["worktree", "remove", "--force", cw]);
+  try { rmSync(cw, { recursive: true, force: true }); } catch {}
+  if (repo) git(repo, ["worktree", "prune"]);
+}
+
+export { criticCopy, criticOf, landVerdict, dropCritic, CRITIC_META, waitedIn, waitInMain, besideAgain, noteTried, noteStarted, laneFacts, dropHeld, WT_DIR, DEFAULT_CAP, laneCap, claims, clash, isMergeTask, verdict, peel, inflight, inflightIds, parallelLane, openTasksOf, dirtyFiles, isGit, snapshot, startParallel, mergeBack, mergeEnded, briefFor, tickInMain, markReview, attachPatch, keepOutput, killUnder, prunePatches, pruneOrphans, sweep, exitOf, drop };
