@@ -409,13 +409,13 @@ console.log("REPORTS — copies of one report under run-id names are one report,
   const L = () => R.listReports({ map: { leads: lane }, folders: [lane], running: none, seen: JSON.parse((() => { try { return readFileSync(sf, "utf8"); } catch { return "{}"; } })()) });
   let l = L();
   ok("copies that differ only by run-id suffixes are listed once", l.length === 2 && l.filter((r) => /Sam/.test(r.title)).length === 1, l.map((r) => r.name));
-  const jur = l.find((r) => /Sam/.test(r.title)), jono = l.find((r) => /Lee/.test(r.title));
-  ok("…under the plain name's id, the newest copy shown, every copy known", jur.copies.length === 3 && jur.name === "SAM-ACCOUNT-REMOVAL-PREVIEW-c0c3e8.md" && jono.copies.length === 2, jur);
-  R.decide(jur, "approved", sf);
-  ok("approved on one, it asks no more", R.withNeeds(L(), { seenFile: sf, tasks: [] }).find((r) => r.id === jur.id).needs === "", R.withNeeds(L(), { seenFile: sf, tasks: [] }));
+  const sam = l.find((r) => /Sam/.test(r.title)), lee = l.find((r) => /Lee/.test(r.title));
+  ok("…under the plain name's id, the newest copy shown, every copy known", sam.copies.length === 3 && sam.name === "SAM-ACCOUNT-REMOVAL-PREVIEW-c0c3e8.md" && lee.copies.length === 2, sam);
+  R.decide(sam, "approved", sf);
+  ok("approved on one, it asks no more", R.withNeeds(L(), { seenFile: sf, tasks: [] }).find((r) => r.id === sam.id).needs === "", R.withNeeds(L(), { seenFile: sf, tasks: [] }));
   put(lane, "SAM-ACCOUNT-REMOVAL-PREVIEW-0b4daf-abc94d.md", PREVIEW(from("PageSpeed") + from("list run")), 60000); // a later run copies it again
-  l = L(); const jur2 = l.find((r) => /Sam/.test(r.title));
-  ok("a later run's copy of the same text keeps the approval (and survives a restart: it's on disk)", jur2.id === jur.id && jur2.mtime !== jur.mtime && R.decidedOn(jur2, sf) === "approved" && R.withNeeds(l, { seenFile: sf, tasks: [] }).find((r) => r.id === jur.id).needs === "");
+  l = L(); const sam2 = l.find((r) => /Sam/.test(r.title));
+  ok("a later run's copy of the same text keeps the approval (and survives a restart: it's on disk)", sam2.id === sam.id && sam2.mtime !== sam.mtime && R.decidedOn(sam2, sf) === "approved" && R.withNeeds(l, { seenFile: sf, tasks: [] }).find((r) => r.id === sam.id).needs === "");
   put(lane, "SAM-ACCOUNT-REMOVAL-PREVIEW-0b4daf-abc94d.md", PREVIEW("") + "\nA third account turned up: approve again?\n", 30000);
   ok("…but one that really says something new asks again", R.decidedOn(L().find((r) => /Sam/.test(r.title)), sf) === "");
   put(lane, "SAM-ACCOUNT-REMOVAL-PREVIEW-0b4daf-abc94d.md", PREVIEW(from("list run")), 20000);
@@ -428,7 +428,7 @@ console.log("REPORTS — copies of one report under run-id names are one report,
   R.readReport(w2.id, { list: L(), seenFile: sf });
   put(lane, "LEE-TEST-READINESS-ffffff.md", LEE(from("another run")), 5000);
   ok("read on one copy, a later copy isn't unread again", L().find((r) => /Lee/.test(r.title)).new === false);
-  ok("a date step is its when only when it leads; a date further on is context", R.pastDated("Wed 21 Oct, 11:00", Date.now() - 9 * DAY) && !R.pastDated("Rerun the sign-up journey check end to end, as last done on 19 Oct", Date.now() - 9 * DAY) && !R.pastDated("Call Jono on 30 Dec", Date.now()));
+  ok("a date step is its when only when it leads; a date further on is context", R.pastDated("Wed 21 Oct, 11:00", Date.now() - 9 * DAY) && !R.pastDated("Rerun the sign-up journey check end to end, as last done on 19 Oct", Date.now() - 9 * DAY) && !R.pastDated("Call Lee on 30 Dec", Date.now()));
   // a draft whose job is finished asks no more
   const dl = join(HOME, "code", "ops2"); put(dl, "SITE-MOVE-PREVIEW.md", "# Site move: preview\n\nWhat would change.\n", 60000);
   const dr = R.listReports({ map: { ops2: dl }, folders: [dl], running: none });
