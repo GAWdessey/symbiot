@@ -529,7 +529,7 @@ try {
     ok("a done handover no longer reads Waiting on someone else: the badge names the real blocker from the run's words (28 Oct 2026)", a.pill === "Needs your merge: PR #612", a.pill);
     ok("…looked up on GitHub in the lane's own repo folder", looked.includes("/dl#612"), looked);
     const m = mk("Handed the deploy to ops. The real blocker is PR #612 in GarthGhostai/bookshop, which needs Garth's hand merge because auto-merge is refused.", ended, "merged");
-    ok("a PR the run said needs a merge that GitHub says is merged reads Done, never 'Needs your merge' (dailify #612, 28 Oct 2026)", m.pill === "Done", m.pill);
+    ok("a PR the run said needs a merge that GitHub says is merged reads Done, never 'Needs your merge' (lanex #612, 28 Oct 2026)", m.pill === "Done", m.pill);
     const u = mk("Handed the deploy to ops. The real blocker is PR #612 in GarthGhostai/bookshop, which needs Garth's hand merge because auto-merge is refused.", ended, "");
     ok("…and before GitHub has answered it claims no merge either way", !/merge/i.test(u.pill), u.pill);
     const merge612 = "Handed the deploy to ops. The real blocker is PR #612 in GarthGhostai/bookshop, which needs Garth's hand merge because auto-merge is refused.";

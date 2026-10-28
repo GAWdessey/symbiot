@@ -56,6 +56,11 @@ function laneOf(path, map) {
 // says: the card says "no project".
 function projectOf(path, { map = laneMap(), ledger = loadLedger() } = {}) {
   let p = String(path || "");
+  const wt = join(CONFIG_DIR, "worktrees") + "/";
+  if (p.startsWith(wt)) { // a run beside: its lane, from its record, else its folder's name (symbiot-9b8a1f), also once the copy is gone
+    let l = ""; try { l = String(JSON.parse(readFileSync(join(p, ".symbiot", "par.json"), "utf8")).lane || ""); } catch {}
+    return l || (/^(.+)-[0-9a-f]{6}$/.exec(p.slice(wt.length).split("/")[0]) || [])[1] || "";
+  }
   for (let hop = 0; p && hop < 4; hop++) {
     if (!p.startsWith(ACT_DIR)) { const hit = Object.entries(map || {}).find(([, q]) => q === p); return hit ? hit[0] : ""; }
     let f = ""; try { f = String(JSON.parse(readFileSync(join(p, ".symbiot", "handoff.json"), "utf8")).for || ""); } catch {}
