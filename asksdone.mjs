@@ -35,6 +35,33 @@ function recordDone(q, a, lane = "", { back = false, id = "" } = {}) {
   return save(FILE(), l.slice(-KEEP));
 }
 const isDone = (q) => { const k = key(q); return !!k && doneList().some((x) => x.k === k && !x.code); };
+// A card's question in every wording it has had: the run's own, and the card writer's (needs.mjs applyText
+// keeps the run's as raw). On 28 Oct 2026 Home's chat closed "Do you approve the opt-out wording I drafted?",
+// the card writer's words, while Home checked the run's "Not built: The wording for the opt-out still needs
+// your OK." The record held one wording, the check read the other, and the card came back each time.
+const cardDone = (y) => !!y && [y.q, y.raw, y.sub].some((t) => t && isDone(t));
+const recordCard = (y, a, lane = "", o = {}) => { let n = 0; for (const t of new Set([y && y.raw, y && y.q].filter(Boolean))) if (recordDone(t, a, lane, o)) n++; return n > 0; };
+
+// ---- a decision the user has made for good: "don't ask him again" ----
+// A decision or preference in Symbiot's memory (mind.json) that says never to ask about it again settles
+// every card on its subject, in any wording: "Bookly opt-out wording: use the standard 'Reply STOP to opt
+// out' line and don't ask him to approve the wording again" (28 Oct 2026), and the card asked again. Its
+// subject is the memory's name: every word of it must be on the card (the lane's name may be the card's
+// lane), so a rule sharing a word or two with a card never closes it (the old "Already covered?", 22 Oct 2026).
+const NO_ASK = /\b(?:don['’]?t|do not|never|no need to|stop|won['’]?t)\s+(?:re-?)?(?:ask|asking|check(?:ing)? with|bother(?:ing)?)\b[^.]{0,80}?\bagain\b|\b(?:never|doesn['’]?t|does not|don['’]?t) needs? (?:his|her|their|my|your|the user['’]?s|\w+['’]s) (?:approval|ok|okay|sign-?off)\b|\bwithout asking (?:him|her|them|me|the user)\b|\bdon['’]?t resurface\b/i;
+const mindNodes = () => { const d = readState(join(CONFIG_DIR, "mind.json"), (x) => x && typeof x === "object"); return d && Array.isArray(d.nodes) ? d.nodes : []; };
+function decidedBy(y, { lane = "", nodes = mindNodes() } = {}) {
+  if (!y) return null;
+  const text = [y.q, y.raw, y.sub, y.why, y.context, y.qid, ...(y.options || []), ...(y.labels || [])].filter(Boolean).join(" ");
+  const have = covWords(text.replace(/-/g, " ")), l = key(lane || y.repo || "");
+  for (const n of nodes) {
+    if (!n || !/^(?:decision|preference|rule)$/.test(String(n.kind || ""))) continue;
+    const f = (n.facts || []).slice().reverse().find((x) => x && NO_ASK.test(String(x.text || ""))); if (!f) continue;
+    const want = [...covWords(String(n.name || "").replace(/-/g, " "))]; if (want.length < 2) continue;
+    if (want.every((t) => have.has(t) || t === l) && want.filter((t) => t !== l).length >= 2) return { name: String(n.name), text: String(f.text) };
+  }
+  return null;
+}
 // For a brief: what's already answered in this lane, so its agent doesn't ask it again. It
 // was the last 20 from every lane, whole: 4,500 characters of other lanes' answers in every
 // run's brief (the audit, 2026-10-14). Its own answers are in its ANSWERS.md too, so a few,
@@ -278,4 +305,4 @@ function recentTurns(now = Date.now(), maxAge = 3 * 86400000) {
 }
 function recentTasks() { try { const l = JSON.parse(readFileSync(join(CONFIG_DIR, "tasks.json"), "utf8")); return Array.isArray(l) ? l.map((t) => ({ text: String(t.text || "") })) : []; } catch { return []; } }
 
-export { talkOf, addTalk, endTalk, talkText, ASKS, asksQ, saysDone, YES, recordDone, isDone, doneList, doneBrief, closesAsk, runSaysClosed, asksBack, askBackNote, wantsToRead, wantsReport, heldBy, reportsSince, runReport, reportAsked, addRule, addRejected, rejectedList, rejectedLines, rejectedBrief, dropRejected, standingList, standingBrief, coveredBy, isApprovalAsk, approvalText, approvedBefore, recentTurns, recentTasks };
+export { talkOf, addTalk, endTalk, talkText, ASKS, asksQ, saysDone, YES, recordDone, isDone, cardDone, recordCard, decidedBy, NO_ASK, doneList, doneBrief, closesAsk, runSaysClosed, asksBack, askBackNote, wantsToRead, wantsReport, heldBy, reportsSince, runReport, reportAsked, addRule, addRejected, rejectedList, rejectedLines, rejectedBrief, dropRejected, standingList, standingBrief, coveredBy, isApprovalAsk, approvalText, approvedBefore, recentTurns, recentTasks };

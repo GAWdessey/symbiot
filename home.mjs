@@ -20,9 +20,9 @@ import { readFileSync, writeFileSync, mkdirSync, statSync } from "node:fs";
 import { watchBoard, draftReply, draftCards, draftAnswer } from "./watch.mjs";
 import { pendingReview, pushTasks, addTask, taskType, releaseNotIn, unplacedTasks } from "./tasks.mjs";
 import { estimate, estimateWords } from "./estimate.mjs";
-import { handoffsSig, launchFault, ensureRunnable, agentQuestions, answerQuestions, heldAsk, grantCard, cardIsPermission, onCardGone, setHandoffCmd, agentsList, agentsNow, forgetAgents, runHandoff, runningHandoff, handoffCmd, loadRuns, connectorsInfo, parkedPaths, agentMissing, settleNeeds, closeAsk, sameSubject, pickAgent, detectHandoffs, linkReach, unchangedStep, whereOf, claudePause, parkLane, waitingTask, namedBlocker, autoStart } from "./agents.mjs";
+import { handoffsSig, launchFault, ensureRunnable, agentQuestions, answerQuestions, heldAsk, grantCard, cardIsPermission, onCardGone, setHandoffCmd, agentsList, agentsNow, forgetAgents, runHandoff, runningHandoff, handoffCmd, loadRuns, connectorsInfo, parkedPaths, agentMissing, settleNeeds, closeAsk, sameSubject, pickAgent, detectHandoffs, linkReach, unchangedStep, whereOf, claudePause, parkLane, waitingTask, namedBlocker, autoStart, settleRecord } from "./agents.mjs";
 import { stallCards, loadStall, saveStall } from "./stall.mjs";
-import { isDone, recordDone, doneList, asksBack, askBackNote, wantsReport, closesAsk, heldBy, reportsSince, talkOf, addTalk, talkText, YES, asksQ, saysDone, wantsToRead } from "./asksdone.mjs";
+import { isDone, recordDone, recordCard, cardDone, decidedBy, endTalk, doneList, asksBack, askBackNote, wantsReport, closesAsk, heldBy, reportsSince, talkOf, addTalk, talkText, YES, asksQ, saysDone, wantsToRead } from "./asksdone.mjs";
 import { captureSecrets } from "./vault.mjs";
 import { linksState, signInAsked } from "./links.mjs";
 import { knowledgeState } from "./knowledge.mjs";
@@ -516,7 +516,7 @@ function homeState({ now = Date.now(), fresh = false, deps = {}, tick = false } 
     const ctx = plain(pa.context != null ? pa.context : q.context || "", 280), why = ctx ? { why: ctx } : {};
     const sh = sharedTo(a.path), shared = sh && (a.status === "running" || Date.parse(sh.at) > (a.startedAt || 0)) ? { shared: sh } : {}; // and not once it has asked again since
     you.push({ kind: "ask", id: "ask:" + a.path, path: a.path, repo, ...shared, name: repo ? named(lane ? map[lane] : a.path, repo) : plain(String(a.name || "an agent").replace(/^Agent:\s*/, "").replace(/^New job:\s*/i, ""), 60), // the card's header is narrow: no "New job:" in it
-      title: `${a.name} asks`, sub: String(pa.q || q.q || "").slice(0, 90), ...(q.task ? { task: q.task } : {}), ...(q.talk ? { talk: q.talk } : {}), ...pa, ...why, options: opts, ...(pa.go ? { rec: 0 } : {}), ...closed, ...(qs.length > 1 ? { more: qs.length - 1 } : {}), ...signInCard([q.q, ...opts]), ...reportLink(q.report), shape: "agents" });
+      title: `${a.name} asks`, sub: String(pa.q || q.q || "").slice(0, 90), ...(q.id ? { qid: q.id } : {}), ...(q.task ? { task: q.task } : {}), ...(q.talk ? { talk: q.talk } : {}), ...pa, ...why, options: opts, ...(pa.go ? { rec: 0 } : {}), ...closed, ...(qs.length > 1 ? { more: qs.length - 1 } : {}), ...signInCard([q.q, ...opts]), ...reportLink(q.report), shape: "agents" });
   }
   // What stopped and can't go on without you, as a question too: a handover that
   // couldn't start (lanes.mjs stuckHandovers: "Allow this run access to ~/Company?"),
@@ -568,6 +568,8 @@ function homeState({ now = Date.now(), fresh = false, deps = {}, tick = false } 
   // a change to how Symbiot works, proposed from what the user kept pushing back on (overrides.mjs): Apply / Not now
   try { const gone = new Set(Object.keys((deps.dismissed || loadDismissed)())); updates.unshift(...(deps.overrides || overridesUpdates)({ dismissed: gone })); } catch {}
   { let ct = {}; try { ct = (deps.cardText || loadCardText)(); } catch {} you = split.you.map((y) => { try { return moneyNote(applyText(y, ct)); } catch { return y; } }); } // adding a card says money up front (needs.mjs moneyNote)
+  // answered in the card writer's words, or settled for good by a decision of theirs: never shown again (closeDecided)
+  you = closeDecided(you.filter((y) => y.kind !== "ask" || !cardDone(y)), deps);
   // a merge or publish card for work the design critic hasn't passed (design.mjs heldMergeCard): none while it's
   // being judged or fixed, and "isn't ready: still missing …" once it has failed. After the card writer, so its
   // labels ("I've merged it myself") can't bring a merge back.
@@ -598,13 +600,30 @@ function settleFromChat(h, said, answer, { reply = answerQuestions } = {}) {
   const shown = ((h && h.you) || []).filter((y) => y.kind === "ask" && y.q);
   let n = 0;
   for (const q of said || []) {
-    const y = shown.find((x) => key(x.q) === key(q)); if (!y) continue;
-    if (recordDone(y.q, `answered in chat: ${String(answer || "").slice(0, 120)}`)) n++;
+    const y = shown.find((x) => key(x.q) === key(q) || (x.raw && key(x.raw) === key(q))); if (!y) continue;
+    if (recordCard(y, `answered in chat: ${String(answer || "").slice(0, 120)}`)) n++; // in both wordings: the card writer's, shown, and its run's (raw)
     if (!y.path || !String(y.id || "").startsWith("ask:")) continue; // an agent's own question: the rest close as they did
     const go = plainYes(String(answer || "").trim()) && (y.options || []).find((o) => /^\W*🤖\s*Agent:/u.test(String(o)));
     try { reply(y.path, [{ q: y.raw || y.q, a: go || `Answered in chat: "${String(answer || "").replace(/\s+/g, " ").trim().slice(0, 600)}"` }], { rerun: true }); } catch {}
   }
   return n;
+}
+// A card a standing decision of the user's settles ("Bookly opt-out wording: … don't ask him to approve the
+// wording again", asksdone.mjs decidedBy) isn't shown: its run gets the decision as its answer, once (it's
+// recorded, so the card is answered from then on), and a goal's card counts as answered (goals.mjs).
+function closeDecided(you, deps = {}) {
+  const decided = deps.decided || ((y) => decidedBy(y)), close = deps.closeDecided || ((y, d) => {
+    const a = `Already decided by the user, for good (${d.name}): ${d.text} Go ahead on that and don't ask again.`;
+    if (/^goal:/.test(String(y.path || ""))) return recordCard(y, a, y.repo || "");
+    if (y.path && isAbsolute(String(y.path))) return closeCard(y.path, { q: y.q, raw: y.raw }, a, { lane: y.repo || "" });
+    return recordCard(y, a, y.repo || "");
+  });
+  return you.filter((y) => {
+    if (y.kind !== "ask" || !/^(?:ask|needs|goal):/.test(String(y.id || "")) || /^goal:.*:(?:done|notdone|stalled|nudge)$/.test(String(y.id || "")) || /^goal:wait:/.test(String(y.id || ""))) return true;
+    let d = null; try { d = decided(y); } catch {} if (!d) return true;
+    try { close(y, d); } catch {}
+    return false;
+  });
 }
 // Asks that never belong on Home: "close the Symbiot Browser" is an agent's wait-and-retry, not
 // the user's job; and the same question from several agents is one card, not three.
@@ -1025,14 +1044,14 @@ function cardFor(id, { q = "", deps = {} } = {}) {
   if (!y && /^(?:needs|failed):/.test(id)) { try { const a = (deps.agents || agentsList)().find((x) => x.id === ref); if (a) y = { id, path: a.path, q: a.needs && a.needs.what ? a.needs.what + (a.needs.check ? ` Check first: ${a.needs.check}` : "") : "" }; } catch {} }
   if (!y && /^(?:ask|stalled):/.test(id)) y = { id, path: ref };
   const path = y && y.path ? String(y.path) : "", text = [y && y.raw, y && y.q, y && y.sub, q].map((x) => String(x || "").trim()).find((x) => !blankText(x)) || "";
-  return path && isAbsolute(path) && text ? { ...y, path, q: text } : null;
+  return path && isAbsolute(path) && text ? { ...y, path, q: text, ...(y && y.q && y.q !== text ? { alias: y.q } : {}) } : null; // alias: the card writer's words, as shown
 }
 // A card is a conversation with its agent, like an agent's pane: what the user types on it that
 // is a question or a remark, not an answer ("did you fix the force app", 22 Oct 2026), is answered
 // on the card from that run's own records, and the card's question stays open. Asked for work
 // ("check it again", "fix it"), it acts: the run's lane takes it, as from Home's chat. null when
 // the text is an answer (answerQuestions takes it as before).
-async function cardTalk(path, answers, { ask, deps = {}, extra = "", force = false } = {}) {
+async function cardTalk(path, answers, { ask, deps = {}, extra = "", force = false, alias = "" } = {}) {
   const rows = Array.isArray(answers) ? answers : [], one = rows.length === 1 ? rows[0] : null;
   if (!path || !one || !String(one.a || "").trim() || blankText(one.q)) return null; // no question to talk about: never "this card"
   const read = deps.read || ((f) => { try { return readFileSync(join(path, ".symbiot", f), "utf8"); } catch { return ""; } });
@@ -1046,16 +1065,42 @@ async function cardTalk(path, answers, { ask, deps = {}, extra = "", force = fal
   const before = talkOf(path, q.q); addTalk(path, q.q, { from: "you", text: said });
   let rec = null; try { rec = runRecord(path); } catch {}
   const open = read("TASKS.md").split("\n").filter((l) => /^\s*-\s*\[[ ~]\]/.test(l)).slice(0, 12).join("\n");
-  const role = `You are the agent behind a card on the user's screen, for ${name}. The card asks them: "${q.q}". What they just typed on it is a question or a remark to you, not their answer: the card's question stays open. Reply on the card, in a few plain sentences, from what this run knows below: say what's true now, and what happens next. If they asked you to do or check something, do it (start the work) rather than say you will. Never tell them to answer the card first.`;
+  const role = `You are the agent behind a card on the user's screen, for ${name}. The card asks them: "${q.q}". What they just typed on it is most often a question or a remark to you, and then the card's question stays open. Reply on the card, in a few plain sentences, from what this run knows below: say what's true now, and what happens next. If they asked you to do or check something, do it (start the work) rather than say you will. Never tell them to answer the card first. The card is under "Only the user can do": if what they typed answers its question, says they won't be asked it again, or you start the work it was waiting on, put its question in "settled", and it closes.`;
   const context = [`The card's question: ${q.q}${(q.options || []).length ? `\nIts options: ${q.options.join(" | ")}` : ""}${q.context ? `\nIts context: ${q.context}` : ""}`,
     rec ? `How this run ended: ${rec.state}${rec.waitingOn ? `, waiting on ${rec.waitingOn}` : ""}${rec.what ? ` (${rec.what})` : ""}${rec.summary ? `\nIts last words: ${rec.summary}` : ""}` : "",
     open ? `Its open and waiting items:\n${open}` : "", `The newest answers it has (newest last):\n${read("ANSWERS.md").slice(-4000)}`,
     before.length ? `Said on this card already:\n${talkText(before)}` : "", extra].filter(Boolean).join("\n\n");
-  const res = await converse({ where: `Card: ${name}: ${String(q.q).slice(0, 60)}`, role, context, question: said, map, ...(ask ? { ask } : {}),
+  const res = await converse({ where: `Card: ${name}: ${String(q.q).slice(0, 60)}`, role, context, question: said, map, settle: true, ...(ask ? { ask } : {}),
     act: { agent: (req, known, repo, s2, kind) => (repo || lane ? actIn(req, repo || lane, { map, known, title: "Card", said: s2, kind }) : actNow(req, { title: "Card", known })), task: (text, repo) => taskIn(text, repo || lane, { map }) } });
   const reply = String(res.reply || "").trim() || "I couldn't answer that just now.";
+  // It answered the card, or work started on what the card waited on: the card closes, its run is told, and
+  // no agent asks it again. "how many times are you going to ask me?" on the opt-out wording card started the
+  // bookly agent with the standard wording, and the card stayed with its "I've approved the wording" button
+  // (28 Oct 2026). Only this card's own question counts: the model can't close another one.
+  const k = (t) => String(t || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim(), mine = new Set([k(q.q), k(one.q), k(alias)].filter(Boolean));
+  const started = !!(res.did && res.did.kind === "agent" && !res.did.error && !res.did.notStarted), settled = (res.settled || []).some((x) => mine.has(k(x)));
+  if (started || settled) {
+    const a = `Answered on the card: "${said.replace(/\s+/g, " ").slice(0, 600)}". ${started ? `Symbiot started the work on it${res.did.lane ? ` (${res.did.lane}'s agent)` : ""}: ` : ""}${reply.replace(/\s+/g, " ").slice(0, 600)}`;
+    try { (deps.close || closeCard)(path, { q: q.q, raw: one.q, alias }, a, { started, lane }); } catch {}
+    cached = null;
+    return { ok: true, closed: true, reply, said: `${reply} This card is closed.`, note: `${reply} This card is closed.`, ...(res.did ? { did: res.did } : {}), lane: lane || "ops" };
+  }
   const talk = addTalk(path, q.q, { from: "agent", text: reply });
   return { ok: true, talk, reply, ...(res.did ? { did: res.did } : {}), lane: lane || "ops" };
+}
+// A card closed from its chat: the answer is recorded in each wording the card had (asksdone.mjs), and its
+// run gets it: on its question in QUESTIONS.md (agents.mjs answerQuestions), or in ANSWERS.md for a step
+// it waits on with its record settled. Started again only when nothing was started on it already.
+function closeCard(path, card, a, { started = false, lane = "", deps = {} } = {}) {
+  recordCard({ q: card.q, raw: card.raw }, a, lane); if (card.alias) recordDone(card.alias, a, lane);
+  const k = (t) => String(t || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim(), keys = new Set([k(card.q), k(card.raw), k(card.alias)].filter(Boolean));
+  let qs = []; try { qs = (deps.questions || ((p) => agentQuestions(p, "", { raw: true }).questions))(path); } catch {}
+  const open = qs.find((x) => keys.has(k(x.q)));
+  if (open) return (deps.answer || answerQuestions)(path, [{ q: open.q, a }], { rerun: !started, share: true });
+  noteAnswer(path, card.raw || card.q, a); endTalk(path, card.q);
+  try { (deps.settle || settleRecord)(path, "answered on its card"); } catch {}
+  if (!started) try { (deps.run || runHandoff)(path, { force: true }); } catch {}
+  return { ok: true };
 }
 // Ask about an update (needs.mjs Updates, intuition's notes): the same mind as Home's chat, the update's
 // moves in front of it, and it can act on what's asked ("do the second one", "why did you think that?").
@@ -1556,4 +1601,4 @@ function setOnboarding({ step, skip, unskip, skipRest, done, restart } = {}) {
   return onboarding();
 }
 
-export { updateAsk, cardTalk, cardFor, dropBlank, homeTick, HOME_LOOKED, WORK_KEEP, FIRST_RUN, troubles, agentDigest, garthLedger, plainAsk, dismissCard, cardKey, loadDismissed, DISMISSED_FILE, reportIdeasAdd, reportAsk, reportDraftAnswer, workTick, waitWhy, AUTO_GRACE, STUCK_AFTER, marketingState, marketingGo, marketingDraftAnswer, marketingTask, moveToMarketing, goLane, homeState, homeContext, homeAsk, homeAnswer, homeNext, nextUp, laneNamed, NEXT_FILE, workScene, forgetWork, workGo, displayName, firstSteps, onboarding, setOnboarding, startOnboarding, ONB_STEPS, ONB_STEPS_PHONE, onbSteps, phoneBits, phoneSetupFirst, finishedState, handedState, noteHanded, phoneChat, isPeak, reportIdeasDismiss, settleAsks, settleFromChat, unplacedCards };
+export { updateAsk, cardTalk, closeCard, closeDecided, cardFor, dropBlank, homeTick, HOME_LOOKED, WORK_KEEP, FIRST_RUN, troubles, agentDigest, garthLedger, plainAsk, dismissCard, cardKey, loadDismissed, DISMISSED_FILE, reportIdeasAdd, reportAsk, reportDraftAnswer, workTick, waitWhy, AUTO_GRACE, STUCK_AFTER, marketingState, marketingGo, marketingDraftAnswer, marketingTask, moveToMarketing, goLane, homeState, homeContext, homeAsk, homeAnswer, homeNext, nextUp, laneNamed, NEXT_FILE, workScene, forgetWork, workGo, displayName, firstSteps, onboarding, setOnboarding, startOnboarding, ONB_STEPS, ONB_STEPS_PHONE, onbSteps, phoneBits, phoneSetupFirst, finishedState, handedState, noteHanded, phoneChat, isPeak, reportIdeasDismiss, settleAsks, settleFromChat, unplacedCards };

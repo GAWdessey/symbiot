@@ -33,6 +33,7 @@ import { CONFIG_DIR, loadTasks, clipWords, jobWords, readState, writeJsonAtomic,
 import { goalRows, putGoal, loadJobs, ENDED, FINISHED } from "./jobs.mjs";
 import { sentAt } from "./handback.mjs";
 import { otherMachine, loadLaneIds } from "./laneids.mjs";
+import { isDone, decidedBy } from "./asksdone.mjs";
 
 const DAY = 86400e3, H = 3600e3, DEAD_RUN = 3 * H; // runs that hang are stopped after 45 minutes (agents.mjs runsTick)
 const GOALS_DIR = join(CONFIG_DIR, "drafts"); // a goal's breakdown is a report in a folder of its own there (act-<id>)
@@ -151,13 +152,22 @@ function openItemsIn(path) { // the [ ] and [~] items in its folder's TASKS.md, 
   let md; try { md = readFileSync(join(path, ".symbiot", "TASKS.md"), "utf8"); } catch { return null; }
   return md.trim() ? md.split("\n").filter((l) => /^\s*-\s*\[[ ~]\]/.test(l)).length : null;
 }
+// A run that ended after it in the same folder, any way but still at work: it read the same TASKS.md,
+// QUESTIONS.md and ANSWERS.md, so what the older one waited on is that one's now, or settled. The bookly
+// goal stayed "waiting on the user" for the opt-out wording, from a 05:16 run, through 13 later runs there
+// that ended asking other things (28 Oct 2026): only a later run that finished ("done", "review") counted.
+const laterEnded = (j, ctx) => ctx.jobs.find((x) => x.outcome && x.key !== j.key && String(x.key).startsWith("run:") && x.path === j.path && (x.at || 0) > (j.at || 0) && x.state !== "running");
 function superseded(j, ctx) {
   if (!j.path || (j.state !== "waiting" && j.state !== "paused")) return null;
   const later = laterFinished(j, ctx); if (later) return { state: "ended", ok: true, path: j.path, at: later.changed, what: "a later run in the same folder finished it", superseded: later.key };
+  if (j.state === "waiting") { const next = laterEnded(j, ctx); if (next) return { state: "ended", ok: true, path: j.path, at: next.changed, what: "a later run in the same folder took it over", superseded: next.key }; }
+  // the question it waits on is answered (asksdone.mjs: in any wording), or settled for good by a decision
+  if (j.state === "waiting" && j.waitingOn === "user" && (ctx.answered || answeredNow)(j.what, j)) return { state: "ended", ok: true, path: j.path, at: j.changed, what: "the user has answered what it waited on" };
   // only a wait its [~] item made (task, bare): one on a question or a need isn't in TASKS.md
   if ((j.state === "paused" || j.task || j.bare) && (ctx.openItems || openItemsIn)(j.path) === 0) return { state: "ended", ok: true, path: j.path, at: j.changed, what: "its folder has no open items left" };
   return null;
 }
+const answeredNow = (what, j = {}) => { try { return isDone(what) || !!decidedBy({ q: what, repo: j.lane || "" }); } catch { return false; } };
 const elsewhereFrom = () => { let ids = null; try { ids = loadLaneIds(); } catch {} return (t) => !!ids && otherMachine(t, ids); };
 const elsewhereNow = (t) => elsewhereFrom()(t);
 // { at, state: active | waiting | ended, waitingOn, what, path, ok (ended done, not failed or stopped), summary }
@@ -322,7 +332,7 @@ function askIn(said) {
 //   notTheirs(card), unclear(card) (the card writer's verdicts, needs.mjs),
 //   tasks, ledger, waits, jobs, map }. Returns what it did, for the log and the tests.
 async function goalsTick(deps = {}, { now = Date.now() } = {}) {
-  const ctx = { tasks: deps.tasks || loadTasks(), ledger: deps.ledger || { handoffs: [] }, waits: deps.waits || [], jobs: deps.jobs || loadJobs(), map: deps.map || {}, running: deps.running || (() => false), openItems: deps.openItems, elsewhere: deps.elsewhere || elsewhereFrom(), now };
+  const ctx = { tasks: deps.tasks || loadTasks(), ledger: deps.ledger || { handoffs: [] }, waits: deps.waits || [], jobs: deps.jobs || loadJobs(), map: deps.map || {}, running: deps.running || (() => false), openItems: deps.openItems, answered: deps.answered, elsewhere: deps.elsewhere || elsewhereFrom(), now };
   const did = [];
   if (!deps.jobs) { try { tidyGoals({ now }); ctx.jobs = loadJobs(); } catch {} }
   for (const g0 of goalRows({ jobs: ctx.jobs })) {
@@ -430,7 +440,7 @@ function goalAnswer(path, answers = [], deps = {}, { now = Date.now() } = {}) {
     return { ok: true, said: "Kept waiting; it'll come up again in a week." };
   }
   const g = goalById(path); if (!g) return { error: "That goal isn't on record any more." };
-  const ctx = { tasks: deps.tasks || loadTasks(), ledger: deps.ledger || { handoffs: [] }, waits: deps.waits || [], jobs: deps.jobs || loadJobs(), map: deps.map || {}, running: deps.running || (() => false), openItems: deps.openItems, now };
+  const ctx = { tasks: deps.tasks || loadTasks(), ledger: deps.ledger || { handoffs: [] }, waits: deps.waits || [], jobs: deps.jobs || loadJobs(), map: deps.map || {}, running: deps.running || (() => false), openItems: deps.openItems, answered: deps.answered, now };
   const kind = g.card && g.card.kind; let said = "Noted.";
   if (is("Drop it")) { close(g, "dropped", { left: "Dropped by the user." }, ctx, deps, now); g.dropped = true; said = "Dropped. Its breakdown is under Reports."; }
   else if (kind === "done" || is("Got it")) { if (g.card) g.card = { ...g.card, seen: now }; said = "Done and closed."; }
