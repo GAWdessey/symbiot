@@ -62,7 +62,7 @@ async function prItems({ prs = openedPrs(), gh = (args) => run("gh", args) } = {
 // What GitHub says now about the PRs a text names ("PR 321", "#322", "PRs 321 and 322", "owner/repo#612", or a pull URL):
 // agents' last words said #321 and #322 were "written but never merged" when both were merged (28 Oct 2026). A bare number
 // is looked up in the repo of the lane its line names (that lane's folder: git remote get-url origin), never in the folder
-// Symbiot runs from: installed under ~/.nvm, that answered from nvm-sh/nvm, and dailify's #612 went unchecked (28 Oct 2026).
+// Symbiot runs from: installed under ~/.nvm, that answered from nvm-sh/nvm, and lanex's #612 went unchecked (28 Oct 2026).
 // A bare number no line ties to a lane is left out rather than looked up in a guessed repo.
 const remoteSlug = (cwd, git = (args, dir) => run("git", args, { cwd: dir })) => Promise.resolve(git(["remote", "get-url", "origin"], cwd)).then((u) => { const m = String(u || "").trim().match(/github\.com[:/]([^/]+\/[^/.\s]+?)(?:\.git)?$/); return m ? m[1] : ""; });
 const escRe = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
