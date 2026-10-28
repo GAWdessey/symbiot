@@ -82,6 +82,21 @@ try {
   console.log("STOPPED BY YOU — stays stopped");
   W.removeWatch(st.id);
   ok("removed, it isn't added back at the next start", W.ensureStatusWatch() === null && !JSON.parse(readFileSync(W.WATCH_FILE, "utf8")).watches.some((w) => w.url === P.STATUS_URL));
+
+  console.log("PRS A TEXT NAMES — GitHub's word, on the repo's current remote");
+  {
+    const asked = [], states = { "321": { state: "MERGED", mergedAt: "2026-10-28T08:47:31Z", title: "Answered" }, "400": { state: "CLOSED", title: "Old" } };
+    const gh = async (a) => { asked.push(a.join(" ")); const n = a[2]; return states[n] ? JSON.stringify(states[n]) : "no pull requests found"; };
+    const git = async () => "https://github.com/GAWdessey/symbiot.git\n";
+    ok("PR numbers are read in each wording", JSON.stringify(P.prRefs("PRs 321 and 322, then PR #400 and #55 and issue#9").map((r) => r.n)) === JSON.stringify(["321", "322", "400", "55"]), P.prRefs("PRs 321 and 322, then PR #400 and #55"));
+    const f = await P.prFacts("they were written but never merged: PRs 321 and 400, and #999", { gh, git });
+    ok("merged says merged, with the day", /^PR #321 \(GAWdessey\/symbiot\): merged on 2026-10-28/.test(f[0]), f);
+    ok("closed says closed, not merged", /^PR #400 .*: closed, not merged/.test(f[1]), f);
+    ok("a number GitHub does not know says no such PR", /^PR #999 .*: no such PR/.test(f[2]), f);
+    ok("it asks the current remote's repo", asked.every((a) => a.includes("-R GAWdessey/symbiot")), asked);
+    ok("gh unreachable says nothing rather than guessing", (await P.prFacts("PR 321", { gh: async () => null, git })).length === 0);
+    ok("no PR named, no call", (await P.prFacts("nothing here", { gh: async () => { throw new Error("called"); }, git })).length === 0);
+  }
 } catch (e) { ok("ran", false, String((e && e.stack) || e)); }
 finally { rmSync(HOME, { recursive: true, force: true }); }
 console.log(`\n${fail ? "✗" : "✓"} probes: ${pass} passed, ${fail} failed`);

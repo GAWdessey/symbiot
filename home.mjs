@@ -9,6 +9,7 @@
 // The app's sections (Map, Tasks, Agents, Week…) are shaped by adapt.mjs from
 // how you use them; this is the live data around them. Home's talk goes to the
 // same Symbiot as every chat (mind.mjs converse), told what home shows.
+import { prFacts } from "./probes.mjs";
 import { claudeSetup } from "./claudesetup.mjs";
 import { heldAsks } from "./handover.mjs";
 import { plainAsk } from "./plain.mjs";
@@ -966,7 +967,9 @@ async function homeAsk(question, { ask, now = Date.now(), state, images = [], ac
   if (!h.ledger) h.ledger = garthLedger();
   const role = "Here they're on Symbiot's home: one liquid surface that shows what only they can do, what's new on what they watch, and the lanes. Answer from what it shows, and act on what they ask.";
   let open = []; try { open = loadTasks().filter((t) => t && !t.done && !t.archived && !t.review).map((t) => ({ id: t.id, text: t.text, repo: t.repo })); } catch {}
-  const r = await converse({ where: "Home", role, nav: true, settle: true, control: true, tasks: open, context: homeContext(h), question: question + (pics.length ? `\n(The user attached ${pics.length} screenshot${pics.length > 1 ? "s" : ""}: you can see ${pics.length > 1 ? "them" : "it"}.)` : ""), map, now, images: pics.map(({ mime, data, path }) => ({ mime, data, path })), ...(ask ? { ask } : {}),
+  // a PR named anywhere in what they see or ask is checked on GitHub now, so no run's old words decide whether it merged (28 Oct 2026)
+  const ctx = homeContext(h); let live = []; try { live = await prFacts(`${ctx}\n${question}`); } catch {}
+  const r = await converse({ where: "Home", role, nav: true, settle: true, control: true, tasks: open, context: ctx + (live.length ? `\nPull requests checked on GitHub just now (the only source for whether a PR is open, merged or closed; they override anything an agent said):\n${live.map((x) => "- " + x).join("\n")}` : ""), question: question + (pics.length ? `\n(The user attached ${pics.length} screenshot${pics.length > 1 ? "s" : ""}: you can see ${pics.length > 1 ? "them" : "it"}.)` : ""), map, now, images: pics.map(({ mime, data, path }) => ({ mime, data, path })), ...(ask ? { ask } : {}),
     act: {
       agent: (req, known, repo, said, kind) => { const d = repo ? actIn(req + shotNote, repo, { map, known, title: "Home", said, kind }) : actNow(req + shotNote, { title: "Home", known }); noteHanded(d, req); return d; },
       task: (text, repo) => { const d = taskIn(text + shotNote, repo, { map }); noteHanded(d, text); return d; },
