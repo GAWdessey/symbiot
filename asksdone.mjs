@@ -202,6 +202,31 @@ function addRule(rule) {
   const l = standingList().filter((x) => key(x.rule) !== key(r)); l.push({ rule: r, at: new Date().toISOString().slice(0, 10) });
   return save(RULES(), l.slice(-50));
 }
+// ---- options the user firmly turned down: never offered again ----
+// On 28 Oct 2026, asked why a prod check always looks negative, chat listed "3) fix CI billing and
+// auto-merge" though the user had said they will never do that. A rejected option is kept here
+// (rejected.json), told to chat and listed in every brief, and a reply that still offers one has
+// that line swapped for a note of why (dropRejected).
+const REJECTED = () => join(CONFIG_DIR, "rejected.json");
+function rejectedList() { return (readState(REJECTED(), Array.isArray) || []).filter((x) => x && x.option); }
+function addRejected(option) {
+  const o = String(option || "").replace(/\s+/g, " ").trim().slice(0, 200); if (!o) return false;
+  const l = rejectedList().filter((x) => key(x.option) !== key(o)); l.push({ option: o, at: new Date().toISOString().slice(0, 10) });
+  return save(REJECTED(), l.slice(-50));
+}
+const rejectedLines = () => rejectedList().map((x) => `- ${x.option}`);
+const rejectedBrief = () => { const l = rejectedLines(); return l.length ? ["## Options the user has turned down: never offer these again, in any words", ...l, ""] : []; };
+// A line of a reply is the rejected option when it shares most of the option's telling words.
+const offers = (line, option) => { const o = [...words(option)].filter((t) => !FILLER.has(t)); if (o.length < 2) return false; const w = words(line); return o.filter((t) => w.has(t)).length >= Math.max(2, Math.ceil(o.length * 0.6)); };
+function dropRejected(reply) {
+  const rej = rejectedList(); if (!rej.length) return { reply: String(reply || ""), dropped: [] };
+  const dropped = [], keep = String(reply || "").split("\n").filter((ln) => {
+    if (!/^\s*(?:\d+[.)]|[-*•])\s+/.test(ln)) return true;
+    const r = rej.find((x) => offers(ln, x.option)); if (r) dropped.push(r.option);
+    return !r;
+  });
+  return { reply: keep.join("\n").replace(/\n{3,}/g, "\n\n").trim(), dropped: [...new Set(dropped)] };
+}
 // Rules agreed with the user that look like they answer this question (shared words): only
 // listed on the card as "already covered?" for the user to confirm, never closed on a fuzzy match.
 const STOP = new Set("the a an and or to of in on for is are be it this that you your i my with from at by do does not no can should what which how when use".split(" "));
@@ -218,7 +243,7 @@ function coveredBy(q) {
   const telling = (t) => rules.length < 3 || (seen.get(t) < 3 && seen.get(t) < rules.length / 3);
   return rules.map((x) => ({ r: x.r, n: [...x.w].filter((t) => w.has(t) && telling(t)).length })).filter((x) => x.n >= 2).sort((a, b) => b.n - a.n).slice(0, 2).map((x) => x.r);
 }
-const standingBrief = () => ["## Standing rules: they apply to every run", ...BASE.map((x) => `- ${x}`), ...browserBrief(), ...standingList().map((x) => `- ${x.rule}`), ""];
+const standingBrief = () => ["## Standing rules: they apply to every run", ...BASE.map((x) => `- ${x}`), ...browserBrief(), ...standingList().map((x) => `- ${x.rule}`), "", ...rejectedBrief()];
 
 // ---- approvals: a card that asks for an OK carries it, and never asks for one already given ----
 // An agent once asked the user to "open the two drafts under Marketing and press Approve on each"
@@ -253,4 +278,4 @@ function recentTurns(now = Date.now(), maxAge = 3 * 86400000) {
 }
 function recentTasks() { try { const l = JSON.parse(readFileSync(join(CONFIG_DIR, "tasks.json"), "utf8")); return Array.isArray(l) ? l.map((t) => ({ text: String(t.text || "") })) : []; } catch { return []; } }
 
-export { talkOf, addTalk, endTalk, talkText, ASKS, asksQ, saysDone, YES, recordDone, isDone, doneList, doneBrief, closesAsk, runSaysClosed, asksBack, askBackNote, wantsToRead, wantsReport, heldBy, reportsSince, runReport, reportAsked, addRule, standingList, standingBrief, coveredBy, isApprovalAsk, approvalText, approvedBefore, recentTurns, recentTasks };
+export { talkOf, addTalk, endTalk, talkText, ASKS, asksQ, saysDone, YES, recordDone, isDone, doneList, doneBrief, closesAsk, runSaysClosed, asksBack, askBackNote, wantsToRead, wantsReport, heldBy, reportsSince, runReport, reportAsked, addRule, addRejected, rejectedList, rejectedLines, rejectedBrief, dropRejected, standingList, standingBrief, coveredBy, isApprovalAsk, approvalText, approvedBefore, recentTurns, recentTasks };
