@@ -518,11 +518,11 @@ try {
   const ok2 = wk.projects.find((p) => p.repo === "ops");
   ok("Agent runs' card at work: what the running run is doing by name, never a finished run's last words under Working (27 Oct 2026)", ok2 && ok2.pill === "At work" && !ok2.summary && ok2.now === "Working on: the phone code check · 3h (and 1 more at work)", ok2);
   {
-    const mk = (final, why) => workScene({ deps: { repos: () => ({ dailify: "/dl" }), pending: () => [], tasks: () => [], parked: () => [],
-      agents: () => [{ name: "dailify", path: "/dl", status: "done", startedAt: Date.now() - 60000, work: { final }, outcome: { state: "waiting", waitingOn: "lane", what: "ops: done", summary: final } }],
-      handing: () => [{ lane: "ops", text: "done", gone: true, why }] } }).projects.find((p) => p.repo === "dailify");
+    const mk = (final, why) => workScene({ deps: { repos: () => ({ bookshop: "/dl" }), pending: () => [], tasks: () => [], parked: () => [],
+      agents: () => [{ name: "bookshop", path: "/dl", status: "done", startedAt: Date.now() - 60000, work: { final }, outcome: { state: "waiting", waitingOn: "lane", what: "ops: done", summary: final } }],
+      handing: () => [{ lane: "ops", text: "done", gone: true, why }] } }).projects.find((p) => p.repo === "bookshop");
     const ended = "Sent: its run ended, and what it did comes back within 20 seconds";
-    const a = mk("Handed the deploy to ops. The real blocker is PR #612 in GarthGhostai/dailify, which needs Garth's hand merge because auto-merge is refused.", ended);
+    const a = mk("Handed the deploy to ops. The real blocker is PR #612 in GarthGhostai/bookshop, which needs Garth's hand merge because auto-merge is refused.", ended);
     ok("a done handover no longer reads Waiting on someone else: the badge names the real blocker from the run's words (28 Oct 2026)", a.pill === "Needs your merge: PR #612", a.pill);
     const b = mk("Handed the deploy to ops. Nothing else is open.", ended);
     ok("…and with no blocker named it reads Done/Idle, never Waiting on someone else", b.pill !== "Waiting on someone else", b.pill);

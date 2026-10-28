@@ -42,7 +42,7 @@ ok("done with nothing open: Done; done with tasks waiting, or failed: Idle", pil
 ok("a run that waits on you with no question left to answer isn't amber", pillOf({ state: "waiting on you" }) === "Idle");
 ok("every pill is one of the 7", [{}, { qs: [1] }, { ready: 1 }, { running: {} }, { state: "paused" }, { parked: true }, { state: "done" }].every((p) => PILLS.includes(pillOf(p))));
 
-ok("a PR that needs the user's hand merge: \"Needs your merge: PR #612\" (a pill that isn't one of the 7)", blockerOf("The real blocker was PR #612 in GarthGhostai/dailify, which needs Garth's hand merge because auto-merge is refused.") === "Needs your merge: PR #612" && pillOf({ state: "waiting on ops", blocker: "Needs your merge: PR #612" }) === "Needs your merge: PR #612");
+ok("a PR that needs the user's hand merge: \"Needs your merge: PR #612\" (a pill that isn't one of the 7)", blockerOf("The real blocker was PR #612 in GarthGhostai/bookshop, which needs Garth's hand merge because auto-merge is refused.") === "Needs your merge: PR #612" && pillOf({ state: "waiting on ops", blocker: "Needs your merge: PR #612" }) === "Needs your merge: PR #612");
 ok("no PR or no user step: no blocker", blockerOf("Handed to ops.") === "" && blockerOf("PR #5 merged fine.") === "");
 
 // handover rows
