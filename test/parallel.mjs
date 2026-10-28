@@ -300,6 +300,39 @@ console.log("THE TICK — two independent tasks queued at one lane both run at o
   ok("…and with the lane idle, it goes in the lane's own brief, not beside it", beside6.join() === "3" && pushed6[0].exclude.join() === "3", [beside6, pushed6]);
 }
 
+console.log("A COPY REMOVED UNDER ITS RUN — nothing is removed while a run uses it; a copy that is gone puts its task back, once, and asks nobody");
+{
+  const repo = join(HOME, "repo7"); mkdirSync(repo, { recursive: true });
+  sh(repo, "init", "-q", "-b", "main"); writeFileSync(join(repo, "a.mjs"), "a1\n"); sh(repo, "add", "-A"); sh(repo, "commit", "-qm", "init");
+  mkdirSync(join(repo, ".symbiot"), { recursive: true });
+  const rec = () => JSON.parse(readFileSync(join(repo, ".symbiot", "beside.json"), "utf8"));
+  const run = () => ({ id: "r" });
+  const start = (id) => P.startParallel("repo7", repo, { id, text: "Rework a.mjs " + id }, { run });
+  // 1) a run on the copy (its lock), or one about to start again: mergeEnded leaves the copy alone
+  const a = start("u1"), wtA = P.inflight().find((m) => m.taskId === "u1").wt;
+  writeFileSync(join(wtA, "a.mjs"), "beside\n"); writeFileSync(join(wtA, ".symbiot", "TASKS.md"), "## Tasks\n- [x] Rework a.mjs u1\n");
+  const seen = [], merge = (m, o) => (seen.push(m.wt), { merged: false });
+  P.mergeEnded({ merge, running: (p) => p === wtA, sweeping: false });
+  ok("a copy a run is on isn't merged or removed", seen.length === 0 && existsSync(wtA), seen);
+  ok("…mergeBack itself refuses too, and says busy", P.mergeBack(P.inflight().find((m) => m.taskId === "u1"), { running: (p) => p === wtA }).busy === true && existsSync(wtA));
+  P.mergeEnded({ merge, running: () => false, sweeping: false });
+  ok("a copy nothing is on is merged", seen.join() === wtA);
+  // 2) the copy is gone while its run was using it: the task goes back, once
+  const b = start("u2"), mB = P.inflight().find((m) => m.taskId === "u2");
+  ok("started: on record as on it now", P.besideAgain(repo, "u2").kind === "working");
+  rmSync(mB.wt, { recursive: true, force: true });
+  const gone1 = P.mergeBack(mB, { ended: true }), gone2 = P.mergeBack(mB, { ended: true });
+  ok("gone: requeued the first time, nothing to do the second", gone1.requeued === true && gone2.requeued === false, [gone1, gone2]);
+  ok("…its record is forgotten, so it starts again in a fresh copy", P.besideAgain(repo, "u2") === null && !rec().u2);
+  ok("the lane named by the removed copy's folder is still the lane", P.parallelLane(mB.wt) === "repo7");
+  // 3) a task that finished, clashed or was handed on meanwhile keeps its word
+  const c = start("u3"), mC = P.inflight().find((m) => m.taskId === "u3");
+  P.noteTried(repo, "u3", "", { how: "merged" }); rmSync(mC.wt, { recursive: true, force: true });
+  ok("a task already merged isn't put back", P.mergeBack(mC, { ended: true }).requeued === false && P.besideAgain(repo, "u3").kind === "merged");
+  // 4) removed before it began: no record in this copy, nothing is requeued twice
+  ok("a copy that was never recorded requeues nothing", P.requeueGone(repo, { taskId: "nope", wt: "/x", branch: "b" }) === false);
+}
+
 rmSync(HOME, { recursive: true, force: true });
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

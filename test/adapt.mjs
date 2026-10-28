@@ -300,6 +300,8 @@ try {
   const failedRun = (o = {}) => ({ id: "r1", name: "atlas", path: "/c", status: "failed", exitCode: 1, startedAt: Date.now() - 60000, endedAt: Date.now() - 1000, tail: "Working on it\nAPI Error: 529 overloaded", ask: { questions: [] }, ...o });
   const fr = homeState({ fresh: true, deps: { ...deps, pending: () => [], repos: () => ({ atlas: "/c" }), agents: () => [failedRun()] } }).you.find((y) => y.fix === "failed");
   ok("a run that ended in an error: a question on its lane, Run it again or Skip", fr && fr.id === "failed:r1" && fr.repo === "atlas" && /Its run stopped with an error: API Error: 529 overloaded\. Run it again\?/.test(fr.q) && fr.options[0] === "Run it again (recommended)", fr);
+  const goneWt = join(CFG, "worktrees", "atlas-088743"), cards = (path) => homeState({ fresh: true, deps: { ...deps, pending: () => [], repos: () => ({ atlas: "/c" }), agents: () => [failedRun({ id: "rg", path, exitCode: null, tail: "" })] } }).you;
+  ok("a run beside whose copy was removed under it (exit code null): no card at all, no Run it again; its task goes back in the lane's queue by itself", !cards(goneWt).some((y) => y.fix === "failed" || /atlas|088743/.test(y.id + y.title)), cards(goneWt));
   const noFail = (agents) => !homeState({ fresh: true, deps: { ...deps, pending: () => [], repos: () => ({ atlas: "/c" }), agents } }).you.some((y) => y.fix === "failed");
   ok("…not a day later, not once another run started there, not when it asked a question instead", noFail(() => [failedRun({ endedAt: Date.now() - 2 * 86400000 })]) && noFail(() => [{ id: "r2", path: "/c", status: "running", ask: { questions: [] } }, failedRun()]) && noFail(() => [failedRun({ ask: { questions: [{ q: "Which key?" }] } })]), "");
   const calls = [];
