@@ -13,7 +13,7 @@ import { prFacts } from "./probes.mjs";
 import { claudeSetup } from "./claudesetup.mjs";
 import { heldAsks } from "./handover.mjs";
 import { plainAsk } from "./plain.mjs";
-import { pillOf, nowLine, plainSummary, handWords, laneName, looksShell } from "./cardwords.mjs";
+import { pillOf, blockerOf, nowLine, plainSummary, handWords, laneName, looksShell } from "./cardwords.mjs";
 const cmdFree = (s) => (looksShell(s) ? nowLine(s) : s); // a running agent's step, never its command: "Ran ssh -i ~/.ssh/…" read on Home's spheres too
 import { join, basename, isAbsolute } from "node:path";
 import { homedir } from "node:os";
@@ -1310,6 +1310,12 @@ function workSceneNow({ deps = {}, full = false } = {}) {
   }
   for (const p of Object.values(by)) {
     p.lit = !!(p.asks || p.ready); if (isParked(p.repo)) p.parked = true;
+    // A run that ended "waiting on <lane>" after a handover that is now done isn't waiting on anyone else:
+    // its badge names the real blocker from its words ("Needs your merge: PR #612"), else it's idle (28 Oct 2026)
+    if (/^waiting on (?!you\b)/.test(p.state || "") && !p.running && !(p.handing || []).some((x) => x.gone && !/run ended/.test(x.why || ""))) {
+      const b = blockerOf(p.summary);
+      if (b) p.blocker = b; else if ((p.handing || []).length && p.handing.every((x) => /run ended/.test(x.why || ""))) p.state = "done";
+    }
     p.pill = pillOf(p); // one of the 7 (cardwords.mjs): never a raw state
     if (p.handing) p.handing = p.handing.map((x) => ({ ...x, words: handWords(x), ...(/asked you something first/.test(x.why || "") ? { ask: x.askLane || x.lane } : {}) }));
   }

@@ -4,7 +4,7 @@
 //
 //   node test/cardwords.mjs
 //
-import { pillOf, nowLine, plainSummary, plainMarks, handWords, laneName, PILLS } from "../cardwords.mjs";
+import { pillOf, nowLine, blockerOf, plainSummary, plainMarks, handWords, laneName, PILLS } from "../cardwords.mjs";
 
 let pass = 0, fail = 0;
 const ok = (n, c, got) => { if (c) { pass++; console.log("  ✓ " + n); } else { fail++; console.log("  ✗ " + n + (got !== undefined ? "  got: " + JSON.stringify(got) : "")); } };
@@ -41,6 +41,9 @@ ok("paused: Paused", pillOf({ state: "paused" }) === "Paused");
 ok("done with nothing open: Done; done with tasks waiting, or failed: Idle", pillOf({ state: "done" }) === "Done" && pillOf({ state: "done", waiting: 2 }) === "Idle" && pillOf({ state: "failed" }) === "Idle");
 ok("a run that waits on you with no question left to answer isn't amber", pillOf({ state: "waiting on you" }) === "Idle");
 ok("every pill is one of the 7", [{}, { qs: [1] }, { ready: 1 }, { running: {} }, { state: "paused" }, { parked: true }, { state: "done" }].every((p) => PILLS.includes(pillOf(p))));
+
+ok("a PR that needs the user's hand merge: \"Needs your merge: PR #612\" (a pill that isn't one of the 7)", blockerOf("The real blocker was PR #612 in GarthGhostai/dailify, which needs Garth's hand merge because auto-merge is refused.") === "Needs your merge: PR #612" && pillOf({ state: "waiting on ops", blocker: "Needs your merge: PR #612" }) === "Needs your merge: PR #612");
+ok("no PR or no user step: no blocker", blockerOf("Handed to ops.") === "" && blockerOf("PR #5 merged fine.") === "");
 
 // handover rows
 ok("a question first: \"it has a question for you\"", handWords({ lane: "ops", why: "Sent: its agent asked you something first" }) === "it has a question for you");

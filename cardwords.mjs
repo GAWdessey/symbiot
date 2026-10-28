@@ -19,9 +19,22 @@ function pillOf(p = {}) {
   if (p.ready || p.shipping) return "Ready for your OK";
   if (p.running || p.state === "at work") return "At work";
   if (p.state === "paused") return "Paused";
+  if (p.blocker) return p.blocker;
   if (p.parked || (/^waiting on /.test(p.state || "") && p.state !== "waiting on you")) return "Waiting on someone else";
   if (p.state === "done" && !p.waiting) return "Done";
   return "Idle";
+}
+
+// A run's last words that name a step only the user can take on a pull request ("PR #612 … needs
+// Garth's hand merge because auto-merge is refused"): "Needs your merge: PR #612", else "". A lane that
+// handed its work over and is done reads this, not "Waiting on someone else" (28 Oct 2026).
+function blockerOf(text) {
+  const t = String(text || "").replace(/\s+/g, " ");
+  const pr = (t.match(/\bPR\s*#?(\d+)/i) || t.match(/\bpull request\s*#?(\d+)/i) || [])[1];
+  if (!pr) return "";
+  const mine = "(?:your|garth'?s|the user'?s)";
+  const hand = new RegExp(`\\b(?:needs|need|waits? (?:on|for)|waiting (?:on|for)|requires?)\\s+${mine}\\s+(?:hand[- ])?merg`, "i");
+  return hand.test(t) || /\bauto-?merge (?:is )?(?:refused|off|disabled|not allowed)\b/i.test(t) ? `Needs your merge: PR #${pr}` : "";
 }
 
 // How long it's taken: "4m", "1h 5m"; under a minute, nothing.
@@ -122,4 +135,4 @@ function handWords(x = {}) {
 const laneName = (n) => { n = String(n || ""); return /^[a-z0-9]+(?:[-_][a-z0-9]+)*$/.test(n) ? cap(n.replace(/[-_]+/g, " ")) : n; };
 const cap = (s) => { s = String(s || ""); return s.charAt(0).toUpperCase() + s.slice(1); };
 
-export { PILLS, AMBER, pillOf, nowLine, plainSummary, plainMarks, handWords, laneName, looksShell, took };
+export { PILLS, AMBER, pillOf, blockerOf, nowLine, plainSummary, plainMarks, handWords, laneName, looksShell, took };
