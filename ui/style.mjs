@@ -168,6 +168,18 @@ body.lq-pooled #lqtalk,body.lq-pooled #lqmore,body.lq-pooled #lqcore{display:non
 body.lq-work #lqcore{display:none}
 body.lq-pooled #lqgo,body.lq-pooled.lq-work #lqgo.on{display:none}
 body.lq-talking .lqd{opacity:.55}
+/* the chat open over Home (28 Oct 2026, Garth's screenshot): the lane labels (Marketing's run line, GitHub, Archive) drew
+   between its messages and a Needs-you card showed the chat through it. While it's open the labels step away (Minimize
+   brings them back), the chat stops above the Needs-you band (--lqneedb, set by lqBuild; 76 = its bottom 64 + 12 between)
+   but keeps 230px (its 90px faded top and 140 to read in), and a card is solid and on top of it */
+body.lq-chat:not(.lq-work):not(.lq-pooled) .lqd:not(.lqblob),body.lq-chat:not(.lq-work):not(.lq-pooled) #lqgroups,body.lq-chat:not(.lq-work):not(.lq-pooled) #lqorbits,body.lq-chat:not(.lq-work):not(.lq-pooled) #lqnext{opacity:0!important;visibility:hidden;pointer-events:none}
+body.lq-chat:not(.lq-work):not(.lq-pooled) #lqtalk{max-height:min(34vh,320px,max(230px,calc(100vh - 76px - var(--lqfh,56px) - var(--lqneedb,0px))))}
+body.lq-chat:not(.lq-work):not(.lq-pooled) #lqtalk:hover,body.lq-chat:not(.lq-work):not(.lq-pooled) #lqtalk:focus-within,body.lq-chat:not(.lq-work):not(.lq-pooled) #lqtalk.back{max-height:min(56vh,560px,max(230px,calc(100vh - 76px - var(--lqfh,56px) - var(--lqneedb,0px))))}
+body.lq-talking .lqd.lqblob,body.lq-chat .lqd.lqblob{opacity:1;z-index:7;background:#0C0E11;backdrop-filter:none}
+/* and a card too tall for both ends above the chat's 230 (its top 124 + 12 between) and scrolls in itself */
+body.lq-chat:not(.lq-work):not(.lq-pooled) .lqd.lqblob{max-height:max(200px,calc(100vh - 430px - var(--lqfh,56px)));overflow-y:auto;scrollbar-width:thin}
+body.lq-chat:not(.lq-work):not(.lq-pooled) .lqd.lqblob>*{flex-shrink:0}
+body.lq-light.lq-talking .lqd.lqblob,body.lq-light.lq-chat .lqd.lqblob{background:#FFFFFF}
 @media (prefers-reduced-motion: reduce){.lqd,#lqcore{transition:none}}
 /* ---- the Symbiot look on every part: glass over the liquid, chrome, a silver edge ---- */
 body.lq-liquid.lq-pooled main{background:rgba(6,8,11,.86);backdrop-filter:blur(20px) saturate(1.25);border:1px solid transparent;background-clip:padding-box;box-shadow:0 0 0 1px rgba(214,222,234,.22),0 40px 90px -30px rgba(0,0,0,.85),inset 0 1px 0 rgba(255,255,255,.12)}
@@ -351,7 +363,6 @@ body.lq-light .lqblob .bdone{color:#1F7A4C}body.lq-light .lqblob .bst.err{color:
 body.lq-look-pearl .lqblob .nopt.rec,body.lq-look-pearl .lqblob .bfx button{background:linear-gradient(180deg,#FFFFFF 0%,#F1F2F5 60%,#E6E9EE 100%);color:#1B1E23;border-color:rgba(0,0,0,.08)}
 body.lq-contrast .lqblob .nopt{border:2px solid currentColor}
 body.lq-touch .lqblob .nopt,body.lq-touch .lqblob .bfx input{min-height:44px}
-body.lq-talking .lqd.lqblob{opacity:.55}
 @media (prefers-reduced-motion: reduce){.lqblob.gone{transition:none}}
 /* next up: with nothing waiting on you, a few things that can be done next, each with its gain and one tap */
 #lqnext{display:none;position:absolute;left:0;top:0;box-sizing:border-box;flex-direction:column;gap:6px;padding:10px 12px 12px;border-radius:18px;background:rgba(12,14,17,.84);border:1px solid rgba(220,228,240,.16);backdrop-filter:blur(12px);box-shadow:0 18px 40px -22px rgba(0,0,0,.85);color:#ECE9E4;font:500 13px/1.3 var(--sans);z-index:2;transition:opacity .5s ease}
