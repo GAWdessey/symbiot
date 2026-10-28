@@ -175,6 +175,9 @@ ok("...but not a question about other work of that lane's", doneSince(lane2, "Se
 ok("...nor one asking to reply or send, when that handover sent nothing (the Dana reply, 21 Oct 2026)", doneSince(lane2, "Should I email Remy that the WhatsApp module is back on prod-box with Bookly's number routed to Bookly?", { ledger }) === null, "");
 ok("...nor one about a handover from over a week ago", doneSince(lane2, permQ, { ledger, now: Date.now() + 8 * 86400000 }) === null, "");
 const { homeState } = await import("../home.mjs");
+// permQ was answered above, for the ops run: an answered question isn't raised again for any agent (asksdone.mjs),
+// in the run's own words too (the card shows plain words). These cards are lane2's first ask of it.
+rmSync(join(C, "asks-done.json"), { force: true });
 const hsDeps = { repos: () => ({ whatsapp_module: lane2 }), board: () => ({ cards: [] }), pending: () => [], lanes: () => ({ handoffs: [] }), reports: () => ({ count: 0 }), connected: () => true, waits: () => [], clashes: () => [], agentGone: () => "", signedOut: () => [], stuck: () => [], drafts: () => [], agentCmd: () => "claude", marketing: () => false,
   agents: () => [{ path: lane2, name: "whatsapp_module", status: "done", ask: { questions: [{ q: permQ, context: "", options: ["👤 You (only you: a permission): allow the list in .symbiot/allowlist.proposed.json (recommended)", "ask ops directly"] }] } }] };
 const stale = homeState({ fresh: true, deps: { ...hsDeps, doneSince: (p, q) => doneSince(p, q, { ledger }) } }).you.find((y) => y.kind === "ask");
