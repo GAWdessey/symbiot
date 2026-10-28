@@ -2,6 +2,14 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one), for anyone who installs the app: what changed in it, never whose work it was (no projects, people, accounts, services, run ids or task wording of the person who made it). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.94.5 — 2026-10-28
+
+- **A card you answered stays answered.** Answer a Home card in either wording, from its own chat, or by a standing decision, and a later run no longer brings it back.
+- **A "Needs you" card always asks something.** A line saying a job waits on your answer to a card you already have is no second card, and "Check first" is that job's own, never another lane's state.
+- **Reports are kept once, and Approve, Drop and Read stick.** Copies of a report written by different runs are one report, a decision on one applies to all, and a refused option is never offered again.
+- **A paired phone shows your computer's Reports and Dashboard,** and asks for no setup once paired.
+- **Home's chat says whether a pull request is open, merged or closed from GitHub itself,** not from an agent's old words.
+
 ## 0.94.4 — 2026-10-27
 
 - **Agents can see and press what's inside a page's frames.** A screen map now includes the buttons, links and fields drawn inside a page's frames, including ads and widgets from other sites and frames inside frames, each where it shows on the page with its link. Press reaches them, and a new tab one of them opens is followed in the same tab.
