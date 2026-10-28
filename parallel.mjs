@@ -16,7 +16,7 @@ import { mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, rmSync
 import { join, basename } from "node:path";
 import { randomBytes, createHash } from "node:crypto";
 import { CONFIG_DIR, loadConfig, loadTasks, saveTasks } from "./core.mjs";
-import { runHandoff, runningHandoff, loadRunFiles, saveRunFiles, answersDigest, ANSWERS_ARCHIVE, loadRuns } from "./agents.mjs";
+import { runHandoff, runningHandoff, restarting, loadRunFiles, saveRunFiles, answersDigest, ANSWERS_ARCHIVE, loadRuns } from "./agents.mjs";
 import { parseHandoffs, parseFacts, parseAwaiting } from "./handover.mjs";
 import { licenceState, isPro } from "./licence.mjs";
 
@@ -66,7 +66,10 @@ function inflight() {
   let names = []; try { names = readdirSync(WT_DIR); } catch {}
   return names.map((n) => metaOf(join(WT_DIR, n))).filter(Boolean);
 }
-const parallelLane = (path) => { const m = path && String(path).startsWith(WT_DIR) ? metaOf(path) : null; return m ? m.lane : ""; };
+// The lane of a copy: its par.json says, and a copy already removed still names it in its folder (lane-<6 hex>)
+const parallelLane = (path) => { const p = String(path || ""); if (!p.startsWith(WT_DIR + "/")) return ""; const m = metaOf(p); return m ? m.lane : (/^(.+)-[0-9a-f]{6}$/.exec(p.slice(WT_DIR.length + 1).split("/")[0]) || [])[1] || ""; };
+// A copy a run still uses: its lock, or a restart a few tenths of a second off (agents.mjs restartSoon)
+const inUse = (wt, running = runningHandoff) => !!(running(wt) || restarting(wt));
 const inflightIds = () => new Set(inflight().map((m) => m.taskId).filter(Boolean));
 const openTasksOf = (path) => { try { return readFileSync(join(path, ".symbiot", "TASKS.md"), "utf8").split("\n").filter((l) => /^\s*-\s*\[ \]/.test(l)).map((l) => l.replace(/^\s*-\s*\[ \]\s*/, "").trim()); } catch { return []; } };
 const dirtyFiles = (path) => { const r = git(path, ["status", "--porcelain", "-uall", "--", ".", ":(exclude).symbiot"]); return r.status === 0 ? String(r.stdout).split("\n").filter(Boolean).map((l) => l.slice(3).split("/").pop().toLowerCase()) : []; };
@@ -168,7 +171,7 @@ function startParallel(lane, path, task, { run = runHandoff, addTask = null, now
     if (existsSync(join(path, ".symbiot", "full"))) cpSync(join(path, ".symbiot", "full"), join(sd, "full"), { recursive: true });
   } catch (e) { drop(path, meta); return { error: clip(String((e && e.message) || e), 140) }; }
   noteStarted(path, task.id, meta); // on record from the start: a restart or a twin tick sees it (the 15 Oct 2026 audit's twin runs)
-  const e = run(wt, { onExit: (code) => { try { merge(meta, { addTask, code }); } catch {} } });
+  const e = run(wt, { onExit: (code) => { try { merge(meta, { addTask, code, ended: true }); } catch {} } });
   if (!e || e.busy || e.blocked || !e.id) { noteTried(path, task.id, "", { forget: true }); drop(path, meta); return { error: clip((e && e.note) || "the agent didn't start", 140), blocked: !!(e && e.blocked) }; }
   return { ok: true, id: e.id, wt, parallel: id };
 }
@@ -302,9 +305,10 @@ const tickedIn = (md) => String(md || "").split("\n").filter((l) => /^\s*-\s*\[x
 // lane's own agent to merge by hand. Whatever the copy handed over, asked or wrote up
 // lands in the lane's .symbiot first (keepOutput).
 // Returns { merged, files, kept, saved?, conflict?, handed?, asked? }.
-function mergeBack(m, { addTask = null, code = 0, now = Date.now() } = {}) {
+function mergeBack(m, { addTask = null, code = 0, now = Date.now(), ended = false, running = runningHandoff } = {}) {
   const wt = m.wt, repo = m.repo, out = { merged: false, files: [] };
-  if (!existsSync(wt)) return out;
+  if (!existsSync(wt)) { out.requeued = requeueGone(repo, m); return out; } // removed under its run: the task goes back in the lane's queue, nobody asked
+  if (!ended && inUse(wt, running)) return { ...out, busy: true }; // a run is on this copy (or about to start again): never merge it away
   git(wt, ["add", "-A", "--", ".", ":(exclude).symbiot"]);
   const names = git(wt, ["diff", "--cached", "--name-only", "-z", m.base]), files = String(names.stdout || "").split("\0").filter(Boolean);
   const patch = git(wt, ["diff", "--cached", "--binary", m.base]).stdout || "";
@@ -330,6 +334,18 @@ function mergeBack(m, { addTask = null, code = 0, now = Date.now() } = {}) {
   saveRunFiles(repo, [...loadRunFiles(repo), { id: "par-" + m.id, startedAt: m.startedAt, endedAt: now, ticked: ticked.length, files: files.sort() }]); // Approve ships these with the lane's other finished work
   finished();
   return { ...out, merged: true, files, ticked: true };
+}
+// A copy removed while its run used it, or before it began: its task was never done, so it goes back in
+// the lane's queue as it was (beside.json forgets the start; the next tick starts it in a fresh copy).
+// Only a record still saying "started" in this very copy: a task that merged, clashed, handed over, asked
+// or waited meanwhile keeps its word, and a second call finds nothing to forget.
+function requeueGone(repo, m) {
+  const id = m && m.taskId; if (!id || !repo) return false;
+  const all = loadTried(repo), t = all[id];
+  if (!t || t.wt !== m.wt || t.merged || t.conflict || t.handed || t.asked || t.waited) return false;
+  delete all[id]; saveTried(repo, all);
+  try { git(repo, ["worktree", "prune"]); git(repo, ["branch", "-D", m.branch]); } catch {}
+  return true;
 }
 // A run beside that marked its item [~] (blocked, or Symbiot couldn't confirm it done) didn't stop
 // unfinished: it's waiting on something. Recorded as a try, the next answer anywhere in the lane
@@ -405,7 +421,7 @@ function pruneOrphans(now = Date.now(), dir = WT_DIR) {
   const gone = []; let names = []; try { names = readdirSync(dir); } catch { return gone; }
   for (const n of names) {
     const wt = join(dir, n); let st; try { st = statSync(wt); } catch { continue; }
-    if (!st.isDirectory() || metaOf(wt) || now - st.mtimeMs < ORPHAN_AFTER) continue;
+    if (!st.isDirectory() || metaOf(wt) || now - st.mtimeMs < ORPHAN_AFTER || inUse(wt)) continue;
     let common = ""; if (existsSync(join(wt, ".git"))) { const r = git(wt, ["rev-parse", "--git-common-dir"]); common = r.status === 0 ? r.stdout.trim() : ""; }
     killUnder(wt);
     try { rmSync(wt, { recursive: true, force: true }); gone.push(wt); } catch {}
@@ -441,7 +457,7 @@ function exitOf(wt) {
 function mergeEnded({ merge = mergeBack, addTask = null, running = runningHandoff, now = Date.now(), sweeping = true } = {}) {
   const done = [];
   for (const m of inflight()) {
-    if (running(m.wt)) continue;
+    if (inUse(m.wt, running)) continue;
     const seen = exitOf(m.wt), code = seen != null ? seen : tickedIn(readIn(m.wt, "TASKS.md")).length ? 0 : 1;
     try { done.push({ id: m.id, ...merge(m, { addTask, code, now }) }); } catch {}
   }
@@ -449,4 +465,4 @@ function mergeEnded({ merge = mergeBack, addTask = null, running = runningHandof
   return done;
 }
 
-export { waitedIn, waitInMain, besideAgain, noteTried, noteStarted, laneFacts, dropHeld, WT_DIR, DEFAULT_CAP, laneCap, claims, clash, isMergeTask, verdict, peel, inflight, inflightIds, parallelLane, openTasksOf, dirtyFiles, isGit, snapshot, startParallel, mergeBack, mergeEnded, briefFor, tickInMain, markReview, attachPatch, keepOutput, killUnder, prunePatches, pruneOrphans, sweep, exitOf, drop };
+export { requeueGone, waitedIn, waitInMain, besideAgain, noteTried, noteStarted, laneFacts, dropHeld, WT_DIR, DEFAULT_CAP, laneCap, claims, clash, isMergeTask, verdict, peel, inflight, inflightIds, parallelLane, openTasksOf, dirtyFiles, isGit, snapshot, startParallel, mergeBack, mergeEnded, briefFor, tickInMain, markReview, attachPatch, keepOutput, killUnder, prunePatches, pruneOrphans, sweep, exitOf, drop };
