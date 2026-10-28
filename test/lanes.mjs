@@ -356,8 +356,8 @@ try {
   ok("…the reply to Alex you said you'd send: named by its point, with the catch it found", l2 && l2.kind === "approve" && l2.label === "Reply to Alex" && /^Reply to Alex: you picked sending it yourself/.test(l2.what) && l2.check === "One catch: the link in it is wrapped in a google.com redirect. Fix that before you send.", l2);
   const l3 = leftToYou("The fixed URL still isn't live. Running tailscale needs sudo, and only you can do that.\n\nOpen a terminal, paste this, and type your password when it asks:\n\n```\nsudo tailscale up\n```\n\nThat gives the URL.");
   ok("…a sudo step: yours, with what to do, but never the command itself (the user doesn't code)", l3 && l3.kind === "step" && /only you can do that/.test(l3.what) && /type your password when it asks\.$/.test(l3.check) && !/sudo tailscale|`/.test(l3.check), l3);
-  // 27 Oct 2026: dailify's last words pointed at its open Workdesk questions, and the card read "They wait on you for."
-  const dfy = "I ticked four items and opened PR #596.\n\nTen items stay `[~]`, and none has anything new to act on. They wait on you for `{#kea-realtime-turns}` and `{#dailify-ns-switch}` on Workdesk, and on the 10 numbers waiting for your verdict on the speech-to-speech re-test.";
+  // 27 Oct 2026: another lane's last words pointed at its open Workdesk questions, and the card read "They wait on you for."
+  const dfy = "I ticked four items and opened PR #596.\n\nTen items stay `[~]`, and none has anything new to act on. They wait on you for `{#kea-realtime-turns}` and `{#ns-switch}` on Workdesk, and on the 10 numbers waiting for your verdict on the speech-to-speech re-test.";
   ok("…pointing at questions already on the Workdesk is no new step (never \"They wait on you for.\")", leftToYou(dfy) === null, leftToYou(dfy));
   const cut = leftToYou("All done. It needs your sign-in for `https://example.com/login`.");
   ok("…nor a sentence that's cut off once its code is taken out", cut === null || !/\bfor\.?$/.test(cut.what), cut);

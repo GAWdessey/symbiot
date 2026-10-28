@@ -1349,6 +1349,9 @@ body.lq-phone:not(.lq-work):not(.lq-pooled) #phhome{display:block;position:absol
 #phhome::-webkit-scrollbar{display:none}
 body.lq-phone:not(.lq-work):not(.lq-pooled) :is(#lq,#lqdrops,#lqgroups,#lqneedt,#lqnext,#lqcore,#lqorbits,#lqrelay,#lqmore,#lqline,#lqgo){display:none}
 body.lq-phone:not(.lq-work):not(.lq-pooled) #liquid{background:var(--ink)}
+/* a phone paired with your computer sets nothing up of its own (home.mjs pairedPhone): its Settings keep the language, the link and starting with the phone */
+body.lq-phone #panel-settings>.sset:not(#langset):not(.phkeep){display:none}
+#board.pcboard :is(.bseen,.btalkbtn,.bcheck,.bdraft){display:none}
 #phnav{position:sticky;top:0;z-index:2;display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;margin:0 -16px;padding:8px 16px 10px;background:var(--ink)}
 #phnav::-webkit-scrollbar{display:none}
 #phnav button{flex:none;display:inline-flex;align-items:center;gap:6px;min-height:34px;padding:6px 13px;border-radius:999px;border:1px solid var(--line);background:var(--ink2);color:var(--text);font:500 13px/1 var(--sans);cursor:pointer}

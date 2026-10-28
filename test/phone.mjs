@@ -232,13 +232,16 @@ try {
   const rdir = join(PCFG, "drafts", "act-reports", ".symbiot"); mkdirSync(rdir, { recursive: true });
   writeFileSync(join(rdir, "PRICING-AUDIT.md"), "# Pricing audit\n\nThree plans checked against **what people pay**.\n\n- Free: fine\n- Pro: too cheap\n");
   writeFileSync(join(rdir, "LONG-PLAN.md"), "# A long plan\n\n" + Array.from({ length: 400 }, (_, i) => `Step ${i + 1}: something to do, written out in full so it takes room.`).join("\n\n") + "\n");
-  for (let i = 0; i < 5; i++) writeFileSync(join(rdir, `OLDER-${i}.md`), `# Older ${i}\n\nold\n`);
-  const t0 = Date.now() - 3600000; for (let i = 0; i < 5; i++) { const f = join(rdir, `OLDER-${i}.md`); (await import("node:fs")).utimesSync(f, new Date(t0 - i * 1000), new Date(t0 - i * 1000)); }
+  for (let i = 0; i < 10; i++) writeFileSync(join(rdir, `OLDER-${i}.md`), `# Older ${i}\n\nold\n`);
+  const t0 = Date.now() - 3600000; for (let i = 0; i < 10; i++) { const f = join(rdir, `OLDER-${i}.md`); (await import("node:fs")).utimesSync(f, new Date(t0 - i * 1000), new Date(t0 - i * 1000)); }
   await sleep(5200); // the computer's copy is kept 5 s
   const wireR = wire.length; await P.pollComputer({ fetchFn: tapFetch, notify: () => {}, discover: async () => [] });
   const withR = readJ(join(CFG, "computer.json"));
   const reps = (withR && withR.reports) || [];
-  ok("the copy carries the computer's newest reports, 5 at most, newest first", reps.length === P.PHONE_REPORTS && reps[0].title && reps.some((r) => r.title === "Pricing audit") && !reps.some((r) => r.title === "Older 4"), reps.map((r) => r.title));
+  const withText = reps.filter((r) => typeof r.text === "string");
+  ok("the copy carries the computer's newest reports, newest first: the text of the first 5 and of unread ones up to 8, the rest listed to open", reps.length === 12 && withText.length === P.PHONE_TEXTS && reps.slice(0, 2).every((r) => typeof r.text === "string") && reps.some((r) => r.title === "Pricing audit")
+    && reps.filter((r) => r.more).length === 4 && reps.filter((r) => r.more).every((r) => !("text" in r) && /^Older/.test(r.title)), reps.map((r) => [r.title, typeof r.text, !!r.more]));
+  ok("…each unread as it is on the computer, so the phone's Reports opens on them, not on an empty Unread", reps.every((r) => r.new === true), reps.map((r) => r.new));
   const long = reps.find((r) => r.title === "A long plan");
   ok("…a long one cut at a paragraph, so the copy fits through the relay; it says so", long && long.cut && long.text.length <= P.REPORT_CAP && /\.$/.test(long.text), long && [long.cut, long.text.length]);
   ok("…sealed on the way, like the rest", !wire.slice(wireR).some((w) => /Pricing audit|too cheap/.test(w)), "");
@@ -248,6 +251,18 @@ try {
   ok("…and opens one from the copy, offline too: its text as the page, nothing to ask or tick into ideas there", one.remote && /<b>what people pay<\/b>/.test(one.html) && !one.ideas.length && !one.draft, one && one.html);
   ok("…a cut one says the rest is on the computer", new RegExp("the rest is on " + pcopy.from).test(cutOne.html || ""), cutOne && (cutOne.html || "").slice(-200));
   ok("…one no longer in the copy says so", /isn't in the copy/.test(RP.phoneReport(pcopy, "pc:nope").error || ""), "");
+  const after = RP.phoneReports(P.computerCopy());
+  ok("…opened here, it's read here (the rest stay unread)", after.find((r) => r.title === "Pricing audit").new === false && after.find((r) => r.title === "A long plan").new === false && after.filter((r) => r.new).length === reps.length - 2, after.map((r) => [r.title, r.new]));
+  const older = listed.find((r) => r.title === "Older 9");
+  ok("…one listed without its text needs the computer to open", RP.phoneReportNeedsText(pcopy, older.id) && !RP.phoneReportNeedsText(pcopy, listed.find((r) => r.title === "Pricing audit").id), older);
+  const fetched = await P.pcReportText(older.id, { fetchFn: tapFetch }), olderOne = RP.phoneReport(pcopy, older.id, { fetched });
+  ok("…and opens with its text asked from the computer, sealed like the rest", fetched.text === "# Older 9\n\nold\n" && /old/.test(olderOne.html) && olderOne.remote && !wire.slice(-1).some((w) => /Older 9/.test(w)), [fetched, olderOne.html]);
+  const away = RP.phoneReport(pcopy, older.id, { fetched: { error: "Your computer is out of reach, and this report's text stays there until it's back." } });
+  ok("…out of reach, it says so in its place, not a blank page", /out of reach/.test(away.html) && away.text === "", away.html);
+  ok("the copy carries the computer's Dashboard too: its cards, for the phone's Dashboard", withR.board && Array.isArray(withR.board.cards) && withR.board.hours === 24, withR.board);
+  const pb = P.boardForPhone({ hours: 24, total: 2, cards: [{ id: "w1", name: "GitHub", url: "https://github.com/notifications", source: "github", count: 2, label: "2 notifications", checked: 1793110000123, chat: [{ me: true, text: "secret talk" }],
+    items: [{ id: "a", text: "PR #316 merged", ts: 1, href: "https://github.com/x/y/pull/316", mail: { to: "x" }, need: true }, { id: "b", text: "CI failed", ts: 2 }] }] });
+  ok("…in plain words, without what only the computer acts on (its chat, a draft's mail)", pb.cards.length === 1 && pb.cards[0].count === 2 && pb.cards[0].items.length === 2 && pb.cards[0].items[0].href && !("mail" in pb.cards[0].items[0]) && !("chat" in pb.cards[0]) && pb.cards[0].checked % 600000 === 0, pb);
   ok("a computer has no copy: its own Reports stay as they were", RP.phoneReports(null).length === 0, "");
 
   console.log("6. WHAT NEEDS YOU — told on the phone when it's new, not only shown");
@@ -427,7 +442,7 @@ try {
   const fit = P.fitRelay(200, snapBig, 40 * 1024), fitNone = P.fitRelay(200, snapBig, 4 * 1024), fitNo = P.fitRelay(200, { news: ["y".repeat(300 * 1024)] }, P.RELAY_MAX);
   const applied = P.fitRelay(200, { results: [{ id: "a", ok: true }], state: snapBig }, 40 * 1024), appliedBare = P.fitRelay(200, { results: [{ id: "a", ok: true }], state: { ...snapBig, tasks: Array.from({ length: 400 }, (_, i) => ({ id: "t" + i, text: "x".repeat(200) })) } }, 4 * 1024);
   ok("an apply's answer is trimmed the same way (its copy is under state), and at worst the results go alone: the phone never gets 413 for changes that landed", applied.status === 200 && applied.body.results[0].ok && applied.body.state.reports.every((r) => r.cut) && appliedBare.status === 200 && appliedBare.body.results[0].ok && appliedBare.body.state === null, [applied.status, appliedBare.status, appliedBare.body]);
-  ok("the computer keeps what it sends through the relay under its cap: the reports' text cut first, then the reports, else a plain refusal", fit.status === 200 && fit.body.reports.length === 5 && fit.body.reports.every((r) => r.cut && r.text.length <= 1500) && fitNone.status === 200 && !fitNone.body.reports.length && fitNo.status === 413 && /too big/.test(fitNo.body.error) && P.fitRelay(200, snapBig, 0).body === snapBig, [fit.status, fitNone.status, fitNo.status]);
+  ok("the computer keeps what it sends through the relay under its cap: the reports' text cut first, then the reports listed without text, else a plain refusal", fit.status === 200 && fit.body.reports.length === 5 && fit.body.reports.every((r) => r.cut && r.text.length <= 1500) && fitNone.status === 200 && fitNone.body.reports.length === 5 && fitNone.body.reports.every((r) => r.more && r.text === undefined) && fitNo.status === 413 && /too big/.test(fitNo.body.error) && P.fitRelay(200, snapBig, 0).body === snapBig, [fit.status, fitNone.status, fitNo.status]);
   await pc.stop(); pc = startComputer({ SYMBIOT_NO_RELAY: "0", SYMBIOT_RELAY: RELAY }); await pc.ready;
   const cOff = readJ(join(PCFG, "config.json")); cOff.phoneLink.relay = false; writeFileSync(join(PCFG, "config.json"), JSON.stringify(cOff));
   await pc.cmd("on"); await sleep(400);

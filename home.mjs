@@ -39,7 +39,7 @@ import { moneyNote, splitNeeds, applyText, loadCardText, blankAsk, blankText } f
 import { converse, actIn, actNow, taskIn, loadMind, dayMark } from "./mind.mjs";
 import { repoPathMap, laneMap, reposState, scanRoots } from "./scan.mjs";
 import { resolveProvider, PROVIDERS, claudeState } from "./ai.mjs";
-import { reportsNews, listReports, readReport, decide, markIdeas, sweepSuperseded } from "./reports.mjs";
+import { reportsNews, listReports, readReport, decide, markIdeas, sweepSuperseded, phoneReports } from "./reports.mjs";
 import { awaitingState, inboxSight } from "./handback.mjs";
 import { newClashes } from "./checks.mjs";
 import { postsState } from "./post.mjs";
@@ -47,7 +47,18 @@ import { sentLine } from "./sentmail.mjs";
 import { laneCap, verdict, peel, inflight, inflightIds, parallelLane, openTasksOf, laneFacts, dropHeld, startParallel, besideAgain } from "./parallel.mjs";
 import { otherMachine, loadLaneIds } from "./laneids.mjs";
 import { licenceState, isPro } from "./licence.mjs";
-import { PHONE, ANDROID_APP, computerView, phoneApprovals, linkState, ask as askComputer } from "./phone.mjs";
+import { PHONE, ANDROID_APP, computerView, computerCopy, phoneApprovals, linkState, ask as askComputer } from "./phone.mjs";
+// On a phone paired with your computer, its unread reports count with the phone's own (Reports' badge on Home).
+function withPcReports(rep) {
+  if (!PHONE) return rep;
+  const pc = phoneReports(computerCopy()).filter((r) => r.new);
+  return pc.length ? { count: (rep.count || 0) + pc.length, latest: rep.latest || pc[0].title } : rep;
+}
+// A phone that has paired with a computer: the computer has the AI, the projects, the agent and
+// the sites, so none of the computer's setup is asked here (27 Oct 2026: "it keeps wanting me to
+// link my ai ... like when you set it up on pc"). Paired once is enough: a key handed in late at a
+// restart, or a link that's dropped, isn't a reason to set the phone up as a computer.
+const pairedPhone = () => { if (!PHONE) return false; try { return !!loadConfig().computer; } catch { return false; } };
 import { draftPreview, MARKETING, MARKETING_DIR, aboutMarketing, displayName, productNames, productOf, untagged, tagged, draftFiles, setDraftStatus, postedCmd } from "./marketing.mjs";
 import { noteCardWords } from "./triage.mjs";
 
@@ -207,7 +218,7 @@ function nextUp({ now = Date.now(), map = {}, list = [], named = displayName, de
   const parked = new Set(tryOr(deps.parked || parkedPaths, []) || []);
   const allTasks = (tryOr(deps.tasks || loadTasks, []) || []).filter(Boolean), tasks = allTasks.filter((t) => !t.done && !t.archived && !t.review);
   // unread reports: an agent reads them all and leaves one page, their next steps as ideas you add in a click
-  const rep = tryOr(deps.reports || reportsNews, { count: 0 }) || { count: 0 };
+  const rep = tryOr(deps.reports || (() => withPcReports(reportsNews())), { count: 0 }) || { count: 0 };
   if (rep.count && fresh("next:reports")) out.push({ id: "next:reports", title: `Triage the ${rep.count} unread report${rep.count > 1 ? "s" : ""}`, gain: `clears the backlog: one page to read, and their next steps as tasks you add in a click`, time: `~${Math.max(5, Math.min(30, Math.ceil(rep.count * 1.25 / 5) * 5))} min, by an agent`, act: "agent", label: "Start an agent" });
   // a handover that errored and was left (older than Home's asks): run it on its own
   const retry = (tryOr(() => (deps.stuck || stuckHandovers)({ now, within: RETRY_WITHIN }), []) || []).filter((h) => fresh("next:retry:" + h.id));
@@ -421,7 +432,7 @@ function homeState({ now = Date.now(), fresh = false, deps = {}, tick = false } 
   const pending = deps.pending || (() => { try { return pendingReview({ kept: true }); } catch { return []; } });
   const agents = deps.agents || (() => { try { return agentsNow(); } catch { return []; } });
   const lanes = deps.lanes || (() => { try { return lanesState(); } catch { return { handoffs: [] }; } });
-  const reports = deps.reports || (() => { try { return reportsNews(); } catch { return { count: 0 }; } });
+  const reports = deps.reports || (() => { try { return withPcReports(reportsNews()); } catch { return { count: 0 }; } });
   const connected = deps.connected || (() => !!resolveProvider());
   const repos = deps.repos || (() => { try { return laneMap(); } catch { return {}; } });
   const search = deps.search || (() => { try { return reposState(); } catch { return { searching: false, at: 0, list: [] }; } });
@@ -562,6 +573,8 @@ function homeState({ now = Date.now(), fresh = false, deps = {}, tick = false } 
   // labels ("I've merged it myself") can't bring a merge back.
   { const holds = deps.reviewHolds || ((y) => { const f = map[y.repo] || (y.path && !/^goal:/.test(y.path) ? y.path : ""), slug = f ? slugFor(f) : ""; return slug ? reviewHolds(slug, { now }) : []; });
     you = you.map((y) => heldMergeCard(y, holds)).filter(Boolean); }
+  // a paired phone sets nothing up of its own: no AI, projects, agent, sites or inbox to connect (pairedPhone)
+  if ((deps.pairedPhone || pairedPhone)()) you = you.filter((y) => y.kind !== "setup" && y.fix !== "repos");
   if (!Object.keys(deps).length) for (const y of you) SHOWN.set(y.id, y); // every card built, not only the six sent: what cardFor finds
   (deps.syncJobs || syncOnUser)(you, { now }); // the job record's "waiting on you": these cards, all of them (jobs.mjs)
   const nextAll = nextUp({ now, map, list, named, deps: { board: () => bd, reports: () => rep, ...(deps.next || {}) } });
@@ -778,6 +791,7 @@ function homeAnswer(id, { pick, text = "" } = {}, deps = {}) {
 // Claude's own connector for it (a link signs in Symbiot's browser, not the run).
 function firstSteps({ deps = {} } = {}) {
   const tryOr = (f, d) => { try { return f(); } catch { return d; } };
+  if (tryOr(deps.pairedPhone || pairedPhone, false)) return { steps: [], done: true }; // its computer has all of these
   const ai = tryOr(deps.connected || (() => !!resolveProvider()), false);
   const repos = Object.keys(tryOr(deps.repos || repoPathMap, {}) || {}).length;
   const cmd = String(tryOr(deps.cmd || handoffCmd, "") || "");
@@ -1332,12 +1346,12 @@ function waitWhy({ map, named, running, held, ready, isParked, deps = {} }) {
     // its agent marked it [~]: it waits on something outside the run, and an answer coming in starts the lane again.
     // Only a real, named blocker holds it (agents.mjs namedBlocker): "waits on: someone with root" when the lane
     // has root left steve's OOM fix idle with no card to release it (25 Oct 2026). That blocker is what it waits
-    // on, before the lane's card: dailify's CI read, blocked by GitHub billing, read "Waiting on a step only you can do" (27 Oct 2026)
+    // on, before the lane's card: another lane's CI read, blocked by GitHub billing, read "Waiting on a step only you can do" (27 Oct 2026)
     const on = inBrief ? (deps.waiting || waitingTask)(path, t.text) : "";
     const blocker = on && (deps.named || namedBlocker)(on) ? on.replace(/^(?:waits|waiting) (?:on|for):?\s*/i, "").replace(/[.\s]+$/, "") : "";
     if (blocker) return { kind: "waiting", noGo: true, text: `Waiting on ${blocker}. ${name}'s agent carries on once that's in` };
     // a "prepare this fully, then ask" task does its part first and asks after (intuition.mjs): never held
-    // by the lane's question or step before it has prepared anything (dailify's two, 27 Oct 2026)
+    // by the lane's question or step before it has prepared anything (another lane's two, 27 Oct 2026)
     const h = PREPARES.test(t.text) && held[lane] && !held[lane].approve ? null : held[lane];
     if (h) return h.approve ? { kind: "approve", noGo: true, text: `Waiting on your OK for ${name}'s last run, on the Workdesk`, path: h.path } : h.step ? { kind: "step", noGo: true, text: `Waiting on a step only you can do for ${name}${h.what ? ` ("${h.what}")` : ""}: its card is under Needs you`, path: h.path } : { kind: "asks", noGo: true, text: `Waiting on your answer to ${name}'s question, on the Workdesk`, path: h.path };
     if (inBrief && ready.has(lane)) return { kind: "approve", noGo: true, text: `Waiting on your OK for ${name}'s work, on the Workdesk`, path };
@@ -1450,13 +1464,15 @@ function startOnboarding() { const cf = loadConfig(); if (!cf.onboarding) { cf.o
 // existed): its unfinished setup carried on at "Meet Symbiot", then "Your AI" asked to
 // install Claude Code on the phone. An unfinished setup on a phone that isn't paired
 // goes to "Your computer" first, once (computer: true): "No computer" carries on as before.
-function phoneSetupFirst({ app = ANDROID_APP, paired = () => !!computerView().paired } = {}) {
+// Paired already (a computer in its config, its key handed in or not yet): setup is over, not sent to "Your computer".
+function phoneSetupFirst({ app = ANDROID_APP, paired = () => !!loadConfig().computer } = {}) {
   if (!app) return null;
   const cf = loadConfig(), o = cf.onboarding;
-  if (!o || !o.pending || o.computer) return o || null;
+  if (!o || !o.pending) return o || null;
   let isPaired = false; try { isPaired = paired(); } catch {}
-  if (!isPaired) o.step = "computer";
-  o.computer = true; saveConfig(cf); return o;
+  if (isPaired) { cf.onboarding = { ...o, pending: false, done: Date.now(), step: "done", computer: true }; saveConfig(cf); return cf.onboarding; }
+  if (o.computer) return o;
+  o.step = "computer"; o.computer = true; saveConfig(cf); return o;
 }
 // A phone never sets up an AI of its own: it uses the computer's. Until chat is relayed
 // there, say what it can do instead (null on a computer, which does ask to connect one).
@@ -1480,7 +1496,8 @@ function onboarding({ fresh = false } = {}) {
   let cfg = loadConfig(), o = cfg.onboarding || {};
   const tryOr = (f, d) => { try { return f(); } catch { return d; } };
   // the phone app: paired with the computer is all its setup is, so it finishes by itself
-  if (ANDROID_APP && o.pending && o.step !== "welcome" && tryOr(() => !!computerView().paired, false)) { cfg.onboarding = o = { ...o, pending: false, done: Date.now(), step: "done" }; saveConfig(cfg); cached = null; }
+  // (from any step: "welcome" waited, and showed "Setup takes a few minutes: your AI, your work, your agent…" on a paired phone)
+  if (o.pending && tryOr(pairedPhone, false)) { cfg.onboarding = o = { ...o, pending: false, done: Date.now(), step: "done" }; saveConfig(cfg); cached = null; }
   const steps = onbSteps();
   let st = null; if (!ANDROID_APP) try { st = claudeState(fresh); } catch {}
   const r = tryOr(() => resolveProvider(), null);

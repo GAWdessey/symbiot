@@ -91,13 +91,13 @@ try {
   }
 
   console.log("A CARD WITH NO QUESTION IN IT — never under Needs you, and its lane's tasks say what really holds them");
-  // 27 Oct 2026: "Dailify needs you / They wait on you for." held three dailify tasks: two "prepare this fully,
+  // 27 Oct 2026: "another lane needs you / They wait on you for." held three another lane tasks: two "prepare this fully,
   // then ask" tasks and a CI read blocked by GitHub billing
   const { blankAsk } = await import("../needs.mjs");
   ok("a card cut off on \"for\" is blank", blankAsk({ kind: "ask", raw: "", q: "They wait on you for.", sub: "They wait on you for." }) && !blankAsk({ kind: "ask", q: "Which account should I sign in with?" }));
-  ok("…and a run whose last words point at its Workdesk questions leaves no card", needsOf(LANE, { final: "Ten items stay [~]. They wait on you for `{#kea-realtime-turns}` and `{#dailify-ns-switch}` on Workdesk.", end: Date.now() - 1000 }) === null);
+  ok("…and a run whose last words point at its Workdesk questions leaves no card", needsOf(LANE, { final: "Ten items stay [~]. They wait on you for `{#kea-realtime-turns}` and `{#ns-switch}` on Workdesk.", end: Date.now() - 1000 }) === null);
   wait(Date.now() + 3000, PHONE_STEP.replace("tap Yes", "tap Allow"));
-  const PREP = { id: "p1", text: "Prepare this fully, then ask the user for their OK in .symbiot/QUESTIONS.md before doing the outward part: switch dailify.co.za's name servers", repo: "symbiot", ts: Date.now() - 3600000 };
+  const PREP = { id: "p1", text: "Prepare this fully, then ask the user for their OK in .symbiot/QUESTIONS.md before doing the outward part: switch another lane.co.za's name servers", repo: "symbiot", ts: Date.now() - 3600000 };
   const CI = { id: "p2", text: "Read the CI result for PR 596", repo: "symbiot", ts: Date.now() - 3600000 };
   const pd = { ...deps([run()]), tasks: () => [PREP, CI, TASKS[0]], brief: () => ({ at: 0, tasks: [CI.text] }), waiting: (p, t) => (t === CI.text ? "waits on: GitHub billing, which blocks every CI run" : ""), named: () => true };
   const pw = workScene({ deps: pd }).waiting, whyOf = (id) => (pw.find((x) => x.id === "task:" + id) || {}).why || {};

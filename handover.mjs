@@ -291,8 +291,8 @@ const commandish = (s) => COMMANDISH.test(String(s || ""));
 // What's left of a sentence once the command in it is gone: "" when that leaves only its lead-in ("To compare them yourself:").
 const noCommand = (s) => { s = String(s || ""); const m = COMMANDISH.exec(s); if (!m) return s; const t = s.slice(0, m.index).replace(/(?:[\s:;,(-]|\b(?:run|type|paste|use|try|with|enter|do)\b)+$/i, "").trim(); return t.split(/\s+/).length < 4 || /\byourself\b/i.test(t) || dangles(t) ? "" : t + "."; };
 // A sentence pointing at questions already asked (their Workdesk anchors, "on the Workdesk", QUESTIONS.md)
-// is no new step: those questions are cards of their own. dailify's "They wait on you for `{#kea-realtime-turns}`
-// and `{#dailify-ns-switch}` on Workdesk" became a card reading "They wait on you for." (27 Oct 2026).
+// is no new step: those questions are cards of their own. another lane's "They wait on you for `{#kea-realtime-turns}`
+// and `{#ns-switch}` on Workdesk" became a card reading "They wait on you for." (27 Oct 2026).
 const ASKED_ALREADY = /\{#[\w-]+\}|\b(?:on|in) (?:the )?Workdesk\b|\bQUESTIONS\.md\b/i;
 // What's left of a sentence that stops on a word needing more after it ("They wait on you for."): no step at all.
 // Not a question ("Which account should I sign in with?"): that one ends where English lets it.

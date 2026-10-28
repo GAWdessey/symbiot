@@ -154,13 +154,16 @@ var o=G.out;for(var i=0;i<o.length;i++)o[i]=0;var k=0,put=function(px,py,r,a){if
 BS.beads.forEach(function(x){put(x.x,x.y,x.r,x.need?1:0);});
 var th=LQ.theme||{},U=G.U;gl.uniform2f(U.uRes,W,H);gl.uniform1f(U.uT,t);gl.uniform1f(U.uDpr,d);gl.uniform4fv(U.uB,o);gl.uniform3f(U.uRip,0,0,-10);gl.uniform1f(U.uStyle,th.look==='glass'?0:th.look==='pearl'?2:1);gl.uniform1f(U.uContrast,th.contrast?1:0);gl.uniform1f(U.uExposure,th.night?0.82:1);gl.drawArrays(gl.TRIANGLES,0,3);}
 function renderBoard(){var b=BOARD,cs=b.cards,el=$('board');
+// on a phone paired with your computer: the computer's cards, read here; Seen, Talk and Check now are the computer's (phone.mjs boardForPhone)
+if(el.classList)el.classList.toggle('pcboard',!!b.computer);
+if(b.computer&&!cs.length){$('boardsum').textContent='What '+b.computer+' watches, side by side.';el.innerHTML="<div style='grid-column:1/-1'><div class='note muted' style='margin-top:0'>Nothing is watched on "+esc(b.computer)+" yet. What it watches (your inbox, a chat, GitHub) shows here once it does.</div></div>";return;}
 var tab=$('boardtab');if(tab)tab.textContent='Dashboard'+(b.total?' · '+b.total:'');
 var bst=$('bstream');if(bst&&bst.classList)bst.classList.toggle('none',!cs.length);var bl=$('blist');if(bl&&!cs.length)bl.open=true;
 if(!cs.length){$('boardsum').textContent='Everything you watch, side by side.';
 el.innerHTML="<div style='grid-column:1/-1'><div class='note muted' style='margin-top:0'>Nothing watched yet. Map your inbox, a chat (web.whatsapp.com) or any page under <b>Screens</b> on the Map tab and click <b>Watch</b> on it, or click <b>Watch GitHub</b> there. Each one gets a card here with what's new on it.</div><div class='row' style='margin-top:8px'><button class='ghost' id='boardgo'>Go to Screens</button></div></div>";
 $('boardgo').addEventListener('click',function(){setTab('map');var sbx=$('screensbox');if(sbx)sbx.open=true;var w=$('watchbox');if(w&&w.scrollIntoView)w.scrollIntoView({block:'center'});});return;}
 var when=b.hours===24?'since yesterday':b.hours===72?'in the last 3 days':'in the last 7 days';
-var lastRead=0;cs.forEach(function(c){if(c.checked>lastRead)lastRead=c.checked;});var sub=$('boardsub');if(sub)sub.textContent=(lastRead?'Read '+agoTxt(lastRead)+' \u00b7 ':'')+cs.length+(cs.length===1?' feed':' feeds')+bsWaitWord();
+var lastRead=0;cs.forEach(function(c){if(c.checked>lastRead)lastRead=c.checked;});var sub=$('boardsub');if(sub)sub.textContent=(b.computer?'On '+b.computer+' \u00b7 ':'')+(lastRead?'Read '+agoTxt(lastRead)+' \u00b7 ':'')+cs.length+(cs.length===1?' feed':' feeds')+bsWaitWord();
 var waiting=cs.filter(function(c){return c.count;}).map(function(c){return c.label+(c.source==='page'?' on '+c.name:'');});
 $('boardsum').innerHTML=waiting.length?"<b style='color:var(--bone)'>Waiting on you "+when+":</b> "+esc(waiting.join(', ')):"Nothing new "+when+" on the "+cs.length+" thing"+(cs.length===1?"":"s")+" you watch.";
 el.innerHTML=cs.map(function(c,i){var nt=Math.ceil(((c.chat||[]).length)/2);

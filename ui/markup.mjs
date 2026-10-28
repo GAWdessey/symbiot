@@ -235,14 +235,14 @@ export default `</style></head><body>
 <div class="note muted" id="mailnote">No API, no OAuth, no password: Symbiot reads the mail your desktop mail app (Thunderbird, Apple Mail, Evolution, mutt&hellip;) already keeps on this computer, or an exported .mbox &mdash; so anyone can link theirs. Headers only, never a message body; off until you tick it. Experimental: tested with mbox and Maildir, not yet on real Apple Mail, Evolution or KMail stores.</div>
 <div id="mailout"></div>
 </div>
-<div class="sset">
+<div class="sset phkeep">
 <h3 class="ssh">Weekly write-up and start at login</h3>
 <label class="check"><input type="checkbox" id="weeklyon"> Write my week and send me a desktop notification every</label>
 <div class="row" style="margin-top:2px"><select id="weeklyday" style="width:auto"><option value="1">Monday</option><option value="2">Tuesday</option><option value="3">Wednesday</option><option value="4">Thursday</option><option value="5">Friday</option><option value="6">Saturday</option><option value="0">Sunday</option></select><span class="muted">at</span><select id="weeklyhour" style="width:auto"></select><button class="ghost" id="weeklynow" title="write it now and send the notification, to check it works">Write it now</button></div>
 <label class="check"><input type="checkbox" id="autostart"> <span id="autostartlbl">Start Symbiot in the background when I log in (no window)</span></label>
 <div class="note muted" id="desktopnote"></div>
 </div>
-<div class="sset">
+<div class="sset phkeep">
 <h3 class="ssh">Your phone <span class="muted">(experimental)</span></h3>
 <div id="phonelink"></div>
 </div>

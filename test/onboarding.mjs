@@ -93,7 +93,10 @@ try {
   setOnb({ ...lc().onboarding, step: "welcome" });
   ok("…once: chose No computer, it stays on Meet Symbiot", phoneSetupFirst({ app: true, paired: () => false }).step === "welcome");
   setOnb({ pending: true, step: "computer", skipped: [], computer: true });
-  ok("a phone already paired keeps its step", phoneSetupFirst({ app: true, paired: () => true }).step === "computer");
+  { const done = phoneSetupFirst({ app: true, paired: () => true });
+    ok("a phone already paired is set up: its setup ends there, with no step left to show (27 Oct 2026)", done.pending === false && done.step === "done", done); }
+  setOnb({ pending: true, step: "welcome", skipped: [], computer: true });
+  ok("…from Meet Symbiot too: paired, nothing of the computer's setup is shown", phoneSetupFirst({ app: true, paired: () => true }).pending === false);
   setOnb({ pending: false, step: "done", skipped: [] });
   ok("a finished setup isn't reopened", phoneSetupFirst({ app: true, paired: () => false }).pending === false);
   setOnb({ pending: true, step: "welcome", skipped: [] });
@@ -107,6 +110,13 @@ try {
   const ph = JSON.parse(execSync(`${JSON.stringify(process.execPath)} --input-type=module -e 'const h = await import(${JSON.stringify(pathToFileURL(join(dirname(fileURLToPath(import.meta.url)), "..", "home.mjs")).href)}); const s = h.homeState({}); const a = await h.homeAsk("hi"); console.log(JSON.stringify({ cards: s.you.map((y) => y.id), err: a.error }));'`, { env: { ...process.env, HOME: join(HOME, "nophone"), USERPROFILE: join(HOME, "nophone"), SYMBIOT_AS_PHONE: "1", SYMBIOT_CLAUDE_CMD: "/nonexistent" }, encoding: "utf8" }).trim().split("\n").pop());
   ok("a phone (Termux too) gets no Connect-an-AI, agent or connector card", !ph.cards.some((id) => /^setup:(ai|agent|conn|pick)/.test(id)), ph.cards);
   ok("its chat says to pair, not to connect an AI", /Pair this phone/.test(ph.err || ""), ph.err);
+  // paired: none of the computer's setup at all, in Home's cards, Settings' first steps or the setup screens (27 Oct 2026)
+  const PAIRED = join(HOME, "pairedphone"), PCF = join(PAIRED, ".config", "symbiot"); mkdirSync(PCF, { recursive: true });
+  writeFileSync(join(PCF, "config.json"), JSON.stringify({ computer: { v: 2, id: "c1", name: "pop-os", url: "http://192.168.0.10:7392", fp: "f", pub: "p" }, onboarding: { pending: true, step: "welcome", skipped: [] }, scanRoots: [join(PAIRED, "nothing")] }));
+  const pp = JSON.parse(execSync(`${JSON.stringify(process.execPath)} --input-type=module -e 'const h = await import(${JSON.stringify(pathToFileURL(join(dirname(fileURLToPath(import.meta.url)), "..", "home.mjs")).href)}); const s = h.homeState({ fresh: true }); const f = h.firstSteps(); const o = h.onboarding(); console.log(JSON.stringify({ cards: s.you.map((y) => y.kind + ":" + y.id), first: f, onb: { pending: o.pending, step: o.step } }));'`, { env: { ...process.env, HOME: PAIRED, USERPROFILE: PAIRED, SYMBIOT_ANDROID_APP: "1", SYMBIOT_CLAUDE_CMD: "/nonexistent" }, encoding: "utf8" }).trim().split("\n").pop());
+  ok("a paired phone gets no setup card: no AI, projects, agent, sites or inbox to set up", !pp.cards.some((c) => /^setup:|repos:confirm/.test(c)), pp.cards);
+  ok("…Settings' first steps are done there: its computer has them", pp.first.done === true && pp.first.steps.length === 0, pp.first);
+  ok("…and a setup left on Meet Symbiot ends by itself, so no setup screen shows again", pp.onb.pending === false && pp.onb.step === "done", pp.onb);
 
   console.log("THE ICON — in your look");
   const f = iconSvg("ferro"), g = iconSvg("glass"), p = iconSvg("pearl");

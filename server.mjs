@@ -59,8 +59,8 @@ import { marketingOverview } from "./mkoverview.mjs";
 import { MARKETING_DIR, MARKETING, productNames, draftPreview, laneMedia, displayName, setDraftMedia } from "./marketing.mjs";
 import { trays, trayMedia, setBlur, addBlur, removeBlur, setReviewed, renderCapture } from "./tray.mjs";
 import { captureProduct, captureProducts } from "./capture.mjs";
-import { listReports, readReport, reportImage, markAllRead, phoneReports, phoneReport, withNeeds } from "./reports.mjs";
-import { heardCode, setCodeRelay, computerCopy, relaunchEnv, phoneState, setPhoneLink, startPhoneLink, freePhonePort, usePhonePort, newCode, unpairPhone, setRelay, findComputers, pairComputer, forgetComputer, pollComputer, queueChange, dismissNote, setPhoneApprove, startPhone } from "./phone.mjs";
+import { listReports, readReport, reportImage, markAllRead, phoneReports, phoneReport, phoneReportNeedsText, withNeeds } from "./reports.mjs";
+import { heardCode, setCodeRelay, computerCopy, pcReportText, relaunchEnv, phoneState, setPhoneLink, startPhoneLink, freePhonePort, usePhonePort, newCode, unpairPhone, setRelay, findComputers, pairComputer, forgetComputer, pollComputer, queueChange, dismissNote, setPhoneApprove, startPhone } from "./phone.mjs";
 import { knowledgeState, addKnowledgeFolder, removeKnowledgeFolder, indexKnowledge, knowledgeTick, searchKnowledge } from "./knowledge.mjs";
 import { runChecks, checksState, markClashesSeen } from "./checks.mjs";
 import { triageStats } from "./triage.mjs";
@@ -761,10 +761,10 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       // Reports (reports.mjs): what runs wrote up in their .symbiot/; read by id, never by path.
       // on a phone, its computer's newest reports too (from the copy it keeps)
       if (u.pathname === "/api/reports") return json(res, { reports: [...withNeeds(listReports()), ...phoneReports(computerCopy())].sort((a, b) => b.mtime - a.mtime) });
-      if (u.pathname === "/api/reports/read") { const id = u.searchParams.get("id") || ""; return json(res, id.startsWith("pc:") ? phoneReport(computerCopy(), id) : readReport(id)); }
+      if (u.pathname === "/api/reports/read") { const id = u.searchParams.get("id") || ""; if (!id.startsWith("pc:")) return json(res, readReport(id)); const pc = computerCopy(); return json(res, phoneReport(pc, id, { fetched: phoneReportNeedsText(pc, id) ? await pcReportText(id) : null })); }
       // A report's image (an <img> src, so its token is in ?t=): by the report's id and a src it shows, from its allowed folders only.
       if (u.pathname === "/api/reports/image") { const f = reportImage(u.searchParams.get("id") || "", u.searchParams.get("src") || ""); if (f.error) { res.writeHead(404, { "content-type": "text/plain" }); res.end(f.error); return; } res.writeHead(200, { "content-type": f.type, "cache-control": "private, no-cache", "x-content-type-options": "nosniff" }); res.end(readFileSync(f.file)); return; }
-      if (u.pathname === "/api/reports/seen" && req.method === "POST") return json(res, markAllRead());
+      if (u.pathname === "/api/reports/seen" && req.method === "POST") return json(res, markAllRead({ list: [...listReports(), ...phoneReports(computerCopy())] }));
       if (u.pathname === "/api/reports/ideas" && req.method === "POST") { const b = await readBody(req); return json(res, reportIdeasAdd(String(b.id || ""), b.ideas)); }
       if (u.pathname === "/api/reports/dismiss" && req.method === "POST") { const b = await readBody(req); return json(res, reportIdeasDismiss(String(b.id || ""), b.ideas, {}, !!b.done)); }
       if (u.pathname === "/api/reports/ask" && req.method === "POST") { const b = await readBody(req); return json(res, await reportAsk(String(b.id || ""), b.question)); }
@@ -811,6 +811,8 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       if (u.pathname === "/api/lanes/park" && req.method === "POST") { const b = await readBody(req), map = laneMap(), p = Object.values(map).includes(String(b.path || "")) ? String(b.path) : map[String(b.repo || "")]; if (!p) return json(res, { error: "That project isn't on this computer." }); return json(res, parkLane(p, b.on !== false)); }
       // Watch (watch.mjs): a mapped page read again every few minutes, and what's new on it.
       if (u.pathname === "/api/watch") return json(res, watchState());
+      // on a phone paired with your computer: the computer's Dashboard, from the copy it sent (phone.mjs boardForPhone)
+      if (u.pathname === "/api/watch/board") { const pc = computerCopy(), pb = pc && pc.copy.board; if (pb && Array.isArray(pb.cards)) return json(res, { ...pb, brief: false, computer: pc.from }); }
       if (u.pathname === "/api/watch/board") return json(res, watchBoard(Math.min(168, Math.max(1, Number(u.searchParams.get("hours")) || 24))));
       if (u.pathname === "/api/watch/add" && req.method === "POST") { const b = await readBody(req); return json(res, addWatch({ screen: b.screen ? String(b.screen) : "", site: b.site, every: b.every })); }
       if (u.pathname === "/api/watch/every" && req.method === "POST") { const b = await readBody(req); return json(res, setEvery(String(b.id || ""), b.every)); }
