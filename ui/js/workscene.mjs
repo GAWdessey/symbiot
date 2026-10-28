@@ -47,7 +47,7 @@ lqRelayPhone(ps.length);
 if(el.contains&&document.activeElement&&el.contains(document.activeElement)&&el.innerHTML)return;if(sig===LQ.relaySig&&el.innerHTML){rlMeasure();return;}LQ.relaySig=sig;
 if(!w){el.innerHTML="<span class='rlsr'>Loading your projects…</span>"+[0,1,2].map(function(){return "<section class='rly rlskel' aria-hidden='true'><i></i><i></i><i></i></section>";}).join('');return;}
 if(!ps.length){el.innerHTML="<section class='rly rlempty'><b>No projects with work on them yet</b><p class='rlsum'>Tell Symbiot what to do in the box below.</p></section>";return;}
-el.innerHTML=ps.map(function(p,i){var nm=p.name||p.repo,q=(p.qs||[])[0],st=p.pill||'Idle',amber=!!RLAMBER[st];
+el.innerHTML=ps.map(function(p,i){var nm=p.name||p.repo,q=(p.qs||[])[0],st=p.pill||'Idle',amber=!!RLAMBER[st]||/^Needs your /.test(st);
 var h="<section class='rly"+(amber?' lit':'')+"' data-i='"+i+"'><div class='rlh'><b>"+esc(nm)+"</b><span class='rls"+(st==='At work'?' rlgo':'')+"'>"+esc(st)+"</span></div>";
 if(p.now)h+="<p class='rlnow'>"+esc(p.now)+"</p>";
 if(p.summary&&!(q&&String(q.q||'').trim()===String(p.summary).trim()))h+="<p class='rlsum"+(RLOPEN[p.repo]?' open':'')+"'>"+esc(p.summary)+"</p><button type='button' class='rlmore' hidden aria-expanded='"+(RLOPEN[p.repo]?'true':'false')+"'>"+(RLOPEN[p.repo]?'Less':'More')+"</button>";
