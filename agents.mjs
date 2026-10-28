@@ -21,7 +21,7 @@ import { apiOptions, blockedSignIn, apiRoute, realChrome, ownChromeStep, CHROME_
 import { actSites, goAhead, refuseHold, holdOf, goWords, goAnswer, goHistory, signInNotNeeded, switchOnAct } from "./chromegate.mjs";
 import { pushGo } from "./pushgate.mjs";
 import { goAhead as phoneGo } from "./phonegate.mjs";
-import { dangles, lanesJob, parseFacts, leftToYou, blockedChecks, blockedHandover, OPS, gitWork, agentsGitWork, agentsClicking, agentsCodeWork, agentsMail, agentsPosting, linkedAsks, linkedChore, PUSH_OK } from "./handover.mjs";
+import { dangles, askedAlready, lanesJob, parseFacts, leftToYou, blockedChecks, blockedHandover, OPS, gitWork, agentsGitWork, agentsClicking, agentsCodeWork, agentsMail, agentsPosting, linkedAsks, linkedChore, PUSH_OK } from "./handover.mjs";
 import { scanRoots, repoPathMap, laneMap } from "./scan.mjs";
 import { knowledgeFolders } from "./knowledge.mjs";
 import { pickModel, MODEL } from "./route.mjs";
@@ -1197,6 +1197,10 @@ function needsOf(path, { final = "", waiting = null, end = Date.now(), start = e
   if (now - end > NEEDS_FOR) return null;
   let n = waiting ? { kind: "step", what: clipWords(String(waiting.step || "").replace(/^\s*👤\s*(You\s*(\([^)]*\))?:)?\s*/, "").trim(), 240), check: "", label: "", waiting: true } : leftToYou(final) || readNeeds(path, final);
   if (!n || !n.what || dangles(n.what)) return null; // "They wait on you for.": no question in it, so no card (27 Oct 2026)
+  // waiting on the user's answer to a card already put to them: that card is the question, never a second card
+  // pointing at it with only I've done this and Skip (28 Oct 2026); and its check is this job's, never another lane's state
+  if (!n.waiting && askedAlready(`${n.label || ""} ${n.what}`)) return null;
+  if (n.check && (lanesJob(n.check) || askedAlready(n.check))) n = { ...n, check: "" };
   // its own words say nothing waits on the user: an ops run's "waits for your OK" card said
   // "Nothing is waiting on the user", and its Go ahead only started a run that repeated its report (21 Oct 2026)
   if (!n.waiting && (NOTHING_FOR_YOU.test(`${n.label || ""} ${n.what} ${n.check || ""}`) || (NOTHING_FOR_YOU.test(final) && !/👤|only you/i.test(final)))) return null;
@@ -1260,8 +1264,8 @@ function readNeeds(path, final, { file = READ_FILE } = {}) {
 }
 const READ_SYSTEM = `You read the last message a coding agent left when its run ended, and say whether it leaves the user something to do before the work is finished.
 That's either something waiting for their OK before it happens (sending, posting, deleting, paying, closing, merging, publishing) or a step only they can take (signing in, a password or a 2FA code, sudo, a phone or a cable, a token from a provider's console, a choice that's theirs to make). Local git work (staging, committing, pulling, pushing) is never a step only they can take: an agent does it, so it's "approve", their OK before a push.
-Not: work that's done, a summary of what changed, an idea they might like, changes waiting for review or Approve in Symbiot, a connector to sign in to again, a question already asked in QUESTIONS.md, or work another lane or agent does or was handed (ops on a server or an account, marketing posting, another repo's lane): that's theirs, never the user's, even when this run can't reach it.
-Reply with JSON only, no markdown fence: {"needs": false} or {"needs": true, "kind": "approve" or "step", "what": "the sentence that says so, in its own words, under 240 characters", "check": "what it says to check first, or empty", "label": "what it is in 1 to 3 words, or empty"}.`;
+Not: work that's done, a summary of what changed, an idea they might like, changes waiting for review or Approve in Symbiot, a connector to sign in to again, a question already asked in QUESTIONS.md or on a card (waiting on their answer to a card is that card, not a new step), or work another lane or agent does or was handed (ops on a server or an account, marketing posting, another repo's lane): that's theirs, never the user's, even when this run can't reach it.
+Reply with JSON only, no markdown fence: {"needs": false} or {"needs": true, "kind": "approve" or "step", "what": "the sentence that says so, in its own words, under 240 characters", "check": "what it says to check first about this same job (never another job's or another lane's state), or empty", "label": "what it is in 1 to 3 words, or empty"}.`;
 function parseRead(raw) {
   const t = String(raw || ""), a = t.indexOf("{"), b = t.lastIndexOf("}"); if (a < 0 || b < a) return null;
   let o; try { o = JSON.parse(t.slice(a, b + 1)); } catch { return null; }
