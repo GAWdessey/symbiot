@@ -192,6 +192,24 @@ console.log("WHAT A COPY LEAVES — handovers, questions, waits, facts and repor
   ok("…even after a new answer", P.besideAgain(repo, "p3") && P.besideAgain(repo, "p3").kind === "waited");
 }
 
+console.log("REPORTS IT ONLY CHECKED OUT — a lane that commits its .symbiot/ gets back only what the copy wrote (28 Oct 2026)");
+{
+  const repo = join(HOME, "repo-committed"); mkdirSync(join(repo, ".symbiot"), { recursive: true });
+  sh(repo, "init", "-q", "-b", "main"); writeFileSync(join(repo, "a.mjs"), "a1\n");
+  writeFileSync(join(repo, ".symbiot", "PHONE-TEST.md"), "# Phone test\n_(from a run beside repo-committed on \"earlier\")_\nYes.\n");
+  writeFileSync(join(repo, ".symbiot", "PLAN.md"), "# Plan\nOld steps.\n");
+  writeFileSync(join(repo, ".symbiot", "TASKS.md"), "## Tasks\n- [ ] Check the broker list\n");
+  sh(repo, "add", "-A"); sh(repo, "commit", "-qm", "init");
+  let hook; const run = (wt, o) => { hook = o.onExit; return { id: "r" }; };
+  P.startParallel("repo-committed", repo, { id: "c1", text: "Check the broker list" }, { run });
+  const wt = P.inflight().find((m) => m.repo === repo).wt;
+  writeFileSync(join(wt, ".symbiot", "PLAN.md"), "# Plan\nNew steps.\n"); writeFileSync(join(wt, ".symbiot", "BROKERS.md"), "# Brokers\n856 loaded.\n");
+  hook(0);
+  const names = readdirSync(join(repo, ".symbiot"));
+  ok("a report it only checked out doesn't come back as a run-id copy", !names.some((f) => /^PHONE-TEST-[0-9a-f]{6}\.md$/.test(f)) && /^# Phone test\n_\(from a run beside repo-committed on "earlier"\)_\nYes\.\n$/.test(readFileSync(join(repo, ".symbiot", "PHONE-TEST.md"), "utf8")), names);
+  ok("one it rewrote replaces the lane's (untouched since), saying once which run wrote it; a new one lands", /^# Plan\n_\(from a run beside repo-committed/.test(readFileSync(join(repo, ".symbiot", "PLAN.md"), "utf8")) && /New steps/.test(readFileSync(join(repo, ".symbiot", "PLAN.md"), "utf8")) && !names.some((f) => /^PLAN-/.test(f)) && names.includes("BROKERS.md"), names);
+}
+
 console.log("RESTARTS — a tick alone isn't success, and a running lane's brief isn't rewritten");
 {
   const repo = join(HOME, "repo5"); mkdirSync(repo, { recursive: true });

@@ -13,11 +13,11 @@
 // - Reading: only a file this list found can be read, by its id, never by a
 //   path; it's shown as HTML made here (mdHtml), with everything escaped first.
 //
-// Stored in ~/.config/symbiot/reports.json, yours only: { seen: { id: mtime }, decided, handed:
+// Stored in ~/.config/symbiot/reports.json, yours only: { seen: { id: mtime }, read: { text sig: when }, decided, handed:
 // { id: { mtime, done: { idea: "handed" | "dismissed" | "superseded" } } } }.
 import { join, basename, dirname, resolve, extname, sep } from "node:path";
 import { homedir } from "node:os";
-import { readFileSync, readdirSync, statSync, realpathSync, existsSync } from "node:fs";
+import { readFileSync, readdirSync, statSync, realpathSync, existsSync, unlinkSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { CONFIG_DIR, isFinding, readState, writeJsonAtomic, loadTasks, sameTask } from "./core.mjs";
 import { runFolders, laneOf, runTitle } from "./handback.mjs";
@@ -30,9 +30,32 @@ const NOT_REPORTS = /^(?:TASKS(?:\.[\w-]+)?|QUESTIONS|ANSWERS(?:\.archive)?|HAND
 const MAX_READ = 512 * 1024, MAX_LIST = 200;
 const WRITING_FOR = 15 * 60 * 1000; // a run is "still writing" a report only if the file changed in the last 15 minutes
 const idOf = (file) => createHash("sha1").update(file).digest("hex").slice(0, 12);
+// One report, however many copies: a run beside a lane saved each report it found under NAME-<run id>.md (parallel.mjs
+// keepOutput), and copies of copies as NAME-<id>-<id>.md. Copies that differ only by those suffixes are one report, its
+// id the plain name's, shown once (the newest). What the user did to it (read, approved, dropped, handed on) is kept by
+// what it says (sigOf: its text less the lines saying which run wrote it) as well as by file and time, so a later copy
+// of the same text keeps it, and only a report that really says something new asks again (28 Oct 2026).
+const RUN_IDS = /(?:-[0-9a-f]{6})+(?=\.md$)/i;
+const plainName = (name) => String(name).replace(RUN_IDS, "");
+const sigOf = (text) => createHash("sha1").update(String(text || "").replace(/^_\(from a run beside .*\)_[ \t]*$/gm, "").replace(/\s+/g, " ").trim()).digest("hex").slice(0, 16);
+const READ_MAX = 3000; // what's kept of read-by-text, newest
 
 const obj = (x) => (x && typeof x === "object" && !Array.isArray(x) ? x : {});
-function loadSeen(file = SEEN_FILE) { const d = readState(file, (v) => !!v && typeof v === "object" && !Array.isArray(v)); return { seen: obj(d && d.seen), decided: obj(d && d.decided), handed: obj(d && d.handed) }; }
+function loadSeen(file = SEEN_FILE) { const d = readState(file, (v) => !!v && typeof v === "object" && !Array.isArray(v)); return { seen: obj(d && d.seen), decided: obj(d && d.decided), handed: obj(d && d.handed), read: obj(d && d.read) }; }
+// Which of the user's records hold for this report: its own (same id and time), a copy's (its id and time, saying the
+// same), or any that says the same. table: id → { mtime, sig, … }.
+function recordsFor(table, r) {
+  const out = [], own = table[r.id];
+  if (own && (own.mtime === r.mtime || (r.sig && own.sig === r.sig))) out.push(own);
+  for (const t of r.copies || []) { const x = table[t.id]; if (t.id !== r.id && x && x.mtime === t.mtime && t.sig === r.sig && !out.includes(x)) out.push(x); }
+  if (r.sig) for (const x of Object.values(table)) if (x && x.sig === r.sig && !out.includes(x)) out.push(x);
+  return out;
+}
+function markRead(d, r) {
+  d.seen[r.id] = r.mtime;
+  if (r.sig) { d.read[r.sig] = Date.now(); const k = Object.keys(d.read); if (k.length > READ_MAX) for (const x of k.sort((a, b) => d.read[a] - d.read[b]).slice(0, k.length - READ_MAX)) delete d.read[x]; }
+}
+const isRead = (r, d) => d.seen[r.id] === r.mtime || !!(r.sig && d.read[r.sig]) || (r.copies || []).some((t) => t.sig === r.sig && d.seen[t.id] === t.mtime);
 // Whole or not at all (writeJsonAtomic): torn, it read as "nothing seen", and every report came back unread (15 Oct 2026).
 function saveSeen(d, file = SEEN_FILE) { try { writeJsonAtomic(file, d, { indent: 0, mode: 0o600 }); return true; } catch { return false; } }
 
@@ -57,17 +80,23 @@ function titleOf(text, name) {
 // (the tests do).
 function listReports({ map, folders, running = runningHandoff, seen } = {}) {
   if (!folders) { map = map || laneMap(); folders = runFolders(map); }
-  const s = (seen || loadSeen()).seen, out = [];
+  const d = seen ? { seen: obj(seen.seen), read: obj(seen.read) } : loadSeen(), out = [];
   for (const folder of folders) {
+    const groups = new Map();
     const dir = join(folder, ".symbiot");
-    let names = []; try { names = readdirSync(dir).filter((f) => /\.md$/i.test(f) && !NOT_REPORTS.test(f)); } catch { continue; }
+    let names = []; try { names = readdirSync(dir).filter((f) => /\.md$/i.test(f) && !NOT_REPORTS.test(plainName(f))); } catch { continue; } // CARRYON-<run id>.md is no report either
     for (const name of names) {
       const file = join(dir, name);
       let st; try { st = statSync(file); } catch { continue; }
       if (!st.isFile() || !st.size) continue;
-      let head = ""; try { head = readFileSync(file, "utf8").slice(0, 4000); } catch { continue; }
-      const id = idOf(file), mtime = Math.round(st.mtimeMs);
-      out.push({ id, title: titleOf(head, name), name, file, folder, lane: map ? laneOf(folder, map) : basename(folder), run: runTitle(folder), size: st.size, mtime, new: s[id] !== mtime, running: Date.now() - mtime < WRITING_FOR && !!running(folder), source: sourceOf(folder) });
+      let text = ""; try { text = readFileSync(file, "utf8").slice(0, MAX_READ); } catch { continue; }
+      const base = plainName(name), mtime = Math.round(st.mtimeMs), g = groups.get(base) || [];
+      g.push({ id: idOf(file), name, file, size: st.size, mtime, head: text.slice(0, 4000), sig: sigOf(text) }); groups.set(base, g);
+    }
+    for (const [base, g] of groups) {
+      const c = g.sort((a, b) => b.mtime - a.mtime || (a.name === base ? -1 : b.name === base ? 1 : 0))[0], id = idOf(join(dir, base));
+      const r = { id, title: titleOf(c.head, base), name: c.name, file: c.file, folder, lane: map ? laneOf(folder, map) : basename(folder), run: runTitle(folder), size: c.size, mtime: c.mtime, sig: c.sig, ...(g.length > 1 || c.name !== base ? { copies: g.map(({ id, name, file, mtime, sig }) => ({ id, name, file, mtime, sig })) } : {}), running: Date.now() - c.mtime < WRITING_FOR && !!running(folder), source: sourceOf(folder) };
+      r.new = !isRead(r, d); out.push(r);
     }
   }
   return out.sort((a, b) => b.mtime - a.mtime).slice(0, MAX_LIST);
@@ -79,7 +108,7 @@ function readReport(id, { list, mark = true, seenFile = SEEN_FILE } = {}) {
   if (!r) return { error: "No report by that id: it may have been moved or deleted." };
   let text = ""; try { text = readFileSync(r.file, "utf8"); } catch (e) { return { error: `Couldn't read ${r.file}: ${e.message}` }; }
   const cut = text.length > MAX_READ; if (cut) text = text.slice(0, MAX_READ);
-  if (mark) { const d = loadSeen(seenFile); d.seen[r.id] = r.mtime; saveSeen(d, seenFile); }
+  if (mark) { const d = loadSeen(seenFile); markRead(d, r); saveSeen(d, seenFile); }
   const draft = isDraftReport(r.title, r.name), cards = draftCardsIn(text, { lane: r.folder === MARKETING_DIR });
   return { ...r, new: false, ...(cards.length ? { cards } : {}), text, html: mdHtml(text, { id: r.id, base: dirname(r.file), roots: imageRoots(r) }) + (cut ? "<p class='muted'>(cut at 512 KB: open the file for the rest)</p>" : ""), draft, ...(draft ? { decided: decidedOn(r, seenFile) } : { ideas: openIdeas(r, text, seenFile), handled: handledIdeas(r, seenFile) }) };
 }
@@ -90,7 +119,7 @@ function withNeeds(list, { seenFile = SEEN_FILE, tasks } = {}) {
   try { sweepSuperseded({ list, seenFile, tasks }); } catch { /* the list still shows */ }
   const ctx = supersedeContext({ list, tasks, file: seenFile });
   return list.map((r) => {
-    if (isDraftReport(r.title, r.name)) return { ...r, needs: decidedOn(r, seenFile) ? "" : "draft", ideas: 0, steps: [], draft: true };
+    if (isDraftReport(r.title, r.name)) return { ...r, needs: decidedOn(r, seenFile) || jobDone(r, ctx.tasks) ? "" : "draft", ideas: 0, steps: [], draft: true };
     let text = ""; try { text = readFileSync(r.file, "utf8").slice(0, MAX_READ); } catch { /* gone: nothing to act on */ }
     const steps = openIdeas(r, text, seenFile, ctx), n = steps.length;
     if (draftCardsIn(text, { lane: r.folder === MARKETING_DIR }).some((rel) => { const p = draftPreview(rel); return p && p.isPost && (!p.status || p.status === "change"); })) return { ...r, needs: "draft", ideas: n, steps }; // a draft in it waits for an answer (never answered, or edited since)
@@ -121,7 +150,7 @@ function phoneReport(pc, id, { fetched = null, mark = true, seenFile = SEEN_FILE
 const phoneReportNeedsText = (pc, id) => { const raw = pc && pc.copy && Array.isArray(pc.copy.reports) && pc.copy.reports.find((x) => "pc:" + x.id === String(id || "")); return !!raw && typeof raw.text !== "string"; };
 // Mark them all read (the list's "Mark all read").
 function markAllRead({ list, seenFile = SEEN_FILE } = {}) {
-  const d = loadSeen(seenFile); for (const r of list || listReports()) d.seen[r.id] = r.mtime;
+  const d = loadSeen(seenFile); for (const r of list || listReports()) markRead(d, r);
   return saveSeen(d, seenFile) ? { ok: true } : { error: "Couldn't write " + seenFile };
 }
 
@@ -280,16 +309,31 @@ function reportIdeas(text, max = IDEAS_MAX) {
 const SAME_IDEA = 30, HANDLED = /^(?:handed|done|dismissed)$/;
 function handledIdeas(r, file = SEEN_FILE) {
   // Keys are trimmed: an idea cut at IDEAS' length keeps or loses its last space from one copy to the next (ed54e8, 25 Oct 2026).
-  const all = loadSeen(file).handed, h = all[r.id], out = {};
-  if (h && h.mtime === r.mtime && h.done && typeof h.done === "object") for (const [t, st] of Object.entries(h.done)) out[t.trim()] = st;
-  for (const [id, x] of Object.entries(all)) {
-    if (id === r.id || !x || typeof x.done !== "object" || !x.done) continue;
+  // The report's own records count whole, a copy's too (recordsFor); any other report's only for an idea long enough to be the same.
+  const all = loadSeen(file).handed, own = recordsFor(all, r), out = {};
+  for (const h of own) if (h.done && typeof h.done === "object") for (const [t, st] of Object.entries(h.done)) if (!out[t.trim()]) out[t.trim()] = st;
+  for (const x of Object.values(all)) {
+    if (own.includes(x) || !x || typeof x.done !== "object" || !x.done) continue;
     for (const [t, st] of Object.entries(x.done)) if (t.trim().length >= SAME_IDEA && HANDLED.test(st) && !out[t.trim()]) out[t.trim()] = st;
   }
   return out;
 }
-const openIdeas = (r, text, file = SEEN_FILE, ctx) => {
-  const done = handledIdeas(r, file), open = reportIdeas(text, 40).filter((t) => !done[t.trim()]).slice(0, IDEAS_MAX); // handled ones don't use up the slots
+// A next step that is only about days gone by ("Wed 21 Oct, 11:00", a retest "on 19 Oct 2026") is no step any more: every
+// date it names is before today. A date without a year is in the year the report was written (the next, if that puts it
+// more than half a year before the report). Garth dropped a test's 21 and 22 Oct slots four times (28 Oct 2026).
+const MONTHS = "jan feb mar apr may jun jul aug sep oct nov dec".split(" ");
+const DAY = 86400000;
+function datesIn(t, ref) {
+  const out = [], yr = new Date(ref).getFullYear(), mk = (y, mo, d) => { if (mo < 0 || mo > 11 || d < 1 || d > 31) return; let x = new Date(y ?? yr, mo, d).getTime(); if (y == null && x < ref - 183 * DAY) x = new Date(yr + 1, mo, d).getTime(); out.push(x); };
+  for (const m of String(t).matchAll(/\b(\d{4})-(\d{2})-(\d{2})\b/g)) mk(+m[1], +m[2] - 1, +m[3]);
+  for (const m of String(t).matchAll(/\b(\d{1,2})(?:st|nd|rd|th)?\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?(?:,?\s+(\d{4}))?\b/gi)) mk(m[3] ? +m[3] : null, MONTHS.indexOf(m[2].toLowerCase()), +m[1]);
+  for (const m of String(t).matchAll(/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+(\d{1,2})(?:st|nd|rd|th)?\b(?!:)(?:,?\s+(\d{4}))?/gi)) mk(m[3] ? +m[3] : null, MONTHS.indexOf(m[1].toLowerCase()), +m[2]);
+  return out;
+}
+// The date a step leads with is its when; one named further on is context.
+const pastDated = (t, ref, now = Date.now()) => { const d = datesIn(String(t).slice(0, 40), ref || now); return d.length > 0 && d.every((x) => x + DAY <= now); };
+const openIdeas = (r, text, file = SEEN_FILE, ctx, now = Date.now()) => {
+  const done = handledIdeas(r, file), open = reportIdeas(text, 40).filter((t) => !done[t.trim()] && !pastDated(t, r.mtime, now)).slice(0, IDEAS_MAX); // handled ones don't use up the slots
   if (!open.length) return open;
   const why = supersededIdeas(r, open, ctx || supersedeContext({ file }));
   return open.filter((t) => !why.has(t));
@@ -365,7 +409,8 @@ function sweepSuperseded({ list, seenFile = SEEN_FILE, tasks } = {}) {
   return cleared;
 }
 function markIdeas(r, ideas, status, file = SEEN_FILE) {
-  const d = loadSeen(file), h = d.handed[r.id] && d.handed[r.id].mtime === r.mtime ? d.handed[r.id] : { mtime: r.mtime, done: {} };
+  const d = loadSeen(file), was = d.handed[r.id], h = was && (was.mtime === r.mtime || (r.sig && was.sig === r.sig)) ? was : { mtime: r.mtime, done: {} };
+  h.mtime = r.mtime; if (r.sig) h.sig = r.sig;
   for (const t of ideas) h.done[String(t)] = status;
   d.handed[r.id] = h; return saveSeen(d, file);
 }
@@ -393,10 +438,55 @@ function draftCardsIn(text, { dir = MARKETING_DIR, lane = false } = {}) {
 // Reject rather than ideas.
 const isDraftReport = (title, name) => /\bdrafts?\b|\bpreviews?\b/i.test(`${title} ${String(name || "").replace(/[-_.]+/g, " ")}`);
 // What the user decided on a draft report, kept by its mtime (a changed draft asks again).
-function decidedOn(r, file = SEEN_FILE) { const d = loadSeen(file).decided[r.id]; return d && d.mtime === r.mtime ? d.status : ""; }
-function decide(r, status, file = SEEN_FILE) { const d = loadSeen(file); d.decided[r.id] = { status, mtime: r.mtime, at: Date.now() }; return saveSeen(d, file); }
+// A copy of it saying the same (recordsFor) keeps the answer: Garth approved an account removal preview on three copies
+// and a fourth still asked (28 Oct 2026).
+function decidedOn(r, file = SEEN_FILE) { const x = recordsFor(loadSeen(file).decided, r).sort((a, b) => (b.at || 0) - (a.at || 0))[0]; return x ? x.status : ""; }
+function decide(r, status, file = SEEN_FILE) { const d = loadSeen(file); d.decided[r.id] = { status, mtime: r.mtime, ...(r.sig ? { sig: r.sig } : {}), at: Date.now() }; return saveSeen(d, file); }
+// Its job is finished: a task made from it (naming its file or its title) is done. No Approve on it then.
+function jobDone(r, tasks) {
+  const base = plainName(r.name || "").replace(/\.md$/i, ""); if (!base || !Array.isArray(tasks)) return false;
+  const names = [base, ...(r.copies || []).map((c) => c.name.replace(/\.md$/i, ""))];
+  return tasks.some((x) => (x.done || x.archived) && !x.dropped && (names.some((n) => String(x.text || "").includes(n)) || String(x.text || "").includes(`"${r.title}"`)));
+}
+
+// Clear away the copies: in each folder, a run-id copy that says the same as the plain-named report (or, with none, as
+// the newest copy) goes, what the user did to it carried over by what it says first. Nothing is renamed: a plain name
+// can be a file Symbiot reads (CARRYON.md, PROOF.md, which the phone offers to send). A copy that says something else
+// stays: it's listed as the report's newest. Returns { removed: [file] }.
+function collapseCopies({ folders, seenFile = SEEN_FILE, dry = false } = {}) {
+  if (!folders) folders = runFolders(laneMap());
+  const d = loadSeen(seenFile), out = { removed: [] }, now = Date.now();
+  const carry = (c) => { // its records, findable by what it says
+    for (const t of [d.decided, d.handed]) { const x = t[c.id]; if (x && x.mtime === c.mtime && !x.sig) x.sig = c.sig; }
+    if (d.seen[c.id] === c.mtime) d.read[c.sig] = d.read[c.sig] || now;
+  };
+  for (const folder of folders) {
+    const dir = join(folder, ".symbiot"), groups = new Map();
+    let names = []; try { names = readdirSync(dir).filter((f) => /\.md$/i.test(f) && !NOT_REPORTS.test(plainName(f))); } catch { continue; }
+    for (const name of names) {
+      const file = join(dir, name); let st, text; try { st = statSync(file); if (!st.isFile()) continue; text = readFileSync(file, "utf8"); } catch { continue; }
+      const base = plainName(name); groups.set(base, [...(groups.get(base) || []), { id: idOf(file), name, file, mtime: Math.round(st.mtimeMs), sig: sigOf(text) }]);
+    }
+    for (const [base, g] of groups) {
+      g.sort((a, b) => b.mtime - a.mtime);
+      const keep = g.find((c) => c.name === base) || g[0];
+      for (const c of g) if (c !== keep && c.sig === keep.sig) { carry(c); out.removed.push(c.file); if (!dry) try { unlinkSync(c.file); } catch {} }
+      // and under the kept file's own ids (its file's, and the plain name's), so a copy of Symbiot that looks only by file and time sees them too
+      const r = { id: keep.id, mtime: keep.mtime, sig: keep.sig };
+      const dec = recordsFor(d.decided, r).sort((a, b) => (b.at || 0) - (a.at || 0))[0], done = {};
+      for (const h of recordsFor(d.handed, r)) for (const [t, st] of Object.entries(obj(h.done))) if (!done[t]) done[t] = st;
+      for (const id of new Set([keep.id, idOf(join(dir, base))])) {
+        if (dec) d.decided[id] = { ...dec, mtime: keep.mtime, sig: keep.sig };
+        if (Object.keys(done).length) d.handed[id] = { mtime: keep.mtime, sig: keep.sig, done: { ...done } };
+        if (d.read[keep.sig]) d.seen[id] = keep.mtime;
+      }
+    }
+  }
+  if (!dry) saveSeen(d, seenFile);
+  return out;
+}
 
 // How many reports are new, and the newest one's title (Home's droplet).
 function reportsNews(opts) { const l = listReports(opts).filter((r) => r.new); return { count: l.length, latest: l[0] ? l[0].title : "" }; }
 
-export { draftCardsIn, supersededIdeas, sweepSuperseded, supersedeContext, SEEN_FILE, NOT_REPORTS, titleOf, listReports, readReport, phoneReports, phoneReport, reportImage, imagePath, markAllRead, reportsNews, mdHtml, reportIdeas, isDraftReport, decidedOn, decide, withNeeds, phoneReportNeedsText, IDEAS_MAX, handledIdeas, openIdeas, markIdeas };
+export { draftCardsIn, supersededIdeas, sweepSuperseded, supersedeContext, SEEN_FILE, NOT_REPORTS, titleOf, listReports, readReport, phoneReports, phoneReport, reportImage, imagePath, markAllRead, reportsNews, mdHtml, reportIdeas, isDraftReport, decidedOn, decide, withNeeds, phoneReportNeedsText, IDEAS_MAX, handledIdeas, openIdeas, markIdeas, collapseCopies, pastDated, plainName };

@@ -118,7 +118,7 @@ const askBackNote = (a) => `The user didn't answer this: they asked you for some
   `Don't ask this question again, in any words, until they've read it and answered.`;
 
 // Reports (reports.mjs listReports) in a folder written after `ts`: { file, title, mtime, read }, newest
-// first. read: opened since it last changed (reports.json seen, ids as reports.mjs idOf). Symbiot's own
+// first. read: opened since it last changed (reports.json seen, ids as reports.mjs lists them). Symbiot's own
 // files there (TASKS.md…) are never opened as reports, so they never count as read.
 function reportsSince(folder, ts) {
   const dir = join(String(folder || ""), ".symbiot"), seen = (readState(join(CONFIG_DIR, "reports.json"), (v) => !!v && typeof v === "object") || {}).seen || {}, out = [];
@@ -128,7 +128,7 @@ function reportsSince(folder, ts) {
     const mtime = Math.round(st.mtimeMs); if (!st.isFile() || mtime <= ts) continue;
     let head = ""; try { head = readFileSync(file, "utf8").slice(0, 2000); } catch {}
     const h = head.match(/^#\s+(.+)$/m);
-    const id = createHash("sha1").update(file).digest("hex").slice(0, 12);
+    const id = createHash("sha1").update(join(dir, name.replace(/(?:-[0-9a-f]{6})+(?=\.md$)/i, ""))).digest("hex").slice(0, 12); // a run-id copy goes by its plain name's id, as reports.mjs lists it
     out.push({ id, file, title: (h ? h[1].replace(/[*_`]/g, "").trim() : "") || name.replace(/\.md$/i, ""), mtime, read: seen[id] === mtime });
   }
   return out.sort((a, b) => b.mtime - a.mtime);
