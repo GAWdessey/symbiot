@@ -1316,11 +1316,15 @@ function workSceneNow({ deps = {}, full = false } = {}) {
     // its badge names the real blocker from its words ("Needs your merge: PR #612"), else it's idle (28 Oct 2026)
     if (/^waiting on (?!you\b)/.test(p.state || "") && !p.running && !(p.handing || []).some((x) => x.gone && !/run ended/.test(x.why || ""))) {
       // a PR it names waits on a merge only while GitHub says it's open, in this lane's own repo: lanex's #612 read
-      // "Needs your merge" after Garth had merged it (28 Oct 2026). Merged or closed reads Done; not looked at yet, no claim.
+      // "Needs your merge" after Garth had merged it (28 Oct 2026). Only merged reads Done: closed unmerged didn't ship,
+      // and before GitHub has answered (just started, gh unreachable) it claims nothing, so both read Idle, never
+      // "Waiting on someone else" (the design critic's review of db18990, 28 Oct 2026).
       let b = blockerOf(p.summary); const n = (b.match(/#(\d+)/) || [])[1];
       const gh = n ? (deps.prLive || prLive)(map[p.repo] || "", n) : "";
-      if (n && gh !== "open") { b = ""; if (gh === "merged" || gh === "closed") p.state = "done"; }
-      if (b) p.blocker = b; else if ((p.handing || []).length && p.handing.every((x) => /run ended/.test(x.why || ""))) p.state = "done";
+      if (n && gh !== "open") { b = ""; p.state = gh === "merged" ? "done" : "idle"; }
+      // its words still say the PR needs a merge: the card says what GitHub says now, first, where a 3-line card shows it
+      if (gh === "merged" || gh === "closed") p.summary = `PR ${n} ${gh === "merged" ? "is merged now" : "was closed without merging"}. ${String(p.summary || "").trim()}`.trim();
+      if (b) p.blocker = b; else if (!n && (p.handing || []).length && p.handing.every((x) => /run ended/.test(x.why || ""))) p.state = "done";
     }
     p.pill = pillOf(p); // one of the 7 (cardwords.mjs): never a raw state
     if (p.handing) p.handing = p.handing.map((x) => ({ ...x, words: handWords(x), ...(/asked you something first/.test(x.why || "") ? { ask: x.askLane || x.lane } : {}) }));

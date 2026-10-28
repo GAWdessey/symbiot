@@ -521,9 +521,9 @@ try {
   ok("Agent runs' card at work: what the running run is doing by name, never a finished run's last words under Working (27 Oct 2026)", ok2 && ok2.pill === "At work" && !ok2.summary && ok2.now === "Working on: the phone code check · 3h (and 1 more at work)", ok2);
   {
     const looked = [];
-    const mk = (final, why, gh = "open") => workScene({ deps: { repos: () => ({ bookshop: "/dl" }), pending: () => [], tasks: () => [], parked: () => [], prLive: (dir, n) => { looked.push(`${dir}#${n}`); return gh; },
+    const mk = (final, why, gh = "open", rows) => workScene({ deps: { repos: () => ({ bookshop: "/dl" }), pending: () => [], tasks: () => [], parked: () => [], prLive: (dir, n) => { looked.push(`${dir}#${n}`); return gh; },
       agents: () => [{ name: "bookshop", path: "/dl", status: "done", startedAt: Date.now() - 60000, work: { final }, outcome: { state: "waiting", waitingOn: "lane", what: "ops: done", summary: final } }],
-      handing: () => [{ lane: "ops", text: "done", gone: true, why }] } }).projects.find((p) => p.repo === "bookshop");
+      handing: () => rows || [{ lane: "ops", text: "done", gone: true, why }] } }).projects.find((p) => p.repo === "bookshop");
     const ended = "Sent: its run ended, and what it did comes back within 20 seconds";
     const a = mk("Handed the deploy to ops. The real blocker is PR #612 in GarthGhostai/bookshop, which needs Garth's hand merge because auto-merge is refused.", ended);
     ok("a done handover no longer reads Waiting on someone else: the badge names the real blocker from the run's words (28 Oct 2026)", a.pill === "Needs your merge: PR #612", a.pill);
@@ -532,6 +532,16 @@ try {
     ok("a PR the run said needs a merge that GitHub says is merged reads Done, never 'Needs your merge' (lanex #612, 28 Oct 2026)", m.pill === "Done", m.pill);
     const u = mk("Handed the deploy to ops. The real blocker is PR #612 in GarthGhostai/bookshop, which needs Garth's hand merge because auto-merge is refused.", ended, "");
     ok("…and before GitHub has answered it claims no merge either way", !/merge/i.test(u.pill), u.pill);
+    const merge612 = "Handed the deploy to ops. The real blocker is PR #612 in GarthGhostai/bookshop, which needs Garth's hand merge because auto-merge is refused.";
+    const u2 = mk(merge612, ended, "", []);
+    ok("before GitHub has answered (just started, gh unreachable) the card reads Idle, never Waiting on someone else (critic, 28 Oct 2026)", u2.pill === "Idle", u2.pill);
+    const x = mk(merge612, ended, "closed");
+    ok("a PR closed without merging reads Idle, not Done: the work didn't ship (critic, 28 Oct 2026)", x.pill === "Idle", x.pill);
+    const x2 = mk(merge612, ended, "closed", []);
+    ok("…with no handover rows left either", x2.pill === "Idle", x2.pill);
+    const m2 = mk(merge612, ended, "merged", []);
+    ok("…and merged reads Done with no handover rows left", m2.pill === "Done", m2.pill);
+    ok("the card's words say what GitHub says now, before the run's 'needs a merge'", /^PR 612 is merged now\. Handed/.test(m.summary) && /^PR 612 was closed without merging\. Handed/.test(x.summary) && /^Handed/.test(u2.summary), [m.summary, x.summary, u2.summary]);
     const b = mk("Handed the deploy to ops. Nothing else is open.", ended);
     ok("…and with no blocker named it reads Done/Idle, never Waiting on someone else", b.pill !== "Waiting on someone else", b.pill);
     const c = mk("Handed the deploy to ops.", "Sent: its agent is on it now");
