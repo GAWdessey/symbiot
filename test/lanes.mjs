@@ -785,6 +785,8 @@ try {
       { id: "p1", from: { lane: "dlfy_proj", path: dl }, to: { lane: "ops", path: o1 }, text: "deploy", at: 1, status: "started" },
       { id: "p2", from: { lane: "ops", path: o1 }, to: { lane: "ops", path: o2 }, text: "a check", at: 2, status: "started" },
     ] }, pm = { dlfy_proj: dl };
+    const bw = join(CFG, "worktrees", "dlfy_proj-9b8a1f");
+    ok("a run beside, its copy gone: its lane, never no project", projectOf(bw, { map: pm, ledger: led }) === "dlfy_proj");
     ok("a lane's own folder: that lane", projectOf(dl, { map: pm, ledger: led }) === "dlfy_proj");
     ok("an ops run a lane handed over: that lane", projectOf(o1, { map: pm, ledger: led }) === "dlfy_proj");
     ok("…and one that ops run handed on: still that lane", projectOf(o2, { map: pm, ledger: led }) === "dlfy_proj");
