@@ -245,7 +245,8 @@ function besideAgain(repo, taskId) {
 // of it: bookly's ops handover never happened, and the task ran three more times (the
 // 15 Oct 2026 audit). Before the copy goes, each lands in the lane's .symbiot/, marked
 // with the task. Returns { handed, asked, waits, facts, reports, answers }.
-const NOT_REPORTS = /^(?:TASKS(?:\.[\w-]+)?|QUESTIONS|ANSWERS(?:\.archive)?|HANDOFF|SKIPPED|CLAUDE|AGENTS)\.md$|^BRIEF/i; // as reports.mjs lists them
+const NOT_REPORTS = /^(?:TASKS(?:\.[\w-]+)?|QUESTIONS|ANSWERS(?:\.archive)?|HANDOFF|SKIPPED|CLAUDE|AGENTS|CARRYON)\.md$|^BRIEF/i; // as reports.mjs lists them
+const FROM_MARK = /^_\(from a run beside .*\)_\n/gm, unmarked = (t) => String(t).replace(FROM_MARK, "").trim(); // a report less the lines saying which run wrote it
 const qKey = (s) => String(s || "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
 const headings = (md) => new Set([...String(md || "").matchAll(/^###\s+(.+)$/gm)].map((m) => qKey(m[1])));
 const headOf = (s) => qKey((String(s).match(/^###\s*(.*)$/m) || [])[1] || "");
@@ -276,12 +277,18 @@ function keepOutput(m) {
   if (waits.length) try { const had = parseAwaiting(readIn(repo, "AWAITING.json")); mkdirSync(sd, { recursive: true }); writeFileSync(join(sd, "AWAITING.json"), JSON.stringify([...had, ...waits].slice(-100))); out.waits = waits.length; } catch {}
   const facts = parseFacts(readIn(wt, "REMEMBER.json"));
   if (facts.length) try { const had = parseFacts(readIn(repo, "REMEMBER.json")); mkdirSync(sd, { recursive: true }); writeFileSync(join(sd, "REMEMBER.json"), JSON.stringify([...had, ...facts].slice(0, 40))); out.facts = facts.length; } catch {}
-  // reports (.md files, as reports.mjs lists them), with a line saying which run wrote them
+  // reports (.md files, as reports.mjs lists them) the copy wrote or changed, with a line saying which run wrote them.
+  // Not the ones it only checked out: a lane that commits its .symbiot/ handed every run all its reports, each came back
+  // as NAME-<run id>.md, was committed, and came back again as NAME-<id>-<id>.md: 535 copies in one lane, and a drop or
+  // an approval on one copy never reached the next (28 Oct 2026).
   let names = []; try { names = readdirSync(join(wt, ".symbiot")).filter((f) => /\.md$/i.test(f) && !NOT_REPORTS.test(f)); } catch {}
   for (const f of names) {
     let text = ""; try { text = readFileSync(join(wt, ".symbiot", f), "utf8"); } catch { continue; } if (!text.trim()) continue;
-    const to = existsSync(join(sd, f)) ? f.replace(/\.md$/i, `-${m.id}.md`) : f;
-    try { mkdirSync(sd, { recursive: true }); writeFileSync(join(sd, to), text.replace(/^(#\s.*\n)/, `$1_(from ${mark})_\n`)); out.reports++; } catch {}
+    const was = git(wt, ["show", `${m.base}:.symbiot/${f}`]), started = was.status === 0 ? was.stdout : null;
+    let lane = null; try { lane = readFileSync(join(sd, f), "utf8"); } catch {}
+    if ((started !== null && unmarked(started) === unmarked(text)) || (lane !== null && unmarked(lane) === unmarked(text))) continue; // came with the copy, or the lane has it already
+    const to = lane === null || (started !== null && unmarked(lane) === unmarked(started)) ? f : f.replace(/\.md$/i, `-${m.id}.md`); // a rewrite of one the lane hasn't touched since replaces it
+    try { mkdirSync(sd, { recursive: true }); writeFileSync(join(sd, to), text.replace(FROM_MARK, "").replace(/^(#\s.*\n)/, `$1_(from ${mark})_\n`)); out.reports++; } catch {}
   }
   return out;
 }

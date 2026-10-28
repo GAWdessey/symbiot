@@ -17,7 +17,7 @@
 //   repo. Anything hard to undo (closing an account, deleting, paying, sending) the
 //   agent asks you about first, in the Agents tab: the brief says so.
 import { isUiWork, designBrief } from "./design.mjs";
-import { addRule, standingBrief, doneBrief } from "./asksdone.mjs";
+import { addRule, addRejected, rejectedLines, dropRejected, standingBrief, doneBrief } from "./asksdone.mjs";
 import { sentBrief } from "./sentmail.mjs";
 import { captureSecrets } from "./vault.mjs";
 import { languageLine } from "./lang.mjs";
@@ -264,7 +264,8 @@ function rulesFor(lanes = [], self = "", nav = false, settle = false, tasks = []
  "do": null or {"agent": "what a coding agent should do now: self-contained, with names, links and ids", "repo": "the lane it's for, or empty"} or {"task": "a task for later", "repo": "the lane it's for, or empty"},${nav ? `
  "go": null or {"to": "…", "why": "…", "alts": ["…"]},` : ""}
 ${control ? ` "control": [],\n` : ""} "remember": [{"name": "…", "kind": "person|account|site|repo|project|decision|preference", "fact": "…"}],
- "rule": ["a standing rule you and the user have just agreed for every agent"]${settle ? `,
+ "rule": ["a standing rule you and the user have just agreed for every agent"],
+ "rejected": ["an option the user has just firmly turned down, in a few plain words"]${settle ? `,
  "settled": ["the exact question of a 'Only the user can do' card that their message has just answered or made pointless"]` : ""}}
 When they ask you to do something (look into it, find out, fix, set up, sign in, close, send, chase), do it, don't explain what you can't do: "agent" starts a coding agent now, with their tools and connectors (MCP, the command line, a browser signed in to their linked sites). With a "repo", it's that project's agent, working in it; empty, an agent for everything outside a repo (this computer, accounts, services). Use "task" for what's for later. Don't ask their permission to hand it over: the agent asks them first, on the Workdesk, before anything hard to undo (closing an account, deleting, paying, sending); say so in your reply when it applies, with what to check first. A question you can answer from what's here: answer it, "do": null.
 Lanes ("repo" is one of these, exactly; a bracket after a name says what the project is and is not part of the name): ${lanes.length ? lanes.slice(0, 60).map((n) => about[n] ? `${n} (${about[n]})` : n).join(", ") : "(none found)"}.${lanes.includes(MARKETING) ? ` "${MARKETING}" is a lane of its own for marketing any of their products (posts, demo videos, launches, campaigns, pricing pages' copy): marketing work goes there, starting with the product it's for in brackets, "[Bookly] a launch post".` : ""}${self ? ` Symbiot itself is "${self}": a flaw in how Symbiot works (how it read a page, what a brief or a card said, anything in the app) goes there.` : ""}
@@ -279,7 +280,7 @@ A short answer (yes, yeah, ok, sure, go, do it, that one, 2) answers what you la
 Hash it out first: when they bring an idea rather than a clear ask, sharpen it with them: say what's strong, push back where it's weak, add what's missing, and propose it as a task (naming the lane) once it holds up. "do" stays null until they agree.
 When a message is mainly frustration, a feeling or a remark rather than an ask (for example "i got told that deekseek v4 is as good as you so i think that is the only acceptable replacement", or "im sick of this"), answer like a person: acknowledge it plainly in a sentence or two, don't defend yourself or Symbiot, don't list readings or options, and ask one open question in plain words ("what would make it feel right?"). "do" stays null unless they've asked for something. Numbered readings are only for a real task that could mean more than one thing.
 When an ask could mean two or more things (which lane, how much, what done looks like), don't guess: "do" stays null, and the reply gives 2-3 short numbered readings, your pick first, and asks which. A clear ask goes straight through.${nav ? ` Where to go is the exception: see "go".` : ""}
-"rule": only when the user states or agrees a rule agents should follow from now on (e.g. "don't ask which mailbox", "do it yourself, only ask for passwords"); write it as an instruction to an agent, one line. It goes into every agent's brief. Never say what agents will or won't do unless you put it here. [] otherwise.\n${settle ? `"settled": only for a card shown under "Only the user can do" whose question this message really answers (they pasted what it asked for, or said it's done); copy its question exactly. [] otherwise, and never for a card you're unsure of: it closes the card and no agent asks it again.\n` : ""}"remember": only lasting facts worth knowing on another page (who someone is, which account is what, a decision, how they like things); [] for anything else. Whenever they state a lasting preference or tell you how they want things done ("you have full access, don't ask me", "always do X"), put it in "remember" as a preference in that same reply, so they never repeat it. Before you hand them a step, check whether a linked connector, signed-in site or command could do it; if so, start an agent for it and ask them only for a yes before anything hard to undo.${nav ? navRules(tasks) : ""}${control ? CONTROL_RULES : ""}`;
+"rejected": only when the user firmly turns down an option ("I will never do that", "no, not that, ever"): name the option in a few words so it is never offered again. [] otherwise.\n"rule": only when the user states or agrees a rule agents should follow from now on (e.g. "don't ask which mailbox", "do it yourself, only ask for passwords"); write it as an instruction to an agent, one line. It goes into every agent's brief. Never say what agents will or won't do unless you put it here. [] otherwise.\n${settle ? `"settled": only for a card shown under "Only the user can do" whose question this message really answers (they pasted what it asked for, or said it's done); copy its question exactly. [] otherwise, and never for a card you're unsure of: it closes the card and no agent asks it again.\n` : ""}"remember": only lasting facts worth knowing on another page (who someone is, which account is what, a decision, how they like things); [] for anything else. Whenever they state a lasting preference or tell you how they want things done ("you have full access, don't ask me", "always do X"), put it in "remember" as a preference in that same reply, so they never repeat it. Before you hand them a step, check whether a linked connector, signed-in site or command could do it; if so, start an agent for it and ask them only for a yes before anything hard to undo.${nav ? navRules(tasks) : ""}${control ? CONTROL_RULES : ""}`;
 }
 // Symbiot's own repo among your lanes (its package.json is symbiot's), or "".
 function selfLane(map) {
@@ -426,6 +427,8 @@ async function converse({ where, role = "", context = "", history = "", question
   let prompt = `${dayLine(now)}\n\n` + (known ? `What you know (from across the app):\n${known}\n\n` : "") + (kn.text ? kn.text + "\n\n" : "") + (elsewhere ? `Lately, elsewhere in the app (other chats: a short answer here doesn't reply to these):\n${elsewhere}\n\n` : "") +
     (nav && tasks.length ? `Open tasks (id: task):\n${tasks.slice(0, 40).map((t) => `- ${t.id}: ${String(t.text || "").replace(/\s+/g, " ").slice(0, 90)}${t.repo ? ` [${t.repo}]` : ""}`).join("\n")}\n\n` : "") + (context ? context + "\n\n" : "") + (history ? `This chat so far:\n${history}\n\n` : "") + `They say (on ${where}): ${question}`;
   if (kept.length) prompt += `\n(Symbiot saved what they pasted, under ${kept.map((n) => `"${n}"`).join(", ")}. Say so in a few words, and carry on with what they asked.)`;
+  const turned = rejectedLines(); // options they refused before: check these before offering any choice
+  if (turned.length) prompt += `\n\nOptions they have already turned down. Never offer these again, in any words; offer another route instead:\n${turned.join("\n")}`;
   if (voice) prompt += `\n\n${voice}`;
   const asked = (p) => ask(system, p, images.length ? { images } : undefined);
   // write() says { text } or { error } (a stub may still say a string); a dead answer's reply is the
@@ -478,6 +481,9 @@ async function converse({ where, role = "", context = "", history = "", question
     for (const x of good) steps.push(`${x.op}: ${x.said}`.slice(0, 120));
   }
   if (!did && !steered.some((x) => x.ok) && unbackedClaim(reply, did) && !runningClaim(reply, lanes, running)) reply += UNBACKED;
+  const turnedDown = (Array.isArray(j.rejected) ? j.rejected : []).map((x) => String(x || "")).filter((x) => x.trim()).slice(0, 3).filter((x) => addRejected(x));
+  const cut = dropRejected(reply); // a line that still offers one of them goes, with a note
+  if (cut.dropped.length && cut.reply) reply = `${cut.reply}\n\n(Left out what you've turned down before: ${cut.dropped.join("; ")}.)`;
   const rules = (Array.isArray(j.rule) ? j.rule : []).map((x) => String(x || "")).filter((x) => x.trim()).slice(0, 3).filter((x) => addRule(x));
   if (bindingClaim(reply, rules.length)) reply += NOT_BINDING;
   // what's read aloud: the reply, then the line under it as a short phrase (spokenLine)
@@ -490,6 +496,7 @@ async function converse({ where, role = "", context = "", history = "", question
   if (did && !did.error) steps.push(did.kind === "agent" ? (did.notStarted ? `added a task to ${did.lane}: its agent didn't start` : did.lane ? `handed it to ${did.lane}'s agent` : "handed it to an agent") : did.lane ? `added a task to ${did.lane}` : "added a task");
   if (remembered) steps.push(`remembered ${remembered} new thing${remembered > 1 ? "s" : ""}`);
   if (go) steps.push(`opened ${go.label}`);
+  if (turnedDown.length) steps.push(`noted ${turnedDown.length} option${turnedDown.length > 1 ? "s" : ""} you turned down, never offered again`);
   if (rules.length) steps.push(`saved ${rules.length} standing rule${rules.length > 1 ? "s" : ""} for every agent`);
   const settled = settle && Array.isArray(j.settled) ? j.settled.map((x) => String(x || "").slice(0, 300)).filter(Boolean).slice(0, 6) : [];
   return { reply, spoken, ...(did ? { did } : {}), ...(steered.length ? { control: steered } : {}), ...(go ? { go } : {}), ...(settled.length ? { settled } : {}), remembered, steps };

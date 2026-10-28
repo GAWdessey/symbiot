@@ -202,7 +202,7 @@ console.log("REPORTS — a handed-off or dismissed next step leaves 'Read, to ac
   const long = "Extension constructions for the long tail: grow the container by j and fill the L-shaped border with a grid";
   const dc = join(CFG, "drafts", "act-copy001"), dd = join(CFG, "drafts", "act-copy002"), sc = join(CFG, "seen-copy.json");
   put(dc, "PLAN-aaa111.md", `# Plan\n\n## Next steps\n\n- ${long}\n- short one\n`);
-  put(dd, "PLAN-bbb222.md", `# Plan\n\n## Next steps\n\n- ${long}\n- short one\n`);
+  put(dd, "PLAN-bbb222.md", `# Plan\n\nRewritten after the review.\n\n## Next steps\n\n- ${long}\n- short one\n`); // says more: another report, not a copy
   const lc = R.listReports({ map: { symbiot: repo }, folders: [dc, dd], running: () => false }), a = lc.find((x) => /aaa111/.test(x.file)), b = lc.find((x) => /bbb222/.test(x.file));
   reportIdeasAdd(a.id, [long, "short one"], { list: () => lc, add: () => ({ id: "t" }), mark: (r, i, st) => R.markIdeas(r, i, st, sc) });
   const nb = R.withNeeds(lc, { seenFile: sc }).find((x) => x.id === b.id);
@@ -394,6 +394,57 @@ console.log("REPORTS — usable rows (2026-10-16): honest 'still writing', reada
   R.markIdeas(r0, r0.steps.length ? r0.steps : ["x"], "done", join(CFG, "seen-rows.json"));
   const w2 = R.withNeeds(R.listReports({ map, folders, running: none }), { seenFile: join(CFG, "seen-rows.json"), tasks: [] }).find((r) => r.id === r0.id);
   ok("a report whose steps are all done moves to Read and done by itself", w2.needs === "" && w2.steps.length === 0, w2);
+}
+console.log("REPORTS — copies of one report under run-id names are one report, and what you did to it sticks (28 Oct 2026)");
+{
+  const lane = join(HOME, "code", "leads"), sf = join(CFG, "seen-copies.json"), DAY = 86400000;
+  const from = (x) => `_(from a run beside leads on "${x}")_\n`;
+  const PREVIEW = (marks) => `# Sam trial account removal: preview (read only, nothing changed)\n${marks}\nTwo accounts would go.\n`;
+  const LEE = (marks) => `# Lee test: is the caller ready to reach his phone?\n${marks}\nYes.\n\n## Next steps\n\n- Wed 21 Oct, 11:00\n- Thu 22 Oct, 11:00\n- Ask Lee to confirm his consent before any call goes out\n`;
+  put(lane, "SAM-ACCOUNT-REMOVAL-PREVIEW.md", PREVIEW(""), 13 * DAY);
+  put(lane, "SAM-ACCOUNT-REMOVAL-PREVIEW-0b4daf.md", PREVIEW(from("PageSpeed")), 2 * 3600000);
+  put(lane, "SAM-ACCOUNT-REMOVAL-PREVIEW-c0c3e8.md", PREVIEW(from("test call")), 3600000);
+  put(lane, "LEE-TEST-READINESS-0b4daf-c0c3e8.md", LEE(from("PageSpeed") + from("test call")), 3600000);
+  put(lane, "LEE-TEST-READINESS-c0c3e8.md", LEE(from("test call")), 3600000);
+  const L = () => R.listReports({ map: { leads: lane }, folders: [lane], running: none, seen: JSON.parse((() => { try { return readFileSync(sf, "utf8"); } catch { return "{}"; } })()) });
+  let l = L();
+  ok("copies that differ only by run-id suffixes are listed once", l.length === 2 && l.filter((r) => /Sam/.test(r.title)).length === 1, l.map((r) => r.name));
+  const sam = l.find((r) => /Sam/.test(r.title)), lee = l.find((r) => /Lee/.test(r.title));
+  ok("…under the plain name's id, the newest copy shown, every copy known", sam.copies.length === 3 && sam.name === "SAM-ACCOUNT-REMOVAL-PREVIEW-c0c3e8.md" && lee.copies.length === 2, sam);
+  R.decide(sam, "approved", sf);
+  ok("approved on one, it asks no more", R.withNeeds(L(), { seenFile: sf, tasks: [] }).find((r) => r.id === sam.id).needs === "", R.withNeeds(L(), { seenFile: sf, tasks: [] }));
+  put(lane, "SAM-ACCOUNT-REMOVAL-PREVIEW-0b4daf-abc94d.md", PREVIEW(from("PageSpeed") + from("list run")), 60000); // a later run copies it again
+  l = L(); const sam2 = l.find((r) => /Sam/.test(r.title));
+  ok("a later run's copy of the same text keeps the approval (and survives a restart: it's on disk)", sam2.id === sam.id && sam2.mtime !== sam.mtime && R.decidedOn(sam2, sf) === "approved" && R.withNeeds(l, { seenFile: sf, tasks: [] }).find((r) => r.id === sam.id).needs === "");
+  put(lane, "SAM-ACCOUNT-REMOVAL-PREVIEW-0b4daf-abc94d.md", PREVIEW("") + "\nA third account turned up: approve again?\n", 30000);
+  ok("…but one that really says something new asks again", R.decidedOn(L().find((r) => /Sam/.test(r.title)), sf) === "");
+  put(lane, "SAM-ACCOUNT-REMOVAL-PREVIEW-0b4daf-abc94d.md", PREVIEW(from("list run")), 20000);
+  const w = R.withNeeds(L(), { seenFile: sf, tasks: [] }).find((r) => /Lee/.test(r.title));
+  ok("next steps whose dates have passed are hidden; the rest stay", w.steps.join("|") === "Ask Lee to confirm his consent before any call goes out", w.steps);
+  R.markIdeas(w, w.steps, "dismissed", sf);
+  put(lane, "LEE-TEST-READINESS-abc94d.md", LEE(from("list run")), 10000);
+  const w2 = R.withNeeds(L(), { seenFile: sf, tasks: [] }).find((r) => /Lee/.test(r.title));
+  ok("a step dropped on one copy stays dropped when a later run copies the report again", w2.needs === "" && !w2.steps.length, w2.steps);
+  R.readReport(w2.id, { list: L(), seenFile: sf });
+  put(lane, "LEE-TEST-READINESS-ffffff.md", LEE(from("another run")), 5000);
+  ok("read on one copy, a later copy isn't unread again", L().find((r) => /Lee/.test(r.title)).new === false);
+  ok("a date step is its when only when it leads; a date further on is context", R.pastDated("Wed 21 Oct, 11:00", Date.now() - 9 * DAY) && !R.pastDated("Rerun the sign-up journey check end to end, as last done on 19 Oct", Date.now() - 9 * DAY) && !R.pastDated("Call Lee on 30 Dec", Date.now()));
+  // a draft whose job is finished asks no more
+  const dl = join(HOME, "code", "ops2"); put(dl, "SITE-MOVE-PREVIEW.md", "# Site move: preview\n\nWhat would change.\n", 60000);
+  const dr = R.listReports({ map: { ops2: dl }, folders: [dl], running: none });
+  ok("a draft asks for your OK while its job is open", R.withNeeds(dr, { seenFile: sf, tasks: [] })[0].needs === "draft");
+  ok("…and not once a task made from it is done", R.withNeeds(dr, { seenFile: sf, tasks: [{ id: "t1", text: "Do the move (from the report \"Site move: preview\", .symbiot/SITE-MOVE-PREVIEW.md)", done: true }] })[0].needs === "");
+  // cleaning up what's there
+  put(lane, "CARRYON-0b4daf.md", "# Note to the next run\n"); put(lane, "CARRYON.md", "# The lane's own note\n");
+  ok("a copy of a file Symbiot talks through (CARRYON-<run id>.md) is no report", !L().some((r) => /CARRYON/.test(r.name)));
+  const before = L().find((r) => /Lee/.test(r.title));
+  const c = R.collapseCopies({ folders: [lane], seenFile: sf });
+  const { readdirSync } = await import("node:fs");
+  const left = readdirSync(join(lane, ".symbiot")).sort();
+  ok("clean-up leaves the files Symbiot reads alone", readFileSync(join(lane, ".symbiot", "CARRYON.md"), "utf8") === "# The lane's own note\n" && left.includes("CARRYON-0b4daf.md"), left);
+  ok("clean-up: identical copies go, the plain-named one kept, else the newest copy, nothing renamed", left.includes("SAM-ACCOUNT-REMOVAL-PREVIEW.md") && left.filter((f) => /^SAM/.test(f)).length === 1 && left.filter((f) => /^LEE-TEST-READINESS/.test(f)).join() === "LEE-TEST-READINESS-ffffff.md" && !("renamed" in c), left);
+  const after = L(), j3 = after.find((r) => /Lee/.test(r.title)), u3 = after.find((r) => /Sam/.test(r.title));
+  ok("…and what you did to them is carried over: still read, steps still dropped, the approval still holds", j3.id === before.id && j3.new === false && R.withNeeds(after, { seenFile: sf, tasks: [] }).find((r) => r.id === j3.id).needs === "" && R.decidedOn(u3, sf) === "approved", [j3, R.decidedOn(u3, sf)]);
 }
 console.log(`\n${fail ? "✗" : "✓"} reports: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
