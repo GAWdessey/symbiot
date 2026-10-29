@@ -67,7 +67,7 @@ var LQ_RUNW=270;
 function lqRunBand(h,S,y){var rs=(h.runs||[]);if(!rs.length)return {items:[],bottom:0};
 var R=Math.round(15*Math.max(0.85,Math.min(1.1,S.s))),unit=2*R+50+LQ_RUNW,gap=22,cols=Math.max(1,Math.min(4,Math.floor((S.w-24+gap)/(unit+gap)))),shown=rs.slice(0,cols);
 var x0=Math.max(12,(S.w-(shown.length*unit+(shown.length-1)*gap))/2),y0=Math.max(y||0,84)+18;
-var items=shown.map(function(x,i){return {id:x.id,kind:'run',band:true,shape:'agents',repo:x.repo,title:x.name,sub:runWarn(x)+x.line+(x.eta?' · '+x.eta:''),ask:!!(x.quiet||x.looping),r:R,tx:x0+i*(unit+gap)+R,ty:y0+22,ax:0,ay:0};});
+var items=shown.map(function(x,i){return {id:x.id,kind:'run',band:true,shape:'agents',repo:x.repo,title:x.name,sub:runWarn(x)+x.line+(x.eta?' · '+x.eta:'')+(x.proof?' · '+x.proof:''),ask:!!(x.quiet||x.looping),r:R,tx:x0+i*(unit+gap)+R,ty:y0+22,ax:0,ay:0};});
 return {items:items,bottom:y0+44+16,more:rs.length-shown.length};}
 // Next up, where the needs-you band would be: with nothing waiting on you (and only
 // then), a few things that CAN be done next (home.mjs nextUp), each with its gain

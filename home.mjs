@@ -10,6 +10,7 @@
 // how you use them; this is the live data around them. Home's talk goes to the
 // same Symbiot as every chat (mind.mjs converse), told what home shows.
 import { prFacts, prLive, conflictsIn, openPrCards } from "./probes.mjs";
+import { proofOf } from "./evidence.mjs";
 import { claudeSetup } from "./claudesetup.mjs";
 import { heldAsks } from "./handover.mjs";
 import { plainAsk } from "./plain.mjs";
@@ -558,7 +559,7 @@ function homeState({ now = Date.now(), fresh = false, deps = {}, tick = false } 
   for (const a of list) {
     if (a.status !== "running" || seenRun.has(a.path)) continue; seenRun.add(a.path);
     const lane = laneOfPath(a.path, map);
-    runs.push({ id: "run:" + a.path, path: a.path, repo: lane || "", name: lane ? named(map[lane], lane) : plain(String(a.name || "an agent").replace(/^Agent:\s*/, ""), 40), ...runNow(a), started: a.startedAt || 0 });
+    runs.push({ id: "run:" + a.path, path: a.path, repo: lane || "", name: lane ? named(map[lane], lane) : plain(String(a.name || "an agent").replace(/^Agent:\s*/, ""), 40), ...runNow(a), started: a.startedAt || 0, proof: (() => { try { const st = ((a.work && a.work.steps) || []).slice(-1)[0]; return proofOf({ running: true }, { now: Date.now(), live: { startedAt: a.startedAt, step: st ? `${st.verb} ${st.target || ""}`.trim() : "" } }).line; } catch { return ""; } })() });
   }
   // which project each agent's card is about, from the record (lanes.mjs projectOf): "" says "no project"
   { let ledger = null; for (const y of you) if (y.path && (y.kind === "ask" || y.kind === "approve") && y.fix !== "draft" && y.project === undefined) { if (!ledger) { try { ledger = (deps.ledger || loadLedger)(); } catch { ledger = { handoffs: [] }; } } y.project = y.repo || projectFor(y.path, map, ledger); } }
@@ -1314,6 +1315,7 @@ function workSceneNow({ deps = {}, full = false } = {}) {
     const p = at(t.repo || RUNS_LANE); p.asks++; p.qs = p.qs || [];
     if (p.qs.length < 3) p.qs.unshift({ q: t.q, options: t.options, path: t.path, fix: t.fix, id: t.id, sub: t.sub, ...(t.draft ? { draft: t.draft } : {}), ...(t.signInTo ? { signInTo: t.signInTo } : {}) });
   }
+  let reps = null;
   for (const p of Object.values(by)) {
     p.lit = !!(p.asks || p.ready); if (isParked(p.repo)) p.parked = true;
     // A run that ended "waiting on <lane>" after a handover that is now done isn't waiting on anyone else:
@@ -1336,6 +1338,16 @@ function workSceneNow({ deps = {}, full = false } = {}) {
       let c = []; try { c = (deps.conflictsIn || conflictsIn)(map[p.repo], p.summary); } catch {}
       if (c.length) { p.conflicts = c; p.blocker = `Has conflicts: PR ${c[0]}`; if (p.state === "done") p.state = "idle"; p.summary = `PR ${c.join(", ")} ${c.length > 1 ? "have" : "has"} conflicts on GitHub: it won't merge by itself until they're resolved. ${String(p.summary).trim()}`; }
     }
+    // the proof behind its status (evidence.mjs): GitHub's word on a PR it names, the report it left, or the live agent's last step
+    // and how long it has run; a "done" nothing confirms reads Unverified, never Done (Garth, 29 Oct 2026)
+    try {
+      const dir = map[p.repo] || "", r = running.find((x) => x.lane === p.repo), la = r && AG.find((x) => x.path === r.path), steps = (la && la.work && la.work.steps) || [], ls = steps[steps.length - 1];
+      const lookup = deps.prLive || prLive; let nums = [];
+      if (dir && p.state === "done" && !p.running) { nums = [...new Set((String(p.summary || "").match(/(?:\bPRs?\s*|#)(\d{2,5})\b/gi) || []).map((m) => m.match(/\d+/)[0]))].slice(0, 3); for (const n of nums) lookup(dir, n); }
+      if (p.state === "done" && !p.running && /\.md\b/.test(p.summary || "") && !reps) { try { reps = (deps.reportsList || listReports)({ map }); } catch { reps = []; } }
+      const proof = proofOf(p, { now, dir, info: (n) => (deps.prInfo || prLive.info)(dir, n) || (() => { const st = lookup(dir, n); return st ? { state: st, conflicts: prLive.conflicts(dir, n) } : null; })(), live: r ? { startedAt: r.started, step: ls ? `${ls.verb} ${ls.target || ""}`.trim() : "", last: r.line } : null, reports: (reps || []).filter((x) => x.lane === p.repo) });
+      if (proof) { p.proof = proof; if (proof.kind === "unverified" && p.state === "done") p.state = "unverified"; }
+    } catch {}
     p.pill = pillOf(p); // one of the 7 (cardwords.mjs): never a raw state
     if (p.handing) p.handing = p.handing.map((x) => ({ ...x, words: handWords(x), ...(/asked you something first/.test(x.why || "") ? { ask: x.askLane || x.lane } : {}) }));
   }

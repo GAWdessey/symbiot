@@ -32,7 +32,7 @@ ok("[x] reads \"ticked\" and [ ] \"open\"", plainMarks("2 [x], 1 [ ]") === "2 ti
 const cmd = plainSummary("Ran ssh -i ~/.ssh/steve_vm ubuntu@203.0.113.7 sudo ls /srv. All good. Tests pass (npm test 2>&1 | tail).", "Steve");
 ok("a summary's command sentence becomes what it did, and its words stay (no host, key path, pipe or sudo)", cmd === "Checked the Steve server. All good. Tests pass." && !BANNED.test(cmd), cmd);
 
-// pills: only the 7
+// pills: only the 8 (Unverified is the 8th)
 ok("a question: Asks you", pillOf({ qs: [{ q: "?" }] }) === "Asks you");
 ok("something to approve: Ready for your OK", pillOf({ ready: 2 }) === "Ready for your OK" && pillOf({ shipping: "pushing" }) === "Ready for your OK");
 ok("a running agent: At work", pillOf({ running: { doing: "x" } }) === "At work");
@@ -40,7 +40,7 @@ ok("stuck on a third party: Waiting on someone else", pillOf({ state: "waiting o
 ok("paused: Paused", pillOf({ state: "paused" }) === "Paused");
 ok("done with nothing open: Done; done with tasks waiting, or failed: Idle", pillOf({ state: "done" }) === "Done" && pillOf({ state: "done", waiting: 2 }) === "Idle" && pillOf({ state: "failed" }) === "Idle");
 ok("a run that waits on you with no question left to answer isn't amber", pillOf({ state: "waiting on you" }) === "Idle");
-ok("every pill is one of the 7", [{}, { qs: [1] }, { ready: 1 }, { running: {} }, { state: "paused" }, { parked: true }, { state: "done" }].every((p) => PILLS.includes(pillOf(p))));
+ok("every pill is one of the 7", [{ state: "unverified" }, { qs: [1] }, { ready: 1 }, { running: {} }, { state: "paused" }, { parked: true }, { state: "done" }].every((p) => PILLS.includes(pillOf(p))));
 
 ok("a PR that needs the user's hand merge: \"Needs your merge: PR #612\" (a pill that isn't one of the 7)", blockerOf("The real blocker was PR #612 in GarthGhostai/bookshop, which needs Garth's hand merge because auto-merge is refused.") === "Needs your merge: PR #612" && pillOf({ state: "waiting on ops", blocker: "Needs your merge: PR #612" }) === "Needs your merge: PR #612");
 ok("no PR or no user step: no blocker", blockerOf("Handed to ops.") === "" && blockerOf("PR #5 merged fine.") === "");

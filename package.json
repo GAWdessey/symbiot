@@ -55,6 +55,7 @@
     "adapt.mjs",
     "home.mjs",
     "cardwords.mjs",
+    "evidence.mjs",
     "work.mjs",
     "phone.mjs",
     "desktop.mjs",

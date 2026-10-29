@@ -38,11 +38,14 @@ function rlAsk(p,nm,q){return {kind:'ask',name:nm,repo:p.repo,q:q.q,raw:q.raw,ta
 var RLAMBER={'Asks you':1,'Ready for your OK':1};
 function rlLane(l){var n=String(l||'');if(n==='ops')return 'Ops';n=lqProjName(n)||n;if(/^[a-z0-9]+(?:[-_][a-z0-9]+)*$/.test(n))n=n.replace(/[-_]+/g,' ');return n.charAt(0).toUpperCase()+n.slice(1);} // a lane as people say it: never a folder slug
 function rlHand(x){var to=rlLane(x.lane)+(x.then?', then '+rlLane(x.then):'');return "<p class='rlhand' title='"+escQ(x.text)+"'><b>To "+esc(to)+":</b> "+esc(x.words||x.why)+(x.ask?" &middot; <button type='button' class='rlans' data-lane='"+escQ(x.ask)+"'>Answer &rsaquo;</button>":"")+"</p>";}
+// The proof under a status (evidence.mjs): one short line, the details behind it on tap. Unverified and contradicted read amber.
+function rlProof(f){var bad=f.kind==='unverified'||f.kind==='contradicted',rows=(f.rows||[]).map(function(r){return /^https?:/.test(r)?"<a href='"+escQ(r)+"' target='_blank' rel='noopener'>"+esc(r)+"</a>":"<span>"+esc(r)+"</span>";}).join('');
+return "<details class='rlproof "+esc(f.kind)+"'><summary>"+(bad?'':'&#10003; ')+esc(f.line)+"</summary>"+(rows?"<div class='rlpr'>"+rows+"</div>":'')+"</details>";}
 function rlTime(t){var d=new Date(t),p=function(n){return (n<10?'0':'')+n;};return p(d.getHours())+':'+p(d.getMinutes());}
 var RLOPEN={}; // the cards whose summary is open (More), by lane
 function lqRelay(){var el=$('lqrelay'),ln=$('lqline'),w=LQ.workData,off=document.body&&document.body.classList&&document.body.classList.contains('lq-offline');
 if(ln)ln.innerHTML=LQ.scene==='work'?(w?lqLineText(w):'')+(off&&LQ.workAt?" &middot; <span class='rlwhen'>Last updated "+rlTime(LQ.workAt)+"</span>":''):'';if(!el)return;
-var ps=lqRelayList(w||{}),sig=(w?'1':'0')+JSON.stringify(ps.map(function(p){return [p.repo,p.summary,p.now,p.pill,p.ready,p.shipping,(p.qs||[]).map(function(q){return q.q;}),(p.ideas||[]).map(function(i){return i.full;}),p.sent,p.parked,(p.handing||[]).map(function(x){return x.words+x.ask+x.then;})];}));
+var ps=lqRelayList(w||{}),sig=(w?'1':'0')+JSON.stringify(ps.map(function(p){return [p.repo,p.summary,p.now,p.pill,p.proof&&p.proof.line,p.ready,p.shipping,(p.qs||[]).map(function(q){return q.q;}),(p.ideas||[]).map(function(i){return i.full;}),p.sent,p.parked,(p.handing||[]).map(function(x){return x.words+x.ask+x.then;})];}));
 lqRelayPhone(ps.length);
 if(el.contains&&document.activeElement&&el.contains(document.activeElement)&&el.innerHTML)return;if(sig===LQ.relaySig&&el.innerHTML){rlMeasure();return;}LQ.relaySig=sig;
 if(!w){el.innerHTML="<span class='rlsr'>Loading your projects…</span>"+[0,1,2].map(function(){return "<section class='rly rlskel' aria-hidden='true'><i></i><i></i><i></i></section>";}).join('');return;}
@@ -51,6 +54,7 @@ el.innerHTML=ps.map(function(p,i){var nm=p.name||p.repo,q=(p.qs||[])[0],st=p.pil
 var h="<section class='rly"+(amber?' lit':'')+"' data-i='"+i+"'><div class='rlh'><b>"+esc(nm)+"</b><span class='rls"+(st==='At work'?' rlgo':'')+"'>"+esc(st)+"</span></div>";
 if(p.now)h+="<p class='rlnow'>"+esc(p.now)+"</p>";
 if(p.summary&&!(q&&String(q.q||'').trim()===String(p.summary).trim()))h+="<p class='rlsum"+(RLOPEN[p.repo]?' open':'')+"'>"+esc(p.summary)+"</p><button type='button' class='rlmore' hidden aria-expanded='"+(RLOPEN[p.repo]?'true':'false')+"'>"+(RLOPEN[p.repo]?'Less':'More')+"</button>";
+if(p.proof)h+=rlProof(p.proof);
 if(q)h+="<div class='lqblob rlask'>"+blobBody(rlAsk(p,nm,q),false)+"</div>";
 if(p.ready)h+="<button type='button' class='act rlok'>Review and approve</button>";
 if(p.handing&&p.handing.length)h+="<div class='rlk'>Handed over</div>"+p.handing.map(rlHand).join('');

@@ -9,7 +9,7 @@
 // phrase with how long it's taken. plainSummary(text, lane): a summary with no commands, hosts,
 // key paths or task-file marks. handWords(row): a handover row's own words, after "To <Lane>:".
 
-const PILLS = ["Asks you", "Ready for your OK", "At work", "Waiting on someone else", "Paused", "Idle", "Done"];
+const PILLS = ["Asks you", "Ready for your OK", "At work", "Waiting on someone else", "Paused", "Idle", "Done", "Unverified"];
 const AMBER = new Set(["Asks you", "Ready for your OK"]);
 
 // p: a project of workScene's: qs (its questions), ready, shipping, running, parked, state (its
@@ -21,6 +21,7 @@ function pillOf(p = {}) {
   if (p.state === "paused") return "Paused";
   if (p.blocker) return p.blocker;
   if (p.parked || (/^waiting on /.test(p.state || "") && p.state !== "waiting on you")) return "Waiting on someone else";
+  if (p.state === "unverified" && !p.waiting) return "Unverified"; // it says done, nothing confirms it (evidence.mjs)
   if (p.state === "done" && !p.waiting) return "Done";
   return "Idle";
 }
