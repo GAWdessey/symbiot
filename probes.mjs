@@ -120,6 +120,41 @@ function prLive(dir, n, { now = Date.now(), gh = (args) => run("gh", args), git 
 prLive.wait = (dir, n) => (PR_LIVE.get(`${dir}#${n}`) || {}).done;
 prLive.clear = () => PR_LIVE.clear();
 
+
+// Every open PR on a lane's own repo that is mergeable, as Home's "Only the user can do" cards: Garth asked "why don't I
+// get told there are PRs waiting for me to merge?" (29 Oct 2026). Read from GitHub per lane remote (gh pr list -R), kept for
+// a couple of minutes, and replaced whole at each look, so a PR that merged or closed is gone from the next one. Read
+// synchronously (homeState); a look that isn't back yet is started and shows at the next build.
+const OPEN_PRS = new Map(), OPEN_PRS_MS = 2 * 60000;
+const oneLine = (t, n) => { const x = String(t || "").replace(/<!--[\s\S]*?-->/g, " ").replace(/[`*#>_\[\]]/g, "").split("\n").map((l) => l.trim()).find((l) => l.length > 3) || ""; return x.length > n ? x.slice(0, n - 1) + "…" : x; };
+function mergeCard(slug, lane, v) {
+  const st = prState({ ...v, state: "OPEN" });
+  if (v.isDraft || /conflicts|check failed/.test(st)) return null; // a fix run's job (actOn), not a merge for the user
+  const how = v.autoMergeRequest ? (st === "checks running" ? "auto-merge is on and CI is still running; it merges itself when green" : "auto-merge is on") : st === "checks running" ? "auto-merge is off and CI is still running: merge it yourself when green" : "ready, and auto-merge is off: merge it yourself";
+  const fixes = oneLine(v.body, 140);
+  return { kind: "merge", id: `pr:${slug}#${v.number}`, repo: lane, name: lane, title: `Merge PR #${v.number}: ${oneLine(v.title, 90)}`, sub: `${slug} #${v.number} · ${how}${fixes ? ` · ${fixes}` : ""}`, url: v.url, shape: "tasks" };
+}
+function openPrCards(map = {}, { now = Date.now(), gh = (args) => run("gh", args), git } = {}) {
+  const out = [], seen = new Set();
+  for (const [lane, dir] of Object.entries(map || {})) {
+    const had = OPEN_PRS.get(dir);
+    if (!had || (now - had.at > OPEN_PRS_MS && !had.busy)) {
+      const rec = { cards: had ? had.cards : [], at: now, busy: true }; OPEN_PRS.set(dir, rec);
+      rec.done = (async () => {
+        const slug = await remoteSlug(dir, git); if (!slug) return;
+        const raw = await gh(["pr", "list", "-R", slug, "--state", "open", "--limit", "30", "--json", "number,title,url,body,isDraft,mergeable,mergeStateStatus,autoMergeRequest,statusCheckRollup"]);
+        let list = null; try { list = JSON.parse(raw); } catch {}
+        if (!Array.isArray(list)) return; // GitHub didn't answer: what was shown stays
+        rec.cards = list.map((v) => mergeCard(slug, lane, v)).filter(Boolean);
+      })().catch(() => {}).finally(() => { rec.busy = false; });
+    }
+    for (const c of OPEN_PRS.get(dir).cards) if (!seen.has(c.id)) { seen.add(c.id); out.push({ ...c, repo: lane, name: lane }); }
+  }
+  return out;
+}
+openPrCards.wait = () => Promise.all([...OPEN_PRS.values()].map((r) => r.done));
+openPrCards.clear = () => OPEN_PRS.clear();
+
 // ---- npm ------------------------------------------------------------------------------
 // A lane's package that's published (publishConfig), or Symbiot's own: { lane, name, version }.
 function packagesOf(map = {}) {
@@ -210,4 +245,4 @@ function actOn(items, { map = {}, add, run, merged, now = Date.now() } = {}) {
   return did;
 }
 
-export { prRefs, prFacts, prLive, STATUS_URL, readStates, actOn, prItems, prState, openedPrs, npmItems, packagesOf, metaItems, metaOf, envOf };
+export { prRefs, prFacts, prLive, openPrCards, mergeCard, STATUS_URL, readStates, actOn, prItems, prState, openedPrs, npmItems, packagesOf, metaItems, metaOf, envOf };
