@@ -780,7 +780,7 @@ body.lq-light .rbackbar{background:rgba(246,248,251,.95);box-shadow:0 1px 0 rgba
 .aq .qf dd small{display:block;color:var(--faint);font-size:12.5px}
 .aq .qlh{color:var(--faint);font-size:12.5px;margin-bottom:4px}
 .aq .qlb{color:var(--text);font-size:14px;line-height:1.5}.aq .qlb p{margin:0 0 8px}.aq .qlb p:last-child{margin-bottom:0}
-.aq .qlb.fold{max-height:6em;overflow:hidden;-webkit-mask-image:linear-gradient(#000 70%,transparent);mask-image:linear-gradient(#000 70%,transparent)}
+.aq .qlb.fold{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:4;line-clamp:4;overflow:hidden}.aq .qlb.fold p{display:inline;margin:0}.aq .qlb.fold p+p::before{content:" "}
 .aq .qlong .qall{margin-top:6px}
 .aq .qfiles{color:var(--faint);font-size:12.5px}
 .aq .qthen{margin-top:12px}.aq .qthen h4{margin:0 0 6px}
@@ -1028,6 +1028,7 @@ body.lq-liquid .aq{border:1px solid rgba(255,255,255,.08);border-left:2px solid 
 body.lq-liquid.lq-light .aq{border-color:rgba(21,26,33,.08);border-left-color:var(--amber);background:rgba(255,255,255,.55)}
 body.lq-liquid .aq h4{font:600 11px var(--sans);letter-spacing:.1em;display:flex;align-items:center;gap:6px}
 body.lq-liquid .aq .q{padding:12px 16px;margin:8px 0 0}
+@media (max-width:480px){body.lq-liquid .aq{padding:12px 10px}body.lq-liquid .aq .q{padding:12px 0;border-left:0;border-right:0}body.lq-liquid .aq .q .qpv{margin-left:-10px;margin-right:-10px;border-left:0;border-right:0;border-radius:0}}
 body.lq-liquid .aq label.opt{gap:10px;padding:4px 0}
 body.lq-liquid .aq .opt input{margin-top:1px}
 body.lq-liquid .who{display:inline-flex;align-items:center;gap:4px;padding:1px 8px;border-radius:999px;background:rgba(255,255,255,.07);font-size:12px;font-weight:600;color:var(--bone);white-space:nowrap}

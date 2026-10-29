@@ -22,7 +22,16 @@ const FIELD = /^(?:[-*+]\s+)?([A-Za-z][\w'&/-]*(?: [\w'&/-]+){0,2})\s*(?:\.{3,}|
 const ASK_PREVIEW = "Show me the preview on the card: put the pictures and the details in the question itself.";
 const cap = (s) => String(s || "").replace(/^\s*\p{Ll}/u, (c) => c.toUpperCase());
 // A file path in words the user reads: a backticked path goes, with its brackets if that's all they held.
-const noPaths = (s) => String(s || "").replace(/\s*\(\s*`[^`]*[/\\][^`]*`\s*\)/g, "").replace(/`[^`]*[/\\][^`]*`/g, "a file").replace(/\s{2,}/g, " ").trim();
+// A bracket that holds a path is an aside about where a file is ("(proof in `.symbiot/…png`)"): it goes whole.
+const pathIn = (x) => (String(x).match(/`[^`]*`/g) || []).some((c) => /[/\\]/.test(c));
+const noPaths = (s) => String(s || "").replace(/\s*\([^()]*\)/g, (b) => pathIn(b) ? "" : b).replace(/`([^`]*)`/g, (c, x) => /[/\\]/.test(x) ? "a file" : c).replace(/\s{2,}/g, " ").trim();
+// The lead-in in plain words (critic, 29 Oct): no code chips, and a home folder by its name ("~/Downloads" →
+// "your Downloads folder"), a deeper path by its last part.
+const plain = (s) => noPaths(s).replace(/`([^`]+)`/g, "$1")
+  .replace(/(^|[\s(])~\/((?:[\w. -]+\/)*)([\w.-]+)\/?(?=$|[\s.,;:!?)])/g, (_, a, dirs, last) => a + (dirs || /\.\w{2,4}$/.test(last) ? last : `your ${last} folder`));
+// An option's words as the card shows them: the agent's "everything under "Then"" names the card's "After that"
+// heading, and it starts with a capital after its "🤖 Agent:" tag.
+const asLabel = (o, then) => { let t = String(o); if (then) t = t.replace(/\bunder\s+["“']?Then["”']?(?=\W|$)/gi, 'under "After that"'); return t.replace(/^((?:\p{Extended_Pictographic}\uFE0F?\s*)?[\w ]{0,20}?:\s*)?(\p{Ll})/u, (_, pre = "", c) => pre + c.toUpperCase()); };
 const dropShown = (s) => String(s || "").replace(DROPPABLE, "").replace(/\s+([?.!,;:])/g, "$1").replace(/,\s*,/g, ",").replace(/\s{2,}/g, " ").trim();
 
 // A picture's size from its first bytes (PNG, GIF, JPEG, WebP), or null.
@@ -75,7 +84,7 @@ function previewOf(path, lines, { q = "", options = [], labels = null, src = nul
   const L = (Array.isArray(lines) ? lines : []).map((l) => String(l == null ? "" : l));
   const lead = [], pics = [], fields = [], then = [], files = [], quote = [];
   let caption = "", longLabel = "", para = [];
-  const flush = () => { if (para.length) lead.push(noPaths(para.join(" "))); para = []; };
+  const flush = () => { if (para.length) lead.push(plain(para.join(" "))); para = []; };
   for (let i = 0; i < L.length; i++) {
     const l = L[i].trim();
     if (!l) { flush(); continue; }
@@ -141,15 +150,17 @@ function previewOf(path, lines, { q = "", options = [], labels = null, src = nul
   const said = (names, what) => names.length ? `${names.length > 1 ? names.slice(0, -1).join(", ") + " and " + names[names.length - 1] : names[0]} ${what(names.length > 1)}` : "";
   const warn = !drawn ? "This question mentions a preview, but none came with it. Ask the agent for it before you approve."
     : gone.length ? `Part of the preview couldn't be shown: ${[said(gone.filter((p) => p.state === "missing").map((p) => p.name), (n) => n ? "are missing" : "is missing"), said(gone.filter((p) => p.state === "outside").map((p) => p.name), () => "can't be shown")].filter(Boolean).join("; ")}. Check before you approve.` : "";
-  const pictures = pics.length, details = fields.length;
-  const away = drawn ? `Preview on your computer: ${[pictures ? `${pictures} picture${pictures > 1 ? "s" : ""}` : "", details ? `${details} detail${details > 1 ? "s" : ""}` : "", long.length && !pictures && !details ? "its text" : ""].filter(Boolean).join(", ")}. Open the Workdesk there to see it.` : "";
+  const pictures = pics.length - gone.length, details = fields.length; // the phone counts only what the card can draw
+  const has = [pictures ? `${pictures} picture${pictures > 1 ? "s" : ""}` : "", details ? `${details} detail${details > 1 ? "s" : ""}` : "", long.length && !pictures && !details ? "its text" : ""].filter(Boolean);
+  const away = drawn ? `${has.length ? `Preview on your computer: ${has.join(", ")}. ` : ""}${gone.length ? `${said(missing, (n) => n ? "couldn't be shown" : "couldn't be shown")}. ` : ""}Open the Workdesk there to see it.` : "";
   return {
     ...(lead.length ? { lead } : {}),
     ...(drawn ? { heading: /\bcreat/i.test(q) ? "Preview · what will be created" : "Preview · what you're approving" } : {}),
     ...(pics.length ? { pics } : {}), ...(caption ? { caption } : {}), ...(fields.length ? { fields } : {}),
     ...(long.length ? { long: { label: longLabel, paras: long } } : {}), ...(files.length ? { files } : {}), ...(then.length ? { then } : {}),
     ...(warn ? { warn } : {}), ...(missing.length ? { missing } : {}), ...(!drawn ? { ask: ASK_PREVIEW } : {}), ...(away ? { away } : {}),
-    ...(reword ? { shown: cap(dropShown(q)), labels: shownLabels.map((o) => cap(dropShown(o))) } : {}),
+    ...(reword ? { shown: cap(dropShown(q)) } : {}),
+    ...((labels2) => labels2.some((l, k) => l !== shownLabels[k]) ? { labels: labels2 } : {})(shownLabels.map((o) => asLabel(reword ? dropShown(o) : o, then.length > 0))),
   };
 }
 // What the agent is told with the answer when part of its preview didn't reach the card.

@@ -2207,15 +2207,16 @@ function parseQuestions(md, { linked = linkedIds() } = {}) {
   }
   // A preview's lines are context, not choices (29 Oct 2026): "- Name ...... Bookly", "- Address
   // ...... linkedin.com/company/bookly" sat above the 🤖 options, the card showed those two as its
-  // buttons, and the Address line went down as the answer, so nothing was created. Where a tagged
-  // option (🤖/👤) comes after prose, the bullets before that prose are the question's context, in place.
+  // buttons, and the Address line went down as the answer, so nothing was created. Where a question has
+  // a tagged option (🤖/👤), every bullet before the first one is the question's context, in place, with
+  // or without prose between them.
   const lines = new Map();
   for (const x of questions) {
     const parts = x.parts || []; delete x.parts;
     lines.set(x, parts.filter((p) => typeof p === "string"));
     const first = parts.findIndex((p) => typeof p === "number" && TAGGED.test(x.options[p])); if (first < 0) continue;
-    const prose = parts.slice(0, first).findLastIndex((p) => typeof p === "string" && p); if (prose < 0) continue;
-    const keep = new Set(parts.filter((p, i) => typeof p === "number" && i > prose)), ctx = parts.filter((p) => typeof p === "string" || !keep.has(p)).map((p) => typeof p === "string" ? p : "- " + x.options[p]);
+    const keep = new Set(parts.filter((p, i) => typeof p === "number" && i >= first)); if (keep.size === x.options.length) continue;
+    const ctx = parts.filter((p) => typeof p === "string" || !keep.has(p)).map((p) => typeof p === "string" ? p : "- " + x.options[p]);
     x.context = clip(ctx.filter(Boolean).join(" ")); lines.set(x, ctx);
     x.options = x.options.filter((_, i) => keep.has(i));
   }

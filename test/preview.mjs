@@ -76,7 +76,14 @@ ok("Then: is the after-that list, ticks as ticks", p.then.length === 4 && p.then
 ok("a file path in the list goes, with its brackets", p.then[1].text === "The post moves to the page", p.then[1]);
 ok("the lead-in keeps its paragraphs, without the file path", p.lead.length === 2 && !/\.symbiot/.test(p.lead.join(" ")) && p.lead[1] === "Legal name: Bookwell (Pty) Ltd.", p.lead);
 ok("its heading says what's approved", p.heading === "Preview · what will be created", p.heading);
-ok("everything shown: no warning, no rewording, nothing missing", !p.warn && !p.shown && !p.labels && !p.missing && missingNote(p) === "", p);
+ok("everything shown: no warning, no rewording, nothing missing", !p.warn && !p.shown && !p.missing && missingNote(p) === "", p);
+// critic, 29 Oct: the button named a "Then" heading the card titles "After that", and began in lower case
+ok("the first button names the card's \"After that\" heading, with a capital", p.labels && p.labels[0] === '🤖 Agent: Create it as shown, through Symbiot\'s signed-in browser, then do everything under "After that" (recommended)' && p.labels[1] === "🤖 Agent: Change something first (say what), then show you the preview again", p.labels);
+ok("the lead-in leaves out the bracket about where the proof is", p.lead[0] === "Nothing is on LinkedIn yet. I checked first: no Bookwell page exists that you run.", p.lead[0]);
+{
+  const w = pv(MD.replace("Legal name: Bookwell (Pty) Ltd.", "Legal name: Bookwell (Pty) Ltd, from `COR21.1_conf.pdf` in ~/Downloads, under the `bookwell` and `bookwell-ai` names.")).p;
+  ok("…and says paths and code in plain words", w.lead[1] === "Legal name: Bookwell (Pty) Ltd, from COR21.1_conf.pdf in your Downloads folder, under the bookwell and bookwell-ai names.", w.lead[1]);
+}
 ok("the phone says where the preview is", p.away === "Preview on your computer: 3 pictures, 10 details. Open the Workdesk there to see it.", p.away);
 ok("no ![ anywhere in what the card reads", !JSON.stringify({ ...p, pics: p.pics.map((x) => x.alt) }).includes("!["));
 
@@ -86,7 +93,8 @@ ok("no ![ anywhere in what the card reads", !JSON.stringify({ ...p, pics: p.pics
   ok("a missing picture is a named gap", m.pics[0].state === "missing" && m.pics[0].gap === "gone.png isn't in this lane's files" && !m.pics[0].src, m.pics[0]);
   ok("the warning names it", m.warn === "Part of the preview couldn't be shown: gone.png is missing. Check before you approve.", m.warn);
   ok("the question drops \"as shown\"", m.shown === "Create Bookwell's LinkedIn page?", m.shown);
-  ok("so does its first button", m.labels && !/as shown/i.test(m.labels[0]) && /create it, through/.test(m.labels[0]), m.labels);
+  ok("so does its first button", m.labels && !/as shown/i.test(m.labels[0]) && /Create it, through/.test(m.labels[0]), m.labels);
+  ok("the phone counts only the pictures the card can draw, and names the gap", m.away === "Preview on your computer: 2 pictures, 10 details. gone.png couldn't be shown. Open the Workdesk there to see it.", m.away);
   ok("and the agent is told what the card couldn't show", missingNote(m) === "(the card couldn't show: gone.png)", missingNote(m));
 }
 // nothing that can be drawn, but the words point at a preview
