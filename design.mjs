@@ -99,12 +99,25 @@ function noteOpen(path, review, { now = Date.now(), home = homedir(), slug, bran
 }
 // What holds a merge into this repo (slug "owner/name") of the PR from `branch`: [{ folder, item }], [] when
 // nothing does. No branch (the PR's couldn't be found): any open review in the repo holds it, as before.
-function holdsMerge(slug, { now = Date.now(), home = homedir(), branch = "" } = {}) {
+// Each item by its own review's time, not the folder's: on 29 Oct 2026 reviews from 25 Oct still held
+// #349 (a probe and its test, no screen), the folder's time kept fresh by each newer review. And an item
+// whose branch has merged a PR since the critic sent it back holds nothing more: that work is in main
+// already (#348 merged the fix the last one asked for), and holding the branch's next PR keeps nothing out.
+function holdsMerge(slug, { now = Date.now(), home = homedir(), branch = "", merged = mergedAt } = {}) {
   slug = String(slug || "").toLowerCase(); if (!slug) return [];
   const all = readJson(OPEN(home), {}) || {};
   const name = (x) => String(x || "").split("/").pop(); // by its name too: a repo that moved owner keeps an old remote (GitHub redirects it)
   const mine = (folder, v) => !branch || (v.branch ?? folderBranch(folder)) === branch;
-  return Object.entries(all).filter(([folder, v]) => v && v.slug && (v.slug === slug || name(v.slug) === name(slug)) && now - (v.at || 0) < OPEN_MS && mine(folder, v)).flatMap(([folder, v]) => (v.items || []).map((item) => ({ folder, item })));
+  const held = Object.entries(all).filter(([folder, v]) => v && v.slug && (v.slug === slug || name(v.slug) === name(slug)) && now - (v.at || 0) < OPEN_MS && mine(folder, v))
+    .flatMap(([folder, v]) => { const r = reviewOf(folder); return (v.items || []).map((item) => ({ folder, item, at: (r[item] && r[item].at) || v.at || 0 })); })
+    .filter((x) => now - x.at < OPEN_MS);
+  if (!held.length || !branch) return held.map(({ folder, item }) => ({ folder, item }));
+  const last = merged(slug, branch) || 0;
+  return held.filter((x) => x.at > last).map(({ folder, item }) => ({ folder, item }));
+}
+// When a PR from this branch last merged into the repo (ms), 0 when none or it can't be told.
+function mergedAt(slug, branch) {
+  try { const out = spawnSync("gh", ["pr", "list", "--repo", slug, "--head", branch, "--state", "merged", "--limit", "20", "--json", "mergedAt", "-q", "[.[].mergedAt] | max"], { encoding: "utf8", timeout: 10000 }).stdout; return Date.parse(String(out || "").trim()) || 0; } catch { return 0; }
 }
 // A step's own brief that came back in as a task line: on 24 Oct 2026 an agent handed the webapp lane
 // "Act as Symbiot's design critic for the webapp lane. Judge the finished job… The job: give each
@@ -376,4 +389,4 @@ async function shoot(url, { out, sizes = "1440x900,390x844", full = false, bin, 
   return { shots, ...(failed.length ? { failed } : {}), ...(Object.keys(late).length ? { late } : {}), ...(bad.length ? { broken: bad } : {}), ...(note ? { note } : {}) };
 }
 
-export { isBrief, taskOf, sameJob, dropDesign, designWorthy, toDesign, designerBrief, settleDesign, specsFor, startDesign, designOf, DESIGNER_PROMPT, DESIGN, MIN_SPEC, slugOf, folderSlug, noteOpen, holdsMerge, reviewHolds, heldMergeCard, MERGE_ASK, OPEN_MS, isUiWork, designBrief, CHECKLIST, toReview, criticBrief, CRITIC_PROMPT, settleVerdict, reviewOf, saveReview, itemKey, shoot, shootNote, SHOOT_MS, REVIEW, VERDICT, MAX_ROUNDS, looksAt, wroteOnly, writtenBrief };
+export { isBrief, taskOf, sameJob, dropDesign, designWorthy, toDesign, designerBrief, settleDesign, specsFor, startDesign, designOf, DESIGNER_PROMPT, DESIGN, MIN_SPEC, slugOf, folderSlug, noteOpen, holdsMerge, mergedAt, reviewHolds, heldMergeCard, MERGE_ASK, OPEN_MS, isUiWork, designBrief, CHECKLIST, toReview, criticBrief, CRITIC_PROMPT, settleVerdict, reviewOf, saveReview, itemKey, shoot, shootNote, SHOOT_MS, REVIEW, VERDICT, MAX_ROUNDS, looksAt, wroteOnly, writtenBrief };

@@ -167,12 +167,24 @@ try {
   D.noteOpen(mlane, { "Build the vault page": { rounds: 1, at: Date.now() } }, { slug: "acme/app", branch: "vault-page" });
   ok("only that work's own branch is held: another PR into the repo merges (a red main's fix sat behind a card review, 25 Oct 2026)", D.holdsMerge("acme/app", { branch: "fix-main" }).length === 0 && D.holdsMerge("acme/app", { branch: "vault-page" }).length === 1 && D.holdsMerge("acme/app").length === 1);
   ok("…in the guard too, by the branch the merge names", !judge("Bash", { command: "gh pr merge fix-main --repo acme/app --merge" }, { cwd: HOME, home: HOME }) && !!judge("Bash", { command: "gh pr merge vault-page -R acme/app" }, { cwd: HOME, home: HOME }));
+  { const m = (f) => judge("Bash", { command: "gh pr merge 251 --repo acme/app" }, { cwd: HOME, home: HOME, prFiles: () => f }); const r = [m(["probes.mjs"]), m(["a.css"]), m([])]; ok("a PR that changes no UI file isn't held by the critic; one that does, or whose files can't be listed, is", !r[0] && !!r[1] && !!r[2], r) }
   D.noteOpen(mlane, { "Build the vault page": { rounds: 1, passed: true } }, { slug: "acme/app" });
   ok("passed: the merge is open again", D.holdsMerge("acme/app").length === 0 && !judge("Bash", { command: "gh pr merge 251 --repo acme/app" }, { cwd: HOME, home: HOME }));
   D.noteOpen(mlane, { "Build the vault page": { rounds: 2, failed: true } }, { slug: "acme/app" });
   ok("after two rounds it's the user's call: nothing is held", D.holdsMerge("acme/app").length === 0);
   D.noteOpen(mlane, { "Old page": { rounds: 1 } }, { slug: "acme/app", now: Date.now() - D.OPEN_MS - 1000 });
   ok("a review left open for days holds nothing", D.holdsMerge("acme/app").length === 0);
+  {
+    const sl = join(HOME, "work", "app3"); mkdirSync(join(sl, ".symbiot"), { recursive: true });
+    const old = Date.now() - D.OPEN_MS - 1000, fresh = Date.now() - 3600000;
+    writeFileSync(join(sl, ".symbiot", "ui-review.json"), JSON.stringify({ "Old cards": { rounds: 1, at: old }, "Preview fields": { rounds: 1, at: fresh } }));
+    D.noteOpen(sl, D.reviewOf(sl), { slug: "acme/app3", branch: "work-tree" });
+    const none = () => 0;
+    ok("each item by its own review's time: one from days ago holds nothing though a newer one keeps the folder fresh (25 Oct reviews held #349, 29 Oct 2026)", D.holdsMerge("acme/app3", { branch: "work-tree", merged: none }).map((x) => x.item).join() === "Preview fields");
+    ok("…and once a PR from that branch has merged since it was sent back, nothing is held (#348 merged its fix)", D.holdsMerge("acme/app3", { branch: "work-tree", merged: () => fresh + 60000 }).length === 0);
+    ok("…a merge before it was sent back still holds it", D.holdsMerge("acme/app3", { branch: "work-tree", merged: () => fresh - 60000 }).length === 1);
+    D.noteOpen(sl, {}, { slug: "acme/app3" });
+  }
   const rv = join(HOME, "work", "app2"); mkdirSync(join(rv, ".symbiot"), { recursive: true });
   D.saveReview(rv, { "A page": { rounds: 1, at: Date.now() } });
   ok("saving a review is what records it (no remote here: nothing to hold)", existsSync(join(CFG, "ui-open.json")) && D.holdsMerge("").length === 0);
