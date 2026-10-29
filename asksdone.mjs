@@ -221,6 +221,8 @@ const BASE = [
   "When the user answers a question by asking for something (to explain it, write it up, put it in Reports) or asks a question back, they haven't answered it: do what they asked first, before anything else, as a report in .symbiot/ (it shows under Reports), and don't ask that question again in other words until they've read it.",
   "Never ask the user to close or click Done in the Symbiot Browser: if it's open, wait and retry on a shared resource, and ask only if they're mid-sign-in. That is never an \"only you\" step.",
   "Never hand the user a terminal command, a file path or code to run, in your last message, a note, a card or a report: they don't code. When something stops you reading or checking a thing (the membrane, the sandbox, a permission), hand that check to `ops` in .symbiot/HANDOFF.md (it runs with Symbiot's own permissions) and say it went there. Only if no lane can do it, say in plain words what wasn't checked and why. A check of the vault compares entry names only (`symbiot secret list`), never their values.",
+  // "What you do: tell the PC session, 'Read and do … on the VM.'" (29 Oct 2026): a relay through the user, onto a machine they'd ruled out
+  "Never make the user carry a message or a job between agents or sessions (\"tell the other session…\", \"paste this into the PC chat\"): hand it over yourself in .symbiot/HANDOFF.md to the lane that does it. And never route a step onto a machine, account or place the user has ruled out: do the work where they allow it (on this computer, from data already pulled).",
   "On an unsubscribe or settings page: wait for it to settle, press from the page you mapped last, and read the page again to confirm the change saved. If it still won't save, never ask \"what now?\": say in plain words which sender you couldn't unsubscribe from, set up a mail filter for it instead, and carry on.",
 ];
 function standingList() { return (readState(RULES(), Array.isArray) || []).filter((x) => x && x.rule); }
@@ -253,6 +255,25 @@ function dropRejected(reply) {
     return !r;
   });
   return { reply: keep.join("\n").replace(/\n{3,}/g, "\n\n").trim(), dropped: [...new Set(dropped)] };
+}
+// A step that routes work onto a place the user turned down ("running anything on the Trading Bot VM"):
+// "Read and do … REQUEST.md on the VM" shares one word with the option, so offers() missed it (29 Oct 2026).
+// The option's place is what follows its on/in/at; a sentence doing work there (not pulling data from it, not
+// "without touching" it) names the place's last word, and the rest of it is in the text or its lane's name.
+// The option it breaks, or "". lane: the folder or lane the text came from ("trading-bot-desk").
+const NEGATED = /\b(?:without|never|not|no|nothing|instead of|rather than|off|away from|ruled out|turned down)\b|n['’]t\b/i;
+const toks = (s) => String(s || "").toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+function ruledOut(text, lane = "") {
+  const has = new Set([...toks(text), ...toks(lane)]);
+  for (const { option } of rejectedList()) {
+    const m = String(option).match(/\b(?:on|in|at|onto|into)\s+(?:the\s+|that\s+|their\s+|his\s+|her\s+)?(.+?)\s*$/i); if (!m) continue;
+    const place = toks(m[1]); const head = place.pop(); if (!head) continue;
+    const there = new RegExp(String.raw`\b(?:on|in|at|onto|into|inside)\s+(?:the\s+|that\s+|your\s+|its\s+)?(?:[\w.-]+\s+){0,3}?${head}\b`, "i");
+    for (const s of String(text || "").split(/(?<=[.!?]["'”’)]*)\s+|\n+/)) {
+      if (there.test(s) && !NEGATED.test(s) && place.every((w) => has.has(w))) return option;
+    }
+  }
+  return "";
 }
 // Rules agreed with the user that look like they answer this question (shared words): only
 // listed on the card as "already covered?" for the user to confirm, never closed on a fuzzy match.
@@ -305,4 +326,4 @@ function recentTurns(now = Date.now(), maxAge = 3 * 86400000) {
 }
 function recentTasks() { try { const l = JSON.parse(readFileSync(join(CONFIG_DIR, "tasks.json"), "utf8")); return Array.isArray(l) ? l.map((t) => ({ text: String(t.text || "") })) : []; } catch { return []; } }
 
-export { talkOf, addTalk, endTalk, talkText, ASKS, asksQ, saysDone, YES, recordDone, isDone, cardDone, recordCard, decidedBy, NO_ASK, doneList, doneBrief, closesAsk, runSaysClosed, asksBack, askBackNote, wantsToRead, wantsReport, heldBy, reportsSince, runReport, reportAsked, addRule, addRejected, rejectedList, rejectedLines, rejectedBrief, dropRejected, standingList, standingBrief, coveredBy, isApprovalAsk, approvalText, approvedBefore, recentTurns, recentTasks };
+export { talkOf, addTalk, endTalk, talkText, ASKS, asksQ, saysDone, YES, recordDone, isDone, cardDone, recordCard, decidedBy, NO_ASK, doneList, doneBrief, closesAsk, runSaysClosed, asksBack, askBackNote, wantsToRead, wantsReport, heldBy, reportsSince, runReport, reportAsked, addRule, addRejected, rejectedList, rejectedLines, rejectedBrief, dropRejected, ruledOut, standingList, standingBrief, coveredBy, isApprovalAsk, approvalText, approvedBefore, recentTurns, recentTasks };

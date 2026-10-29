@@ -12,7 +12,7 @@ import { randomBytes, createHash } from "node:crypto";
 import { track as jobTrack, runRecord, recordOf, loadJobs, goalRows } from "./jobs.mjs";
 import { CONFIG_DIR, loadConfig, saveConfig, loadTasks, TASK_MAX, clipWords, jobWords, sameTask, taskWords, sh, runOut, hasCmd, readState, writeJsonAtomic } from "./core.mjs";
 import { meetsStep, captureSecrets, heldFor } from "./vault.mjs";
-import { recordDone, isDone, isApprovalAsk, approvalText, approvedBefore, recentTurns, recentTasks, asksBack, askBackNote, closesAsk, runSaysClosed, heldBy, reportsSince, runReport, reportAsked, standingList, talkOf, endTalk, talkText, addTalk } from "./asksdone.mjs";
+import { recordDone, isDone, ruledOut, isApprovalAsk, approvalText, approvedBefore, recentTurns, recentTasks, asksBack, askBackNote, closesAsk, runSaysClosed, heldBy, reportsSince, runReport, reportAsked, standingList, talkOf, endTalk, talkText, addTalk } from "./asksdone.mjs";
 import { sentAfter } from "./sentmail.mjs";
 import { parseRun, lastRunText, readRunLog, runStarted, briefPlan, stepOf, runLine, waitingOn, waitUntil, RECHECK } from "./work.mjs";
 import { noteDuration, noteCost, kindOf } from "./estimate.mjs";
@@ -21,7 +21,7 @@ import { apiOptions, blockedSignIn, apiRoute, realChrome, ownChromeStep, CHROME_
 import { actSites, goAhead, refuseHold, holdOf, goWords, goAnswer, goHistory, signInNotNeeded, switchOnAct } from "./chromegate.mjs";
 import { pushGo } from "./pushgate.mjs";
 import { goAhead as phoneGo } from "./phonegate.mjs";
-import { dangles, askedAlready, lanesJob, parseFacts, leftToYou, blockedChecks, blockedHandover, OPS, gitWork, agentsGitWork, agentsClicking, agentsCodeWork, agentsMail, agentsPosting, linkedAsks, linkedChore, PUSH_OK } from "./handover.mjs";
+import { dangles, askedAlready, lanesJob, carriesJob, parseFacts, leftToYou, blockedChecks, blockedHandover, OPS, gitWork, agentsGitWork, agentsClicking, agentsCodeWork, agentsMail, agentsPosting, linkedAsks, linkedChore, PUSH_OK } from "./handover.mjs";
 import { scanRoots, repoPathMap, laneMap } from "./scan.mjs";
 import { knowledgeFolders } from "./knowledge.mjs";
 import { pickModel, MODEL } from "./route.mjs";
@@ -1224,6 +1224,8 @@ function needsOf(path, { final = "", waiting = null, end = Date.now(), start = e
   if (now - end > NEEDS_FOR) return null;
   let n = waiting ? { kind: "step", what: clipWords(String(waiting.step || "").replace(/^\s*👤\s*(You\s*(\([^)]*\))?:)?\s*/, "").trim(), 240), check: "", label: "", waiting: true } : leftToYou(final) || readNeeds(path, final);
   if (!n || !n.what || dangles(n.what)) return null;
+  // a job to carry to another session, or work routed onto what the user turned down: back to its run, never a card
+  { const off = offLimits(path, `${n.label || ""} ${n.what} ${n.check || ""}`); if (off) { refuseStep(path, n.what, off); return null; } }
   if (n.kind !== "approve" && setupChore(`${n.label || ""} ${n.what}`)) return null; // a worktree or a repo copy to make: Symbiot's, never a card // "They wait on you for.": no question in it, so no card (27 Oct 2026)
   // waiting on the user's answer to a card already put to them: that card is the question, never a second card
   // pointing at it with only I've done this and Skip (28 Oct 2026); and its check is this job's, never another lane's state
@@ -1431,6 +1433,19 @@ function pastedStep(path, step, name, { held = false } = {}) {
   const said = `${held ? "Not the user's step: Symbiot already holds it" : "Done: the user pasted it on Home, and it's"} in Symbiot's vault as "${name}". ${VAULT_READ.replace("<name>", name).replace(/^./, (c) => c.toUpperCase())}. Never ask the user to paste or save it again.`;
   try { const had = readSymbiot(path, "ANSWERS.md"); if (!had.includes(said)) writeFileSync(join(path, ".symbiot", "ANSWERS.md"), `${(had || "# Answers\n").replace(/\s*$/, "")}\n\n${head}\n${said}\n_answered ${new Date().toISOString().slice(0, 10)}_\n`); } catch {}
   try { recordDone(clipWords(what, 240), said, whereOf(path).lane); } catch {}
+}
+// Why a step is never the user's: it has them carry a job to another agent or session ("tell the PC session,
+// 'Read and do … on the VM'", 29 Oct 2026), or it does work on a place they turned down (asksdone.mjs ruledOut). "" when neither.
+function offLimits(path, text) {
+  const why = [];
+  if (carriesJob(text)) why.push("it has the user carry a message or a job to another agent or session. Agents hand over between themselves: write it in .symbiot/HANDOFF.md for the lane that does it (or do it in this run), and never route a message through the user");
+  const no = ruledOut(text, `${path} ${whereOf(path).lane || ""}`);
+  if (no) why.push(`it routes work onto what the user turned down ("${no}"). Do it where they allow it instead (on this computer, from data already pulled), and ask only if more is needed`);
+  return why.join("; and ");
+}
+function refuseStep(path, step, why) {
+  const what = String(step).replace(/^\s*👤\s*(You\s*(\([^)]*\))?:)?\s*/, "").trim(), said = `Not the user's step, so Symbiot didn't show it: ${why}.`;
+  try { const had = readSymbiot(path, "ANSWERS.md"); if (!had.includes(said)) writeFileSync(join(path, ".symbiot", "ANSWERS.md"), `${(had || "# Answers\n").replace(/\s*$/, "")}\n\n### ${clipWords(what, 200)}\n${said}\n(Symbiot's step check; the user wasn't asked.)\n_${new Date().toISOString().slice(0, 10)}_\n`); } catch {}
 }
 function stepGone(path, w) {
   const n = needsOf(path, { waiting: w, end: w.at || Date.now() });
@@ -2537,7 +2552,7 @@ async function triageSweep({ write = aiWrite, runs = loadRuns, rules = () => { t
         if (verdictOf(path, q.q) || GO_ID.test(q.id || "")) continue; // a Go on a held action needs no judging: it's the user's
         const lane = Object.keys(map).find((k) => map[k] === path) || (path.includes("/drafts/act-") ? "ops" : basename(path));
         let known = ""; try { const M = await import("./mind.mjs"); known = M.recallText(M.recall(`${q.q} ${q.context || ""}`)); } catch {} // what Symbiot remembers: the user's email, number, accounts…
-        let v = null; try { v = precheckOnly ? triagePrecheck(q, known) : await triageJudge(q, { answers: readSymbiot(path, "ANSWERS.md"), rules: rules(), lane, known }, { write }); } catch {}
+        let v = null; try { v = precheckOnly ? triagePrecheck(q, known, lane) : await triageJudge(q, { answers: readSymbiot(path, "ANSWERS.md"), rules: rules(), lane, known }, { write }); } catch {}
         if (!v) continue;
         saveVerdict(path, q.q, v); out.push({ path, q: q.q, verdict: v.verdict });
         if (v.verdict === "symbiot") recordFault({ path, q: q.q, why: v.why, lane });
@@ -2891,4 +2906,4 @@ function agentsNow({ now = Date.now() } = {}) {
 }
 const forgetAgents = () => { agentsKept = null; };
 
-export { restarting, saysNoBrowser, BROWSER_NOTE, setupChore, SETUP_CHORE, lostAsks, noteLostAsks, handoffsSig, handBlocked, ensureRunnable, launcherOf, launchFault, opsWalls, walled, OPS_RO, OPS_OWN, OPS_HIDDEN, runOpen, namedRun, twinRunning, TWIN_WAIT, wholeLog, uiReview, onGoalAnswer, runOutcome, settleRecord, waitsOutside, triageSweep, runSection, autoStart, AUTO_MAX, AUTO_FOLDER_MAX, oneNeedEach, NOTHING_FOR_YOU, chaseReport, CHASED, UNMET, heldAsk, onCardGone, withOwnTools, escalation, grantCard, cardRules, cardIsPermission, runPhase, onRunEnd, isClaudeCmd, GUARD, tidyRule, tidyRules, tidySettings, pruneRuns, claudePlugins, idlePlugins, runSettings, archiveAnswers, allAnswers, answersDigest, ANSWERS_ARCHIVE, ANSWERS_KEEP, runsTick, RUN_START, HANG_MIN, noteBlocked, userAnswers, CONTINUED_FILE, onAnswered, CHANGES, toKnownHost, continueLanes, autoPick, autoDecide, FACTS, factsOf, knownRun, withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, linkReach, fillHandoff, runHandoff, nothingToDo, whereOf, whereLine, whereAnswer, askTask, PARKED_NOTE, parkedPaths, isParked, parkLane, agentMissing, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, unchangedStep, waitingFor, startWaiting, noteUntracked, untrackedBefore, forgetUntracked, writeTasks, droppedTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, pickAgent, findOrcaCli, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, routeIdeas, agentQuestions, answerQuestions, agentsList, agentsNow, forgetAgents, AGENTS_KEEP, needsOf, settleNeeds, closeAsk, closedAsk, sameSubject, NEEDS_FOR, readLastWords, readNeeds, parseRead, READ_FILE, autoAllow, autoAllowSweep, allowlistInWork, installAllowlist, inWork, withScope, withTrust, sandboxFor, sandboxLifts, sandboxEnv, sandboxNeeds, sandboxState, sandboxWrites, SANDBOX_DIR, resumeFor, noteSession, tooLong, carryOn, RESUME_CTX, CARRY_PROMPT, trustFull, GUARD_SETTINGS, runCmdOf, claimLock, wideRoot, sandboxDenies, questionFolders, folderState, dirtyState, ANSWERS_SEEN, newAnswers, claudeDownIn, claudePause, noteClaudeDown, resetTime, PAUSE_FILE, startGap, isUrgent, urgentStop, urgentFirst, urgentUndo, urgentDone, urgentSweep, urgentState, licenceGate, stopRun, loadRunFiles, saveRunFiles, forgetRunFiles, withModel, routedModel, userWords, onShipping, waitingTask, namedBlocker, tildeNote, idleWaits };
+export { restarting, saysNoBrowser, BROWSER_NOTE, setupChore, SETUP_CHORE, lostAsks, noteLostAsks, handoffsSig, handBlocked, ensureRunnable, launcherOf, launchFault, opsWalls, walled, OPS_RO, OPS_OWN, OPS_HIDDEN, runOpen, namedRun, twinRunning, TWIN_WAIT, wholeLog, uiReview, onGoalAnswer, runOutcome, settleRecord, waitsOutside, triageSweep, runSection, autoStart, AUTO_MAX, AUTO_FOLDER_MAX, oneNeedEach, NOTHING_FOR_YOU, chaseReport, CHASED, UNMET, heldAsk, onCardGone, withOwnTools, escalation, grantCard, cardRules, cardIsPermission, runPhase, onRunEnd, isClaudeCmd, GUARD, tidyRule, tidyRules, tidySettings, pruneRuns, claudePlugins, idlePlugins, runSettings, archiveAnswers, allAnswers, answersDigest, ANSWERS_ARCHIVE, ANSWERS_KEEP, runsTick, RUN_START, HANG_MIN, noteBlocked, userAnswers, CONTINUED_FILE, onAnswered, CHANGES, toKnownHost, continueLanes, autoPick, autoDecide, FACTS, factsOf, knownRun, withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, linkReach, fillHandoff, runHandoff, nothingToDo, whereOf, whereLine, whereAnswer, askTask, PARKED_NOTE, parkedPaths, isParked, parkLane, agentMissing, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, unchangedStep, waitingFor, offLimits, startWaiting, noteUntracked, untrackedBefore, forgetUntracked, writeTasks, droppedTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, pickAgent, findOrcaCli, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, routeIdeas, agentQuestions, answerQuestions, agentsList, agentsNow, forgetAgents, AGENTS_KEEP, needsOf, settleNeeds, closeAsk, closedAsk, sameSubject, NEEDS_FOR, readLastWords, readNeeds, parseRead, READ_FILE, autoAllow, autoAllowSweep, allowlistInWork, installAllowlist, inWork, withScope, withTrust, sandboxFor, sandboxLifts, sandboxEnv, sandboxNeeds, sandboxState, sandboxWrites, SANDBOX_DIR, resumeFor, noteSession, tooLong, carryOn, RESUME_CTX, CARRY_PROMPT, trustFull, GUARD_SETTINGS, runCmdOf, claimLock, wideRoot, sandboxDenies, questionFolders, folderState, dirtyState, ANSWERS_SEEN, newAnswers, claudeDownIn, claudePause, noteClaudeDown, resetTime, PAUSE_FILE, startGap, isUrgent, urgentStop, urgentFirst, urgentUndo, urgentDone, urgentSweep, urgentState, licenceGate, stopRun, loadRunFiles, saveRunFiles, forgetRunFiles, withModel, routedModel, userWords, onShipping, waitingTask, namedBlocker, tildeNote, idleWaits };
