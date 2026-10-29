@@ -173,8 +173,8 @@ async function intuitionPass(deps = {}, { now = Date.now(), force = false, event
   }
   const recent = st.passes.filter((p) => now - p.at < DAY).flatMap((p) => p.moves || []);
   const shunned = Object.entries(st.weights).filter(([, w]) => w <= SHUN).map(([k]) => k);
-  // A lane the user paused gets no moves: on 28 Oct 2026 Garth paused dailify, and passes kept filing
-  // Dailify tasks there, each "Blocked: parked" for good, which read as Symbiot dropping Dailify work.
+  // A lane the user paused gets no moves: on 28 Oct 2026 the user paused a lane, and passes kept filing
+  // tasks there, each "Blocked: parked" for good, which read as Symbiot dropping that lane's work.
   const map = val(deps.map, {}) || {}, parkedSet = new Set(val(deps.parked, []) || []);
   const paused = Object.keys(map).filter((n) => parkedSet.has(map[n]));
   const prompt = `Their focus (focus.md, theirs to edit):\n${focus.trim() || "(empty: they haven't written one)"}\n\n${ask}\n\nAlready done on its own in the last day (don't repeat):\n${recent.length ? recent.map((m) => `- ${m.kind}: ${m.what}`).join("\n") : "- nothing"}\n\nTurned down by the user before (kind|lane):\n${shunned.length ? shunned.map((k) => `- ${k}`).join("\n") : "- nothing"}` +
