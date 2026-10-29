@@ -430,8 +430,29 @@ function dismissCard(key, { undo = false, file = DISMISSED_FILE, now = Date.now(
   cached = null;
   return { ok: true, said: undo ? "It's back." : "Dismissed." };
 }
-const undismissed = (list, gone) => list.filter((y) => !gone[cardKey(y)]);
+// A Merge PR card is gone by its PR, whatever its line says now: kept by its words, one dismissed while its CI ran
+// came back once CI finished or its description changed (gods-eye-view #1467, #1472, #1476 dismissed twice, 29 Oct 2026).
+const goneKey = (y, gone) => !!gone[cardKey(y)] || (/^pr:/.test(String((y && y.id) || "")) && Object.keys(gone).some((k) => k.startsWith(`${y.id}|`)));
+const undismissed = (list, gone) => list.filter((y) => !goneKey(y, gone));
 onCardGone((path, q) => !!loadDismissed()[`${path}|${q}`]); // a step's card you dismissed holds its lane back no more (agents.mjs stepGone)
+// The chat's "clear" (control.mjs): cards off "Only the user can do", by a card's id, "merge:<owner/repo>" or
+// "merge:all". It said "Cleared all 16 merge cards" with no way to clear one, and all 18 were still there (29 Oct
+// 2026): now each is dismissed, Home is built again, and only what that build no longer shows is called cleared.
+// deps: cards() (the full list, built fresh), dismiss. { ok, said, cleared } or { error }.
+function clearCards(id, deps = {}) {
+  const cards = deps.cards || (() => { homeState({ fresh: true }); return LAST_YOU; }), dismiss = deps.dismiss || dismissCard;
+  id = String(id || "").trim(); if (!id) return { error: "it didn't say which card." };
+  const m = id.match(/^merge:(.+)$/i), what = m ? m[1].trim().toLowerCase() : "";
+  const pick = (list) => list.filter((y) => !m ? y.id === id : y.kind === "merge" && (what === "all" || what === "*" || String(y.id).toLowerCase().startsWith(`pr:${what}#`) || String(y.repo || "").toLowerCase() === what));
+  const hit = pick(cards() || []); if (!hit.length) return { error: `there's no such card on your list now (${id}).` };
+  const bad = hit.filter((y) => dismiss(cardKey(y)).error);
+  const left = new Set(pick(cards() || []).map((y) => y.id)), gone = hit.filter((y) => !left.has(y.id));
+  const of = (l) => { const by = {}; for (const y of l) { const k = (String(y.sub || "").match(/^([\w.-]+\/[\w.-]+) #/) || [])[1] || y.repo || y.title; by[k] = (by[k] || 0) + 1; } return Object.entries(by).map(([k, n]) => `${n} ${k}`).join(", "); };
+  const n = (x) => `${x} card${x === 1 ? "" : "s"}`;
+  if (!gone.length) return { error: `${n(hit.length)} ${hit.length === 1 ? "is" : "are"} still on your list after I cleared ${hit.length === 1 ? "it" : "them"}${bad.length ? " (the change couldn't be saved)" : ""}.` };
+  const still = hit.length - gone.length;
+  return { ok: true, cleared: gone.length, said: `Cleared ${n(gone.length)} off your list (${of(gone)}); Home, checked again, no longer shows ${gone.length === 1 ? "it" : "them"}.${still ? ` ${n(still)} didn't go and ${still === 1 ? "is" : "are"} still there.` : ""} A dismissed card stays away a month; Undo on Home brings one back.` };
+}
 
 // Built on the tick too (homeTick), while someone is looking: the window or the phone asked
 // within HOME_LOOKED. Then a look reads what the tick built and never waits on the build
@@ -596,7 +617,7 @@ function homeState({ now = Date.now(), fresh = false, deps = {}, tick = false } 
     you = you.map((y) => heldMergeCard(y, holds)).filter(Boolean); }
   // a paired phone sets nothing up of its own: no AI, projects, agent, sites or inbox to connect (pairedPhone)
   if ((deps.pairedPhone || pairedPhone)()) you = you.filter((y) => y.kind !== "setup" && y.fix !== "repos");
-  if (!Object.keys(deps).length) for (const y of you) SHOWN.set(y.id, y); // every card built, not only the six sent: what cardFor finds
+  if (!Object.keys(deps).length) { for (const y of you) SHOWN.set(y.id, y); LAST_YOU = you; } // every card built, not only the six sent: what cardFor finds
   (deps.syncJobs || syncOnUser)(you, { now }); // the job record's "waiting on you": these cards, all of them (jobs.mjs)
   const nextAll = nextUp({ now, map, list, named, deps: { board: () => bd, reports: () => rep, ...(deps.next || {}) } });
   const next = you.length ? [] : nextAll; // not shown while something needs you, but a tap on one already on screen still works (homeNext)
@@ -940,11 +961,21 @@ function sentMailLines(now = Date.now()) {
   const sent = t.filter((x) => x && x.sent && now - (x.sent.at || 0) < 7 * DAY);
   return sent.length ? ["Emails the user already sent (not work to do; say they are waiting on a reply):", ...sent.map((x) => `- ${plain(x.text, 90)}: ${sentLine(x, now)}`)] : [];
 }
+// what the chat can clear (clearCards), by id: Merge PR cards by repo, the rest one by one
+function clearable(all) {
+  if (!(all || []).length) return [];
+  const merges = {}, rest = [];
+  for (const y of all) { const s = (String(y.id || "").match(/^pr:(.+)#\d+$/) || [])[1]; if (y.kind === "merge" && s) (merges[s] = merges[s] || []).push(y.id); else if (y.id) rest.push(y); }
+  return [`Cards on that list you can clear for them ("control" {"op": "clear", "id": …}): "merge:<owner/repo>" clears all of one repo's Merge PR cards, "merge:all" every Merge PR card, or one card's id:`,
+    ...Object.entries(merges).map(([s, ids]) => `- merge:${s} (${ids.length} Merge PR card${ids.length > 1 ? "s" : ""}: ${ids.slice(0, 4).join(", ")}${ids.length > 4 ? ", …" : ""})`),
+    ...rest.slice(0, 12).map((y) => `- ${y.id} (${plain(String(y.title || ""), 50)})`)];
+}
 function homeContext(h, { cards } = {}) {
   const shown = new Set(h.you.map((y) => y.id)), rest = h.youCount > h.you.length ? (cards || (() => { try { return onUser(); } catch { return []; } })()).filter((y) => !shown.has(y.id)) : [];
   return [
     `Only the user can do (${h.youCount ?? h.you.length}${(h.youCount ?? h.you.length) ? "" : ": no card is waiting for them, so never say one is"}):`, ...h.you.map((y) => `- ${y.title}: ${y.sub}${y.q && y.q !== y.sub ? ` (asks: ${y.q}${(y.options || []).length ? ` ${y.options.join(" / ")}` : ""})` : ""}`),
     ...rest.slice(0, 12).map((y) => `- ${y.text}`), // past the 6 Home shows: from the job record, the same list
+    ...clearable(cards ? [] : LAST_YOU),
     ...(h.you.some((y) => /^ask:/.test(y.id || "")) ? [`Agents asking (to answer for them, "answer" with these ids): ${h.you.filter((y) => /^ask:/.test(y.id || "")).map((y) => `${y.id} (${String(y.title).slice(0, 40)})`).join("; ")}`] : []),
     `New on what they watch:`, ...(h.feeds.length ? h.feeds.map((f) => `- ${f.title}: ${f.sub}${f.latest ? ` (latest: ${f.latest})` : ""}`) : ["- nothing new"]),
     `Agents working now (the live agent list, the only source for 'is anything running?'; a run in the job record below that isn't here has stopped): ${h.working}${h.working ? "" : ", so nothing is running"}.`, ...(h.runs || []).map((r) => `- [${r.id}] ${dayMark(r.started, h.at)}${r.name}: ${r.line}${r.eta ? ` (${r.eta})` : ""}${r.quiet ? ` (no progress in ${r.quiet} min)` : ""}${r.looping ? " (repeating the same step)" : ""}`),
@@ -995,7 +1026,7 @@ async function homeAsk(question, { ask, now = Date.now(), state, images = [], ac
     act: {
       agent: (req, known, repo, said, kind) => { const d = repo ? actIn(req + shotNote, repo, { map, known, title: "Home", said, kind }) : actNow(req + shotNote, { title: "Home", known }); noteHanded(d, req); return d; },
       task: (text, repo) => { const d = taskIn(text + shotNote, repo, { map }); noteHanded(d, text); return d; },
-      control: (ops) => control(ops, { map }),
+      control: (ops) => control(ops, { map, clear: (id) => clearCards(id) }),
       ...acts, // a phone's chat (phone.mjs OPS.chat) overrides these: it answers and adds tasks, but starts and steers nothing (15 Oct 2026)
     } });
   const settled = settleFromChat(h, r.settled, question);
@@ -1062,7 +1093,7 @@ function dropBlank(cards, list = [], log = (l) => console.log(l)) {
 // question the page sent when the card's gone since. null when there's no real folder or question: never
 // a made-up one. On 23 Oct 2026 a relay card wasn't among Home's first six, so its talk went to its agent
 // as "this card", in a folder named for its id (~/earlier-7f4dfae5), and the AI said the card was empty.
-const SHOWN = new Map();
+const SHOWN = new Map(); let LAST_YOU = []; // LAST_YOU: every card the last build put under "Only the user can do"
 function cardFor(id, { q = "", deps = {} } = {}) {
   id = String(id || ""); const ref = id.replace(/^\w+:/, "");
   let y = (deps.shown || SHOWN).get(id) || null;
@@ -1264,7 +1295,7 @@ function workSceneNow({ deps = {}, full = false } = {}) {
     const l = a ? laneOf(a) : c.lane || RUNS_LANE;
     if (!held[l]) held[l] = { path: c.path, approve: c.fix === "needs" && !!c.ok, step: c.fix === "needs" && !c.ok, what: plain(c.sub || c.raw || c.q || "", 90) };
   } else {
-    const carded = new Set(trouble.filter((t) => t.fix === "needs" && !gone[cardKey(t)] && !isDone(t.q)).map((t) => t.path));
+    const carded = new Set(trouble.filter((t) => t.fix === "needs" && !goneKey(t, gone) && !isDone(t.q)).map((t) => t.path));
     for (const a of AG) { if (a.status === "running") continue; const l = laneOf(a), nq = (a.ask && a.ask.questions && a.ask.questions.length) || 0, card = !nq && a.needs && carded.has(a.path); if (!held[l] && (nq || card)) held[l] = { path: a.path, approve: !!card && a.needs.kind === "approve", step: !!card && a.needs.kind !== "approve", what: plain(card ? a.needs.label || a.needs.what : "", 90) }; }
   }
   const why = waitWhy({ map, named, running, held, ready: new Set(ready.map((r) => r.repo)), isParked, deps });
@@ -1660,4 +1691,4 @@ function setOnboarding({ step, skip, unskip, skipRest, done, restart } = {}) {
   return onboarding();
 }
 
-export { parkedCards, updateAsk, cardTalk, closeCard, closeDecided, cardFor, dropBlank, homeTick, HOME_LOOKED, WORK_KEEP, FIRST_RUN, troubles, agentDigest, garthLedger, plainAsk, dismissCard, cardKey, loadDismissed, DISMISSED_FILE, reportIdeasAdd, reportAsk, reportDraftAnswer, workTick, waitWhy, AUTO_GRACE, STUCK_AFTER, marketingState, marketingGo, marketingDraftAnswer, marketingTask, moveToMarketing, goLane, homeState, homeContext, homeAsk, homeAnswer, homeNext, nextUp, laneNamed, NEXT_FILE, workScene, forgetWork, workGo, displayName, firstSteps, onboarding, setOnboarding, startOnboarding, ONB_STEPS, ONB_STEPS_PHONE, onbSteps, phoneBits, phoneSetupFirst, finishedState, handedState, noteHanded, phoneChat, isPeak, reportIdeasDismiss, settleAsks, settleFromChat, unplacedCards };
+export { clearCards, clearable, goneKey, parkedCards, updateAsk, cardTalk, closeCard, closeDecided, cardFor, dropBlank, homeTick, HOME_LOOKED, WORK_KEEP, FIRST_RUN, troubles, agentDigest, garthLedger, plainAsk, dismissCard, cardKey, loadDismissed, DISMISSED_FILE, reportIdeasAdd, reportAsk, reportDraftAnswer, workTick, waitWhy, AUTO_GRACE, STUCK_AFTER, marketingState, marketingGo, marketingDraftAnswer, marketingTask, moveToMarketing, goLane, homeState, homeContext, homeAsk, homeAnswer, homeNext, nextUp, laneNamed, NEXT_FILE, workScene, forgetWork, workGo, displayName, firstSteps, onboarding, setOnboarding, startOnboarding, ONB_STEPS, ONB_STEPS_PHONE, onbSteps, phoneBits, phoneSetupFirst, finishedState, handedState, noteHanded, phoneChat, isPeak, reportIdeasDismiss, settleAsks, settleFromChat, unplacedCards };

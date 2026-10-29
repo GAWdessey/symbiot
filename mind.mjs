@@ -249,13 +249,14 @@ You can open any of these pages: when they ask to go somewhere (go to, take me t
 To open one task rather than the whole Workdesk ("open that task", "show me the task"), use "task:<id>" with an id from "Open tasks" below: the last task discussed in this chat, or the only one running. If several could be meant, open the likeliest and offer the others in "alts" as task:<id> too.` : ""}`;
 // Home can steer the agents (control.mjs), not only start them
 const CONTROL_RULES = `
-"control": [] or up to 5 of {"op": "stop|cancel|redirect|answer|front|merge", "id": "…", "text": "…", "into": "…"}: you act on agents and tasks yourself, so never tell the user to click a card, stop an agent or answer one for you. The ids are in "Agents" and "Open tasks" below.
+"control": [] or up to 5 of {"op": "stop|cancel|redirect|answer|front|merge|clear", "id": "…", "text": "…", "into": "…"}: you act on agents and tasks yourself, so never tell the user to click a card, stop an agent or answer one for you. The ids are in "Agents" and "Open tasks" below.
 - stop: "id" is an agent ("run:<folder>", or a lane's name). It stops and its lane is paused (the user unpauses it); its changes stay.
 - cancel: "id" is a task id from "Open tasks"; it leaves the list.
 - redirect: "id" is an agent, "text" the new instruction. It stops and its next run reads it first.
 - answer: "id" is "ask:<folder>" from an agent's open question, "text" the answer. Only when the user has already given it in this chat; never guess a password, code or yes to spending or deleting.
 - front: "id" is a task id; it moves to the front of its lane's queue.
 - merge: two agents on the same job: "id" is the duplicate to stop, "into" the one that keeps it.
+- clear: "id" is a card's id from "Cards on that list you can clear", "merge:<owner/repo>" for all of one repo's Merge PR cards, or "merge:all". It takes them off "Only the user can do"; Home is built again and only what it no longer shows is called cleared. Never say a card is cleared, closed or gone unless "control" holds the clear for it.
 A question about what happened ("did we send the 100?", "is it done?", "did it work?") gets its answer first, in one plain line with the numbers, from the jobs and the agents' last words below; "control" stays empty for it and nothing is stopped, started or handed over. Never put a failure of stopping or handing over in place of that answer.
 Stopping, cancelling, redirecting and reordering can be undone, so do them without asking. Say in your reply what you did, and only once "control" holds it; what is hard to undo (paying, sending, deleting, publishing) stays the agent's own question to the user.`;
 // about: { lane: one line on the project } (scan.mjs laneAbouts) so a bare name is guessable.
@@ -406,6 +407,12 @@ function reportClaim(reply, reports, now = Date.now()) {
   return !reports.some((r) => { const n = [...wordsOf(`${r.title} ${String(r.name || "").replace(/\.md$/i, "").replace(/[-_]+/g, " ")}`)].filter((w) => said.has(w)).length; return n >= 2 || (n >= 1 && now - (Number(r.mtime) || 0) < 6 * 3600000); });
 }
 const NOT_ON_REPORTS = "\n\nCorrection: I checked your Reports page and nothing listed there matches that, so it isn't on Reports. I'll only say something is there once the page lists it.";
+// "Cleared all 16 merge cards" with nothing cleared, and all 18 still on Home (29 Oct 2026): a reply that says
+// cards are off the list, with no clear that went through and no card it settled, gets a correction
+const CLEARED_CLAIM = /\b(?:cleared|closed|dismissed|removed|took off|taken off|got rid of)\b[^.\n]{0,50}\bcards?\b|\bcards?\b[^.\n]{0,30}\b(?:are|is) (?:gone|cleared|off (?:your|the) list)\b/i;
+const NOT_A_CLAIM = /\b(?:said|told you|wrong|never|not|didn't|couldn't|can't|will|would|once)\b|'ll\b/i; // "I said I'd cleared them", "I'll clear them"
+const clearedClaim = (reply, steered = [], settled = []) => !steered.some((x) => x.op === "clear" && x.ok) && !settled.length && String(reply || "").split(/(?<=[.!?])\s+|\n+/).some((t) => CLEARED_CLAIM.test(t) && !NOT_A_CLAIM.test(t));
+const NOT_CLEARED = "\n\nCorrection: no card was cleared by this reply, so your list on Home is as it was. Say the word and I'll clear them.";
 const UNBACKED = "\n\nCorrection: nothing was handed to an agent or queued by this reply, so nothing is running on it yet. Say the word and I'll start it.";
 function parseReply(raw) {
   const t = String(raw || "").trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
@@ -499,6 +506,8 @@ async function converse({ where, role = "", context = "", history = "", question
     if (good.length) reply += `\n\n${good.map((x) => x.said).join(" ")}`;
     for (const x of good) steps.push(`${x.op}: ${x.said}`.slice(0, 120));
   }
+  const settled = settle && Array.isArray(j.settled) ? j.settled.map((x) => String(x || "").slice(0, 300)).filter(Boolean).slice(0, 6) : [];
+  if (control && clearedClaim(reply, steered, settled)) reply += NOT_CLEARED;
   if (!did && !steered.some((x) => x.ok) && unbackedClaim(reply, did) && !runningClaim(reply, lanes, running)) reply += UNBACKED;
   const turnedDown = (Array.isArray(j.rejected) ? j.rejected : []).map((x) => String(x || "")).filter((x) => x.trim()).slice(0, 3).filter((x) => addRejected(x));
   const cut = dropRejected(reply); // a line that still offers one of them goes, with a note
@@ -518,10 +527,9 @@ async function converse({ where, role = "", context = "", history = "", question
   if (go) steps.push(`opened ${go.label}`);
   if (turnedDown.length) steps.push(`noted ${turnedDown.length} option${turnedDown.length > 1 ? "s" : ""} you turned down, never offered again`);
   if (rules.length) steps.push(`saved ${rules.length} standing rule${rules.length > 1 ? "s" : ""} for every agent`);
-  const settled = settle && Array.isArray(j.settled) ? j.settled.map((x) => String(x || "").slice(0, 300)).filter(Boolean).slice(0, 6) : [];
   return { reply, spoken, ...(did ? { did } : {}), ...(steered.length ? { control: steered } : {}), ...(go ? { go } : {}), ...(settled.length ? { settled } : {}), remembered, steps };
 }
 // The usual "task" act, for a caller with no lanes of its own to pass.
 const addToTasks = (text, repo) => { let map = {}; try { map = laneMap(); } catch {} return taskIn(text, repo, { map }); };
 
-export { reportClaim, dayLine, dayMark, MIND_FILE, loadMind, saveMind, remember, recall, recallText, lately, mindState, forget, actBrief, actNow, actIn, taskIn, selfLane, rulesFor, parseReply, converse, spokenLine, unbackedClaim, runningClaim, bindingClaim, goOf, PAGES, addToTasks , ownThread };
+export { clearedClaim, reportClaim, dayLine, dayMark, MIND_FILE, loadMind, saveMind, remember, recall, recallText, lately, mindState, forget, actBrief, actNow, actIn, taskIn, selfLane, rulesFor, parseReply, converse, spokenLine, unbackedClaim, runningClaim, bindingClaim, goOf, PAGES, addToTasks , ownThread };
