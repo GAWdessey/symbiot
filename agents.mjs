@@ -548,6 +548,8 @@ function noteLostAsks(path, ids) {
   const body = (id) => `${LOST_HEAD}${id}\nYour TASKS.md says an item waits on the user's answer to {#${id}}, but no question with that id is in your QUESTIONS.md, and none is answered: the user has never been shown it, on Home or in Questions. If it's still theirs, ask it again in QUESTIONS.md with the same id. If it isn't, say in the item what it really waits on, and never tell them you're waiting on them for it.\n_${new Date().toISOString().slice(0, 10)}_\n`;
   try { writeFileSync(join(path, ".symbiot", "ANSWERS.md"), (had || "# Answers from the user\nAnswers to the questions in QUESTIONS.md, newest last. Follow them; ask again in QUESTIONS.md if one is unclear.\n").replace(/\s*$/, "\n") + fresh.map((id) => "\n" + body(id)).join("")); return true; } catch { return false; }
 }
+// Symbiot's own writing in a plain folder (the run's tick, the triage and done checks): not work for Approve to ship, though runfiles.json lists it for the done check (29 Oct 2026: a read-only run read "3 files changed, waiting for Approve")
+const OWN_RESULT = /^\.symbiot\/(?:TASKS(?:\.next)?\.md|triage\.json(?:\.bak)?|done-check\.json)$/;
 function runOutcome(path, e = {}, code = 0, { files = null, final = null, questions = null, waiting = undefined, needs = undefined } = {}) {
   const md = readSymbiot(path, "TASKS.md"), lines = md.split("\n");
   const waitLine = lines.find((l) => /^\s*-\s*\[~\]/.test(l)), open = lines.filter((l) => /^\s*-\s*\[ \]/.test(l)).length;
@@ -555,7 +557,7 @@ function runOutcome(path, e = {}, code = 0, { files = null, final = null, questi
   // the run's brief (Home's cards showed "nd carry on with the next: a question never ends the run…", 25 Oct 2026).
   let said = final; if (said === null) { try { const sec = runSection(readRunLog(e.log), e.startedAt, true), w = workOf(path, sec); said = w.work ? (w.work.final || w.tail || "") : parseRun(lastRunText(sec)).final; } catch { said = ""; } }
   const summary = clipWords(String(said || "").split(/\n\s*\n/)[0].replace(/[*_`#>]/g, "").replace(/\s+/g, " ").trim(), 400);
-  const ch = files !== null ? files : (() => { try { return (loadRunFiles(path).find((r) => r.id === e.id) || { files: [] }).files.length; } catch { return 0; } })();
+  const ch = files !== null ? files : (() => { try { return (loadRunFiles(path).find((r) => r.id === e.id) || { files: [] }).files.filter((f) => !OWN_RESULT.test(f)).length; } catch { return 0; } })();
   const outBase = (state, waitingOn = "", what = "", note = "") => ({ state, waitingOn, what: clipWords(what, 200), summary, note }), out = outBase;
   if (code !== 0 && !STOP_CODES.has(code)) return out("failed", "", "", `exit ${code}`);
   const qs = questions !== null ? questions : (() => { try { return agentQuestions(path, "", { raw: true }).questions; } catch { return []; } })();
