@@ -15,12 +15,29 @@ mkdirSync(join(HOME, ".config", "symbiot"), { recursive: true });
 let pass = 0, fail = 0;
 const ok = (n, c, got) => { if (c) { pass++; console.log("  ✓ " + n); } else { fail++; console.log("  ✗ " + n + (got !== undefined ? "  got: " + JSON.stringify(got) : "")); } };
 
-const { MIND_FILE, loadMind, remember, recall, mindState, forget, converse, parseReply, actBrief, actIn, taskIn, selfLane, spokenLine, unbackedClaim, runningClaim, goOf, rulesFor } = await import("../mind.mjs");
+const { MIND_FILE, loadMind, remember, recall, mindState, forget, converse, parseReply, actBrief, actIn, taskIn, selfLane, spokenLine, unbackedClaim, runningClaim, reportClaim, goOf, rulesFor } = await import("../mind.mjs");
 const { aboutLine } = await import("../scan.mjs");
 const { writeFileSync } = await import("node:fs");
 const said = (j) => async () => JSON.stringify(j);
 
 try {
+  console.log("HONESTY — 'it's on Reports' only when Reports lists it");
+  {
+    // the chat said "The full list is on Reports" on an agent's word; Reports read "Unread · 0" (29 Oct 2026)
+    const now = Date.now(), jup = { title: "Jupyter notebooks on this computer", name: "JUPYTER-NOTEBOOKS-2026-10-29.md", mtime: now - 600000 }, old = { title: "Company audit: mistakes and to-dos", name: "COMPANY-AUDIT.md", mtime: now - 9 * 86400000 };
+    const said17 = "It found 17 notebooks: 14 of yours. The full list is on Reports.";
+    ok("not listed: corrected", reportClaim(said17, [old], now));
+    ok("listed (a word of its title, written today): backed", !reportClaim(said17, [jup, old], now));
+    ok("an old one needs two words of its title", reportClaim("The audit is on Reports.", [old], now) && !reportClaim("The company audit is on Reports.", [old], now));
+    ok("saying it isn't there, or no claim at all, is fine", !reportClaim("The agent wrote it, but it isn't on Reports yet.", [], now) && !reportClaim("Done.", [], now));
+    ok("not checked when no list is given", !reportClaim(said17, undefined, now));
+    const r = await converse({ where: "Home", question: "where's the list?", reports: [old], ask: said({ reply: said17, do: null, remember: [] }) });
+    ok("a chat reply that says so is corrected under it", /Correction: I checked your Reports page/.test(r.reply), r.reply);
+    const r2 = await converse({ where: "Home", question: "where's the list?", reports: [jup], ask: said({ reply: said17, do: null, remember: [] }) });
+    ok("…and left alone when it's there", !/Correction/.test(r2.reply), r2.reply);
+    ok("the chat is told to say only what Reports and GitHub confirm", /only when "On the Reports page now" lists it/.test(rulesFor([], "", true)));
+  }
+
   console.log("HONESTY — a reply never claims work that didn't start");
   const liar = await converse({ where: "Home", question: "fix it", ask: said({ reply: "Sending this to the symbiot lane now.", do: null, remember: [] }) });
   ok("claimed hand-off with no 'do': corrected", /Correction: nothing was handed/.test(liar.reply), liar.reply);
