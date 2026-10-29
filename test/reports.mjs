@@ -482,6 +482,7 @@ console.log("A REPORT IN ~/.config/symbiot/reports — a run with no lane left i
   ok("…nothing claimed when Reports isn't mentioned", R.reportClaims("Wrote GONE-AWAY.md.", { list: l }).length === 0);
   ok("…as lines the chat is given: one there, one not, so it's not said to be", /JUPYTER.*is on Reports, unread/.test(R.claimLines(c)[0]) && /GONE-AWAY\.md is NOT on Reports/.test(R.claimLines(c)[1]), R.claimLines(c));
   ok("the briefs say to check Reports, and GitHub for a merge, before saying so", HANDBACK.some((x) => /`symbiot reports`/.test(x) && /gh pr view/.test(x)));
+  ok("…and GitHub's mergeable state before saying a PR merges by itself (PR #336, 29 Oct 2026)", HANDBACK.some((x) => /--json mergeable,mergeStateStatus/.test(x) && /resolve the conflicts/.test(x)));
 }
 console.log(`\n${fail ? "✗" : "✓"} reports: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
