@@ -43,6 +43,12 @@ const idOf = (file) => createHash("sha1").update(file).digest("hex").slice(0, 12
 const RUN_IDS = /(?:-[0-9a-f]{6})+(?=\.md$)/i;
 const plainName = (name) => String(name).replace(RUN_IDS, "");
 const sigOf = (text) => createHash("sha1").update(String(text || "").replace(/^_\(from a run beside .*\)_[ \t]*$/gm, "").replace(/\s+/g, " ").trim()).digest("hex").slice(0, 16);
+// What it says less when: a rewrite that changes only its clock times, timestamps or a "generated/updated/checked …" stamp
+// line is the report already read, not a new one. The chat pointed Garth to a "new" IQ Option report that said what the
+// one he'd read said (29 Oct 2026). Dates in its text (a deadline, "on 30 Oct") still count: they can be the news.
+const STAMP_LINE = /^[_*>\s-]*(?:generated|updated|last updated|written|checked|last checked|as of|run at|last run)\b.*$/gim;
+const CLOCK = /\b\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?|\b\d{1,2}:\d{2}(?::\d{2})?(?:\s?(?:UTC|SAST|am|pm)\b)?/gi;
+const gistOf = (text) => "~" + sigOf(String(text || "").replace(STAMP_LINE, "").replace(CLOCK, ""));
 const READ_MAX = 3000; // what's kept of read-by-text, newest
 
 const obj = (x) => (x && typeof x === "object" && !Array.isArray(x) ? x : {});
@@ -58,9 +64,10 @@ function recordsFor(table, r) {
 }
 function markRead(d, r) {
   d.seen[r.id] = r.mtime;
+  if (r.gist) d.read[r.gist] = Date.now();
   if (r.sig) { d.read[r.sig] = Date.now(); const k = Object.keys(d.read); if (k.length > READ_MAX) for (const x of k.sort((a, b) => d.read[a] - d.read[b]).slice(0, k.length - READ_MAX)) delete d.read[x]; }
 }
-const isRead = (r, d) => d.seen[r.id] === r.mtime || !!(r.sig && d.read[r.sig]) || (r.copies || []).some((t) => t.sig === r.sig && d.seen[t.id] === t.mtime);
+const isRead = (r, d) => d.seen[r.id] === r.mtime || !!(r.sig && d.read[r.sig]) || !!(r.gist && d.read[r.gist]) || (r.copies || []).some((t) => t.sig === r.sig && d.seen[t.id] === t.mtime);
 // Whole or not at all (writeJsonAtomic): torn, it read as "nothing seen", and every report came back unread (15 Oct 2026).
 function saveSeen(d, file = SEEN_FILE) { try { writeJsonAtomic(file, d, { indent: 0, mode: 0o600 }); return true; } catch { return false; } }
 
@@ -99,11 +106,11 @@ function listReports({ map, folders, loose, running = runningHandoff, seen } = {
       if (!st.isFile() || !st.size) continue;
       let text = ""; try { text = readFileSync(file, "utf8").slice(0, MAX_READ); } catch { continue; }
       const base = plainName(name), mtime = Math.round(st.mtimeMs), g = groups.get(base) || [];
-      g.push({ id: idOf(file), name, file, size: st.size, mtime, head: text.slice(0, 4000), sig: sigOf(text) }); groups.set(base, g);
+      g.push({ id: idOf(file), name, file, size: st.size, mtime, head: text.slice(0, 4000), sig: sigOf(text), gist: gistOf(text) }); groups.set(base, g);
     }
     for (const [base, g] of groups) {
       const c = g.sort((a, b) => b.mtime - a.mtime || (a.name === base ? -1 : b.name === base ? 1 : 0))[0], id = idOf(join(dir, base));
-      const r = { id, title: titleOf(c.head, base), name: c.name, file: c.file, folder, lane: own ? OPS : map ? laneOf(folder, map) : basename(folder), run: own ? OPS : runTitle(folder), size: c.size, mtime: c.mtime, sig: c.sig, ...(g.length > 1 || c.name !== base ? { copies: g.map(({ id, name, file, mtime, sig }) => ({ id, name, file, mtime, sig })) } : {}), running: !own && Date.now() - c.mtime < WRITING_FOR && !!running(folder), source: own ? "" : sourceOf(folder) };
+      const r = { id, title: titleOf(c.head, base), name: c.name, file: c.file, folder, lane: own ? OPS : map ? laneOf(folder, map) : basename(folder), run: own ? OPS : runTitle(folder), size: c.size, mtime: c.mtime, sig: c.sig, gist: c.gist, ...(g.length > 1 || c.name !== base ? { copies: g.map(({ id, name, file, mtime, sig }) => ({ id, name, file, mtime, sig })) } : {}), running: !own && Date.now() - c.mtime < WRITING_FOR && !!running(folder), source: own ? "" : sourceOf(folder) };
       r.new = !isRead(r, d); out.push(r);
     }
   }

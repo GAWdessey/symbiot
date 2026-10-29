@@ -468,6 +468,15 @@ console.log("REPORTS — copies of one report under run-id names are one report,
   R.readReport(w2.id, { list: L(), seenFile: sf });
   put(lane, "LEE-TEST-READINESS-ffffff.md", LEE(from("another run")), 5000);
   ok("read on one copy, a later copy isn't unread again", L().find((r) => /Lee/.test(r.title)).new === false);
+  { // a report rewritten in place, its times and stamp line all that changed (the "new" IQ Option report, 29 Oct 2026)
+    const iq = join(HOME, "code", "iq"), sg = { seen: {}, read: {} }, M = () => R.listReports({ map: { iq }, folders: [iq], running: none, seen: sg })[0];
+    put(iq, "PAPER-RUN.md", "# Paper run\n_Updated 29 Oct 2026 09:10 UTC_\nCopied to research/lgbm_pc at 09:02.\n- Next check 2026-10-30T01:20:00Z\n", 5000);
+    const a = M(); sg.seen[a.id] = a.mtime; sg.read[a.sig] = 1; sg.read[a.gist] = 1;
+    put(iq, "PAPER-RUN.md", "# Paper run\n_Updated 29 Oct 2026 11:31 UTC_\nCopied to research/lgbm_pc at 11:28.\n- Next check 2026-10-31T01:20:00Z\n", 1000);
+    ok("a rewrite that changes only its times and stamp line isn't new again", M().new === false, M());
+    put(iq, "PAPER-RUN.md", "# Paper run\n_Updated 29 Oct 2026 11:40 UTC_\nCopied to research/lgbmpc at 11:28.\n", 500);
+    ok("…one that says something else is", M().new === true);
+  }
   ok("a date step is its when only when it leads; a date further on is context", R.pastDated("Wed 21 Oct, 11:00", Date.now() - 9 * DAY) && !R.pastDated("Rerun the sign-up journey check end to end, as last done on 19 Oct", Date.now() - 9 * DAY) && !R.pastDated("Call Lee on 30 Dec", Date.now()));
   // a draft whose job is finished asks no more
   const dl = join(HOME, "code", "ops2"); put(dl, "SITE-MOVE-PREVIEW.md", "# Site move: preview\n\nWhat would change.\n", 60000);

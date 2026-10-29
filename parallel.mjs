@@ -15,7 +15,7 @@ import { spawnSync } from "node:child_process";
 import { mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, rmSync, copyFileSync, cpSync, statSync, unlinkSync, readlinkSync, appendFileSync, openSync, readSync, closeSync } from "node:fs";
 import { join, basename } from "node:path";
 import { randomBytes, createHash } from "node:crypto";
-import { CONFIG_DIR, loadConfig, loadTasks, saveTasks } from "./core.mjs";
+import { CONFIG_DIR, loadConfig, loadTasks, saveTasks, sameTask } from "./core.mjs";
 import { runHandoff, runningHandoff, restarting, loadRunFiles, saveRunFiles, answersDigest, ANSWERS_ARCHIVE, loadRuns } from "./agents.mjs";
 import { parseHandoffs, parseFacts, parseAwaiting } from "./handover.mjs";
 import { licenceState, isPro } from "./licence.mjs";
@@ -93,6 +93,10 @@ function verdict({ text, name = "this lane", active = [], count = 1, cap = laneC
   if (!gitOk) return { ok: false, kind: "nogit", text: `${name} isn't a git project with a first commit, so a second agent can't have a copy of it to itself` };
   if (isMergeTask(text)) return { ok: false, kind: "merge", text: `it merges changes saved in ${name}'s own folder, which only ${name}'s own run can do` };
   if (count >= cap) return { ok: false, kind: "cap", text: `${count} agent${count === 1 ? " is" : "s are"} already working in ${name}, which is the limit (change it in Settings)` };
+  // the same job in other words (two tasks for one ask): never a second run on it alongside the first. Two symbiot
+  // runs ended 24 s apart having ticked the same Home proof item, one saying it was already done, one crediting PR 340 (29 Oct 2026)
+  const twin = active.find((a) => sameTask(text, a.text));
+  if (twin) return { ok: false, kind: "same", text: `it's the same job as "${clip(twin.text, 50)}", which ${twin.who || "the run there"} is on now` };
   for (const a of active) {
     const c = clash(text, a.text); if (!c) continue;
     return { ok: false, kind: "clash", on: c, text: `both need ${THING(c)}, and "${clip(a.text, 50)}" has it now (${a.who || "the run there"})` };

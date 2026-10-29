@@ -29,6 +29,11 @@ const v = (o) => P.verdict({ text: "Fix phone.mjs", name: "symbiot", active: [{ 
 ok("independent, with room: goes beside", v({}).ok === true);
 ok("at the cap: held, and it says how many and where to change it", (() => { const r = v({ count: 3 }); return !r.ok && r.kind === "cap" && /3 agents are already working in symbiot/.test(r.text) && /Settings/.test(r.text); })());
 ok("a clash: held, naming the shared thing and the task that has it", (() => { const r = v({ text: "Rework ui.mjs", }); return !r.ok && r.kind === "clash" && /both need ui\.mjs, and "Fix ui\.mjs" has it now/.test(r.text); })());
+ok("the same job in other words: held with the run that's on it, never a second run beside it (29 Oct 2026)", (() => {
+  const job = "Home shows the proof behind each status line, from GitHub and the vault, not an agent's word";
+  const r = v({ text: job + ".", active: [{ text: job, who: "symbiot's run" }] }), p = P.peel([{ id: "a", text: job }, { id: "b", text: "Fix tray.mjs" }, { id: "c", text: job + "." }], { name: "symbiot", cap: 3, pro: true, git: true });
+  return !r.ok && r.kind === "same" && /same job as/.test(r.text) && p.peeled.map((x) => x.id).join() === "b" && p.held.c && p.held.c.kind === "same";
+})());
 ok("Free runs one agent at a time", v({ pro: false }).kind === "free");
 ok("not a git project: held, saying why", v({ git: false }).kind === "nogit");
 ok("a file with uncommitted work: held until it's approved", v({ text: "Fix a.mjs", dirty: ["a.mjs"] }).kind === "dirty");
