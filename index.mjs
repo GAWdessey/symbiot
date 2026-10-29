@@ -1170,7 +1170,7 @@ function cmdReports() {
   const id = argv.slice(1).find((x) => !x.startsWith("--"));
   const list = listReports();
   if (!id) {
-    if (!list.length) { console.log(c.d("No reports yet. When an agent writes up findings, an audit or a plan, it leaves a .md in its folder's .symbiot/, and it's listed here.")); return; }
+    if (!list.length) { console.log(c.d("No reports yet. When an agent writes up findings, an audit or a plan, it leaves a .md in its folder's .symbiot/ (or in ~/.config/symbiot/reports), and it's listed here.")); return; }
     for (const r of list) console.log(`${r.new ? c.y("●") : " "} ${c.d(r.id)}  ${c.b(r.title)}  ${c.d(`${!r.run || r.run === r.lane ? r.lane : r.run.startsWith(r.lane + ":") ? r.run : `${r.lane} · ${r.run}`} ·${new Date(r.mtime).toISOString().slice(0, 10)}`)}`);
     console.log(c.d(`\n● unread.  symbiot reports <id>  prints one (and marks it read).`));
     return;

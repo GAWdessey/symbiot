@@ -269,7 +269,7 @@ ${control ? ` "control": [],\n` : ""} "remember": [{"name": "…", "kind": "pers
  "settled": ["the exact question of a 'Only the user can do' card that their message has just answered or made pointless"]` : ""}}
 When they ask you to do something (look into it, find out, fix, set up, sign in, close, send, chase), do it, don't explain what you can't do: "agent" starts a coding agent now, with their tools and connectors (MCP, the command line, a browser signed in to their linked sites). With a "repo", it's that project's agent, working in it; empty, an agent for everything outside a repo (this computer, accounts, services). Use "task" for what's for later. Don't ask their permission to hand it over: the agent asks them first, on the Workdesk, before anything hard to undo (closing an account, deleting, paying, sending); say so in your reply when it applies, with what to check first. A question you can answer from what's here: answer it, "do": null.
 Lanes ("repo" is one of these, exactly; a bracket after a name says what the project is and is not part of the name): ${lanes.length ? lanes.slice(0, 60).map((n) => about[n] ? `${n} (${about[n]})` : n).join(", ") : "(none found)"}.${lanes.includes(MARKETING) ? ` "${MARKETING}" is a lane of its own for marketing any of their products (posts, demo videos, launches, campaigns, pricing pages' copy): marketing work goes there, starting with the product it's for in brackets, "[Bookly] a launch post".` : ""}${self ? ` Symbiot itself is "${self}": a flaw in how Symbiot works (how it read a page, what a brief or a card said, anything in the app) goes there.` : ""}
-Only say work is started, sent or queued when your "do" starts or queues it in this same reply; otherwise say what you will do, not that you are doing it. When they point out you got something wrong, open the reply by naming the mistake in a plain sentence ("I got that wrong: …") and give the right answer, never change the subject or hedge.
+Only say work is started, sent or queued when your "do" starts or queues it in this same reply; otherwise say what you will do, not that you are doing it. Say a report is on Reports only when "On the Reports page now" lists it, and a PR is merged only when "Pull requests checked on GitHub just now" says so: an agent's word is not enough. When you can't confirm it, say that plainly ("the agent says it wrote X, but Reports doesn't list it"). When they point out you got something wrong, open the reply by naming the mistake in a plain sentence ("I got that wrong: …") and give the right answer, never change the subject or hedge.
 Before you say an agent will read a mailbox or a site, check Symbiot can read it: being able to send to an address is not being able to read it. If it can't, say so first in plain words ("I can send there but can't read it: open it on your laptop, or sign in at <exact address>") and don't start an agent that will only come back asking. When a provider matters, an agent looks it up (MX records), never guesses it.
 The people you talk to (the user and his team) are Symbiot's makers, not outside users: act as they want, and when they ask for a change to Symbiot itself, make it.
 Don't wait to be asked to note a flaw in Symbiot. When you notice it got something wrong (you misread a page, a brief or a card misled them, a step made them do an agent's job), say so plainly and, in the same reply, note the fix: "task"${self ? ` with "repo": "${self}"` : ""}, saying what went wrong, an example, and what it should do instead. It waits on the Workdesk for their Go, so say "noted as a Symbiot bug", never "started a fix"; use "agent" for it only when they ask for it done now.
@@ -390,6 +390,19 @@ function runningClaim(reply, lanes = {}, running = runningHandoff) {
   const all = Object.entries(lanes || {}), named = all.filter(([n]) => new RegExp(`(?<![\\w-])${escRe(n)}(?![\\w-])`, "i").test(reply));
   return (named.length ? named : all).some(([, p]) => { try { return !!running(p); } catch { return false; } });
 }
+// "The full list is on Reports" is only true once Reports lists it: the chat said so on an agent's word, and Garth found
+// "Unread · 0" (29 Oct 2026). reports: what Reports lists now ([{ title, name, mtime }]); a claim is backed when one shares
+// two words of its title with the reply, or one if it was written in the last 6 hours. undefined: not checked.
+const CLAIMS_REPORT = /\b(?:on|in|under|at) (?:the |your )?Reports\b|\bReports (?:page |tab )?(?:has|shows|lists)\b/i;
+const DENIES_REPORT = /\b(?:not|isn'?t|aren'?t|never|no longer|can'?t find|couldn'?t find)\b[^.]{0,60}\b(?:on|in|under) (?:the |your )?Reports\b/i;
+const PLAIN = new Set("this that with from what your their about into have were been will they them full list report reports page agent agents written wrote file found check checks done there here more".split(" "));
+const wordsOf = (t) => new Set((String(t || "").toLowerCase().match(/[a-z0-9]{4,}/g) || []).filter((w) => !PLAIN.has(w)));
+function reportClaim(reply, reports, now = Date.now()) {
+  reply = String(reply || ""); if (!Array.isArray(reports) || !CLAIMS_REPORT.test(reply) || DENIES_REPORT.test(reply)) return false;
+  const said = wordsOf(reply);
+  return !reports.some((r) => { const n = [...wordsOf(`${r.title} ${String(r.name || "").replace(/\.md$/i, "").replace(/[-_]+/g, " ")}`)].filter((w) => said.has(w)).length; return n >= 2 || (n >= 1 && now - (Number(r.mtime) || 0) < 6 * 3600000); });
+}
+const NOT_ON_REPORTS = "\n\nCorrection: I checked your Reports page and nothing listed there matches that, so it isn't on Reports. I'll only say something is there once the page lists it.";
 const UNBACKED = "\n\nCorrection: nothing was handed to an agent or queued by this reply, so nothing is running on it yet. Say the word and I'll start it.";
 function parseReply(raw) {
   const t = String(raw || "").trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
@@ -405,7 +418,7 @@ const BAD_FORM = "(the model didn't answer in the right form, so nothing was don
 // own last turns. act: { agent(request) -> result, task(text, repo) -> result },
 // what "do" runs here. Gives { reply, did?, remembered }.
 const DEFAULT_ASK = (sys, p, o) => write(sys, p, { ...o, floor: "sonnet" });
-async function converse({ where, role = "", context = "", history = "", question, act = {}, ask = DEFAULT_ASK, map = null, now = Date.now(), images = [], nav = false, settle = false, tasks = [], control = false, running = runningHandoff }) {
+async function converse({ where, role = "", context = "", history = "", question, act = {}, ask = DEFAULT_ASK, map = null, now = Date.now(), images = [], nav = false, settle = false, tasks = [], control = false, running = runningHandoff, reports }) {
   // a secret they pasted goes to the vault before anything is stored or sent; the model sees a placeholder
   let kept = []; try { ({ text: question, saved: kept } = captureSecrets(question, { context: () => [history, ...(loadMind().log || []).slice(-6).map((l) => String((l && l.text) || ""))].join("\n") })); } catch {}
   kept = [...new Set([...kept, ...[...String(question).matchAll(/\[saved: ([^\]]+)\]/g)].map((m) => m[1])])]; // or saved already, by the page it came from (home.mjs homeAsk)
@@ -486,6 +499,7 @@ async function converse({ where, role = "", context = "", history = "", question
   if (cut.dropped.length && cut.reply) reply = `${cut.reply}\n\n(Left out what you've turned down before: ${cut.dropped.join("; ")}.)`;
   const rules = (Array.isArray(j.rule) ? j.rule : []).map((x) => String(x || "")).filter((x) => x.trim()).slice(0, 3).filter((x) => addRule(x));
   if (bindingClaim(reply, rules.length)) reply += NOT_BINDING;
+  if (!(go && go.to === "reports") && reportClaim(reply, reports, now)) reply += NOT_ON_REPORTS;
   // what's read aloud: the reply, then the line under it as a short phrase (spokenLine)
   const line = spokenLine(did, said), spoken = did && did.kind === "agent" && (did.error || did.notStarted || did.later) ? line : line ? `${said} ${line}` : said; // a claim that no agent started isn't read aloud
   // read again: another chat may have written while the model answered
@@ -504,4 +518,4 @@ async function converse({ where, role = "", context = "", history = "", question
 // The usual "task" act, for a caller with no lanes of its own to pass.
 const addToTasks = (text, repo) => { let map = {}; try { map = laneMap(); } catch {} return taskIn(text, repo, { map }); };
 
-export { dayLine, dayMark, MIND_FILE, loadMind, saveMind, remember, recall, recallText, lately, mindState, forget, actBrief, actNow, actIn, taskIn, selfLane, rulesFor, parseReply, converse, spokenLine, unbackedClaim, runningClaim, bindingClaim, goOf, PAGES, addToTasks , ownThread };
+export { reportClaim, dayLine, dayMark, MIND_FILE, loadMind, saveMind, remember, recall, recallText, lately, mindState, forget, actBrief, actNow, actIn, taskIn, selfLane, rulesFor, parseReply, converse, spokenLine, unbackedClaim, runningClaim, bindingClaim, goOf, PAGES, addToTasks , ownThread };
