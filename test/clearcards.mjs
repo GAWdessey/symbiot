@@ -25,8 +25,8 @@ const base = { repos: () => ({}), board: () => ({ cards: [] }), pending: () => [
 
 try {
   console.log("1) a dismissed Merge PR card stays dismissed when its line changes");
-  const running = merge("bilawalsidhu/gods-eye-view", 1467, "auto-merge is off and CI is still running: merge it yourself when green", "godseyeviewproject");
-  const ready = merge("bilawalsidhu/gods-eye-view", 1467, "ready, and auto-merge is off: merge it yourself", "godseyeviewproject");
+  const running = merge("bilawalsidhu/gods-eye-view", 1467, "auto-merge is off and CI is still running: merge it yourself when green", "mapview");
+  const ready = merge("bilawalsidhu/gods-eye-view", 1467, "ready, and auto-merge is off: merge it yourself", "mapview");
   dismissCard(cardKey(running));
   const look = (cards) => homeState({ fresh: true, deps: { ...base, openPrs: () => cards } }).you.filter((y) => y.kind === "merge").map((y) => y.id);
   ok("dismissed while its CI ran: gone", !look([running]).length);
@@ -37,7 +37,7 @@ try {
 
   console.log("2) clearCards: dismisses, builds Home again, and calls cleared only what it no longer shows");
   const flutter = [195579, 195578, 195565].map((n) => merge("flutter/flutter", n));
-  const gev = [1472, 1470].map((n) => merge("bilawalsidhu/gods-eye-view", n, undefined, "godseyeviewproject"));
+  const gev = [1472, 1470].map((n) => merge("bilawalsidhu/gods-eye-view", n, undefined, "mapview"));
   const ask = { kind: "ask", id: "ask:/lane", path: "/lane", q: "Which plan?", title: "symbiot asks" };
   const all = [...flutter, ...gev, ask];
   const fresh = () => homeState({ fresh: true, deps: { ...base, openPrs: () => [...flutter, ...gev] } }).you;
