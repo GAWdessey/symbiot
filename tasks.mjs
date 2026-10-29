@@ -267,7 +267,26 @@ function git(repo, args, timeout = 30000) {
 // The same, in the background: Approve's status and add can take minutes in a big
 // tree, and spawnSync held the whole app up until it timed out (ETIMEDOUT). On a
 // timeout git gets SIGTERM first, so it lets go of .git/index.lock.
+// Which GitHub login a repo's pushes, fetches and PRs go out under: its remote's owner,
+// not whichever account `gh` last switched to. A private GAWdessey repo answered "not
+// found" to GarthGhostai (29 Oct 2026), and an approved push sat as "didn't upload".
+// { GH_TOKEN } for the owner when gh holds a login of that name, else {}.
+const OWNER_TOKENS = new Map();
+function ownerEnv(repo) {
+  try {
+    const u = spawnSync("git", ["-C", repo, "remote", "get-url", "origin"], { encoding: "utf8", timeout: 5000 });
+    const m = /github\.com[/:]([^/\s]+)\//i.exec(u.status === 0 ? u.stdout : "");
+    if (!m || !hasCmd("gh")) return {};
+    const own = m[1], hit = OWNER_TOKENS.get(own);
+    if (hit && Date.now() - hit.at < 60000) return hit.env;
+    const t = spawnSync("gh", ["auth", "token", "-h", "github.com", "-u", own], { encoding: "utf8", timeout: 5000 });
+    const env = t.status === 0 && t.stdout.trim() ? { GH_TOKEN: t.stdout.trim() } : {};
+    OWNER_TOKENS.set(own, { at: Date.now(), env }); return env;
+  } catch { return {}; }
+}
+const NET_GIT = new Set(["push", "fetch", "pull", "ls-remote"]);
 function gitAsync(repo, args, timeout = 30000, { input = null, env = {} } = {}) {
+  if (NET_GIT.has(args[0]) && !env.GH_TOKEN && !process.env.GH_TOKEN) env = { ...ownerEnv(repo), ...env };
   return new Promise((resolve) => {
     let out = "", err = "", timedOut = false, done = false, kill = null;
     const p = spawn("git", ["-C", repo, ...args], { env: { ...process.env, GIT_TERMINAL_PROMPT: "0", ...env }, stdio: [input == null ? "ignore" : "pipe", "pipe", "pipe"] });
@@ -853,7 +872,7 @@ const branchSlug = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, "-").re
 // gh in the background, like gitAsync: the ship's `pr create`/`pr merge` held the app
 // up for up to a minute each. The same { status, stdout, stderr } as spawnSync gave.
 const ghRun = (path) => (args) => new Promise((resolve) => {
-  let stdout = "", stderr = "", done = false; const p = spawn("gh", args, { cwd: path, env: { ...process.env, GIT_TERMINAL_PROMPT: "0" }, stdio: ["ignore", "pipe", "pipe"] });
+  let stdout = "", stderr = "", done = false; const p = spawn("gh", args, { cwd: path, env: { ...(process.env.GH_TOKEN ? {} : ownerEnv(path)), ...process.env, GIT_TERMINAL_PROMPT: "0" }, stdio: ["ignore", "pipe", "pipe"] });
   const t = setTimeout(() => { try { p.kill("SIGTERM"); } catch {} }, 60000), end = (status, e) => { if (done) return; done = true; clearTimeout(t); resolve({ status, stdout, stderr: stderr || (e ? String(e.message) : "") }); };
   p.stdout.setEncoding("utf8"); p.stderr.setEncoding("utf8"); p.stdout.on("data", (d) => { stdout += d; }); p.stderr.on("data", (d) => { stderr += d; });
   p.on("error", (e) => end(-1, e)); p.on("close", (code) => end(code));
@@ -1624,4 +1643,4 @@ function pushTasks(filter) {
   return { empty: false, written, unresolved, handoff: handoffCmd() };
 }
 
-export { noteLaneIds, closeUnchanged, applyMove, readMove, moveCheckout, laneOfRepo, laneNames, refileTask, unplacedTasks, placeTasks, unsentHeadline, setHandedLookup, setTaskModel, MODEL_PICKS, holdShip, SHIP_STALE, shipping, shippingPaths, shipJob, shipJobOf, SHIP_WAIT, workingChangesAsync, rebaseTask, sendAgain, forgetUnsent, unsentOf, readUnsent, unsentCard, repoTests, localRefused, forgetReview, gitFailed, taskPaths, addTask, toggleTask, setTaskDone, removeTask, cancelTask, restoreTask, FINDING_NOTE, completedInRepo, removalOf, applyRemovals, applyDrops, syncTasks, workingChanges, workingDiff, publishesOnMerge, unreleased, bumpOffer, learnNpm, releaseNeeded, releaseNotIn, withReleases, setVersion, changelogEntry, changelogSection, noteChangelog, releaseInput, shipWithBump, runSummary, saidFinished, pendingReview, commitSubject, shipChanges, autoMergeRepos, setAutoMerge, approveRepo, approveChanges, sendBack, TASK_ORDER, taskType, buildTasksMd, pushTasks, mergeWhenGreen, changelogItems, changelogLeaks, commitText, dropChanges };
+export { ownerEnv, noteLaneIds, closeUnchanged, applyMove, readMove, moveCheckout, laneOfRepo, laneNames, refileTask, unplacedTasks, placeTasks, unsentHeadline, setHandedLookup, setTaskModel, MODEL_PICKS, holdShip, SHIP_STALE, shipping, shippingPaths, shipJob, shipJobOf, SHIP_WAIT, workingChangesAsync, rebaseTask, sendAgain, forgetUnsent, unsentOf, readUnsent, unsentCard, repoTests, localRefused, forgetReview, gitFailed, taskPaths, addTask, toggleTask, setTaskDone, removeTask, cancelTask, restoreTask, FINDING_NOTE, completedInRepo, removalOf, applyRemovals, applyDrops, syncTasks, workingChanges, workingDiff, publishesOnMerge, unreleased, bumpOffer, learnNpm, releaseNeeded, releaseNotIn, withReleases, setVersion, changelogEntry, changelogSection, noteChangelog, releaseInput, shipWithBump, runSummary, saidFinished, pendingReview, commitSubject, shipChanges, autoMergeRepos, setAutoMerge, approveRepo, approveChanges, sendBack, TASK_ORDER, taskType, buildTasksMd, pushTasks, mergeWhenGreen, changelogItems, changelogLeaks, commitText, dropChanges };

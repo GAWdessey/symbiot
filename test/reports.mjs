@@ -413,6 +413,7 @@ console.log("FINDINGS AND REMOVING — a fact a report found isn't filed as a jo
 {
   const ui = (await import("./uisource.mjs")).uiSource();
   ok("Reports is split into Unread / Read, open actions / Read and done tabs with counts, Unread first, grouped by lane", /REPTAB='unread'/.test(ui) && /Read, open actions/.test(ui) && /Read and done/.test(ui) && /id='reptabs'/.test(ui) && /by\[r\.lane\]/.test(ui), "");
+  ok("Reports never opens on an empty tab while another one has reports (29 Oct 2026)", /if\(!cnt\[REPTAB\]\)\{var alt=\['unread','action','read'\]\.filter\(function\(k\)\{return cnt\[k\];\}\)\[0\];if\(alt\)REPTAB=alt;\}/.test(ui));
   ok("Approve's overlap question is an in-app note, never window.confirm", !/if\(confirm\(r\.error\)\)/.test(ui) && /askyes/.test(ui), "");
   ok("an open report's back row sticks to the top while the report scrolls", /#reportslist:has\(#reportback\)\{[^}]*position:sticky;top:0/.test(ui), "");
 }
