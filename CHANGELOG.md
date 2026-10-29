@@ -10,6 +10,9 @@ What each Symbiot release brought, newest first. When Approve bumps the version,
 ## 0.94.7 — 2026-10-29
 
 - **Each lane keeps one shared log that every session reads first and writes to.** Agents in a lane's folder, runs beside it, background runs and handovers all add what was asked, what was done and what is still open, with who wrote it and when; every agent's brief starts from it, and the chat answers "where are we" from it too. A request another session leaves as a REQUEST.md, pulled down into the lane's folder, becomes an open request and a task for that lane, so nobody has to carry messages between sessions. `symbiot tether` shows and writes it from a terminal.
+- **A question's buttons are its real choices.** Preview lines written above an agent's options (a page's name, address and so on) are shown as part of the question, not offered as answers, so picking one can no longer go down as your answer.
+- **An answer starts the lane's agent again, and the task stops saying none came in.** A start that didn't take no longer holds a task once you've answered or the lane has run since, and when there really is nothing new it says the last run already had your newest answer.
+- **A question that asks you to approve something shows it.** Pictures, details and long text an agent prepared appear on the question's card as they'll be used: pictures open full size, details read label by label, long text folds behind "Show all". If part of it can't be shown, the card names what's missing and stops saying "as shown", and the agent is told what you couldn't see.
 - Small fixes and improvements.
 
 ## 0.94.6 — 2026-10-29

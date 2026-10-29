@@ -117,11 +117,14 @@ ok("...and every card shows it: Home's, the Workdesk's and the phone's", /var tk
 
 // 29 Oct 2026: a page preview's "- Name ......" lines became the card's two buttons, and "Address ......" went down as the answer
 {
-  const md = "## Questions\n### Create Dailify's LinkedIn page as shown? {#dailify-linkedin-page}\nNothing is on LinkedIn yet.\n\n- Name ......... Dailify\n- Address ...... linkedin.com/company/dailify\n- About ........\n  > Dailify phones consented prospects.\n\nThen: you as super admin.\n- 🤖 Agent: create it as shown (recommended)\n- 🤖 Agent: change something first\n- 🤖 Agent: not now\n";
+  const md = "## Questions\n### Create Bookly's LinkedIn page as shown? {#bookly-linkedin-page}\nNothing is on LinkedIn yet.\n\n- Name ......... Bookly\n- Address ...... linkedin.com/company/bookly\n- About ........\n  > Bookly phones consented prospects.\n\nThen: you as super admin.\n- 🤖 Agent: create it as shown (recommended)\n- 🤖 Agent: change something first\n- 🤖 Agent: not now\n";
   const q = a.parseQuestions(md, { linked: [] }).questions[0];
   ok("a preview's lines above the options are context, not choices", q.options.length === 3 && q.options.every((o) => /^🤖 Agent:/.test(o)), q.options);
-  ok("…kept in the question, in their place", /Nothing is on LinkedIn yet\. - Name \.+ Dailify - Address \.+ linkedin\.com\/company\/dailify .*Then: you as super admin\./.test(q.context), q.context);
+  ok("…kept in the question, in their place", /Nothing is on LinkedIn yet\. - Name \.+ Bookly - Address \.+ linkedin\.com\/company\/bookly .*Then: you as super admin\./.test(q.context), q.context);
   const plainList = a.parseQuestions("## Questions\n### Which relay?\nPick one.\n- SMTP\n- API\n", { linked: [] }).questions[0];
+  // Critic, 29 Oct: with no prose between them, "- Account ...... Bookly page" and "- Time ...... Fri 30 Oct 12:30" were the buttons
+  const tight = a.parseQuestions("## Questions\n### Post Bookly's launch update as shown?\n- Account ...... Bookly page\n- Time ......... Fri 30 Oct 12:30\n- 🤖 Agent: post it as shown (recommended)\n- 🤖 Agent: not now\n", { linked: [] }).questions[0];
+  ok("field lines right above the tagged options are context too", tight.options.length === 2 && tight.options.every((o) => /^🤖 Agent:/.test(o)) && /- Account \.+ Bookly page - Time \.+ Fri 30 Oct 12:30/.test(tight.context), [tight.options, tight.context]);
   ok("a question with untagged options keeps them all", plainList.options.join("|") === "SMTP|API", plainList.options);
 }
 // 20 Oct 2026 review, S2: Paddle was asked four times in new words. A question with an id is asked once.

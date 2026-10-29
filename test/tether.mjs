@@ -65,7 +65,7 @@ try {
   ok("a handover is an open request in the lane that has it", log1.some((e) => e.key === "handoff:h1" && e.status === "open" && e.from === "symbiot"));
   ok("...and a note in the lane that asked, not a request of its own", T.loadLog("symbiot").entries.some((e) => e.key === "handoff:h1" && e.status === "" && /waiting on bot-desk/.test(e.open)));
   ok("a run's end is logged in its own last words", log1.some((e) => e.kind === "finish" && /nightly timer/.test(e.done)));
-  const req = log1.find((e) => e.kind === "request" && e.source === join("data", "model", "REQUEST.md"));
+  const req = log1.find((e) => e.kind === "request" && e.source === join("data", "model", "REQUEST.md") && e.id !== open.id); // the file's own, not the one logged by hand above
   ok("a REQUEST.md another session left is an open request, from the phone", req && req.status === "open" && req.who.device === "phone" && /phone session/.test(req.who.session), req);
   ok("...and a task for the lane, naming the file and the entry to close", added.length === 1 && added[0].lane === LANE && added[0].text.includes(req.id) && added[0].text.includes("data/model/REQUEST.md") && pushed.includes(LANE), added);
   ok("...which says to turn down what the lane's rules forbid", /Where the lane's rules say no/.test(added[0].text));

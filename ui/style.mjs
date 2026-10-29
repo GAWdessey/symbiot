@@ -754,6 +754,44 @@ body.lq-light .rbackbar{background:rgba(246,248,251,.95);box-shadow:0 1px 0 rgba
 .aq .q{padding:8px 0;border-bottom:1px solid var(--line)}
 .aq .qt{color:var(--bone);font-weight:600;font-size:13.5px}
 .aq .qc{color:var(--faint);font-size:12.5px;margin-top:3px;line-height:1.5}
+.aq .qlead p{margin:0 0 6px}.aq .qlead p:last-child{margin-bottom:0}
+.aq .qlead.fold{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;line-clamp:3;overflow:hidden}
+.aq .qlead.fold p{display:inline}.aq .qlead.fold p+p::before{content:" "}
+.aq .qlink{all:unset;cursor:pointer;color:var(--amber);font-size:12.5px;padding:2px 0;border-radius:4px}
+.aq .qlink:hover{text-decoration:underline}.aq .qlink:focus-visible,.aq .qpic:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
+.aq .qwarn{margin-top:8px;padding:8px 10px;border-radius:8px;border:1px solid var(--amber);color:var(--bone);font-size:13px;line-height:1.45;background:rgba(242,165,65,.08)}
+.aq .qpv{margin-top:10px;padding:16px;border:1px solid var(--line);border-radius:10px;background:rgba(127,127,127,.06);display:flex;flex-direction:column;gap:12px}
+.aq .qpv h4{margin:0}
+.aq .qpv>*+*{border-top:1px solid var(--line);padding-top:12px}.aq .qpv>h4+*{border-top:0;padding-top:0}
+.aq .qpics{display:flex;flex-direction:column;gap:8px}
+.aq .qpicrow{display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end}
+.aq .qpic{all:unset;box-sizing:border-box;display:block;position:relative;overflow:hidden;border-radius:8px;border:1px solid var(--line);background:rgba(127,127,127,.14);cursor:zoom-in;max-width:100%;min-height:40px;min-width:40px}
+.aq .qpic.wide{width:100%}.aq .qpicrow .qpic{height:var(--h,96px)}
+.aq .qpic img{display:block;width:100%;height:100%;object-fit:contain;opacity:0;transition:opacity .15s}.aq .qpic img.in{opacity:1}
+.aq .qpic:hover{border-color:var(--faint)}
+.aq .qpic.gap{cursor:default;border-style:dashed;border-color:var(--faint);display:flex;align-items:center;justify-content:center;padding:8px;min-width:120px;min-height:72px;background:transparent;color:var(--faint);font-size:12.5px;text-align:center;line-height:1.35}
+.aq .qpic.gap:not(.wide){width:160px;height:auto!important;aspect-ratio:auto!important}.aq .qpic.gap.wide{aspect-ratio:auto!important;height:96px}
+.aq .qcap{color:var(--faint);font-size:12.5px;line-height:1.45}
+.aq .qflds{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 24px;margin:0}
+.aq .qf{display:grid;grid-template-columns:96px minmax(0,1fr);gap:12px;align-items:baseline}
+.aq .qf.span{grid-column:1/-1}
+.aq .qf dt{color:var(--faint);font-size:12.5px}
+.aq .qf dd{margin:0;color:var(--text);font-size:14px;line-height:1.45;overflow-wrap:anywhere}
+.aq .qf dd small{display:block;color:var(--faint);font-size:12.5px}
+.aq .qlh{color:var(--faint);font-size:12.5px;margin-bottom:4px}
+.aq .qlb{color:var(--text);font-size:14px;line-height:1.5}.aq .qlb p{margin:0 0 8px}.aq .qlb p:last-child{margin-bottom:0}
+.aq .qlb.fold{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:4;line-clamp:4;overflow:hidden}.aq .qlb.fold p{display:inline;margin:0}.aq .qlb.fold p+p::before{content:" "}
+.aq .qlong .qall{margin-top:6px}
+.aq .qfiles{color:var(--faint);font-size:12.5px}
+.aq .qthen{margin-top:12px}.aq .qthen h4{margin:0 0 6px}
+.aq .qthen ul{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:4px}
+.aq .qthen li{position:relative;padding-left:18px;color:var(--text);font-size:13.5px;line-height:1.45}
+.aq .qthen li::before{content:"";position:absolute;left:4px;top:.6em;width:5px;height:5px;border-radius:50%;background:var(--faint)}
+.aq .qthen li.on::before,.aq .qthen li.off::before{display:none}
+.aq .qthen .qbox{position:absolute;left:0;top:.2em;width:13px;height:13px;border:1px solid var(--faint);border-radius:3px;font-size:10px;line-height:13px;text-align:center;color:var(--ink)}
+.aq .qthen li.on .qbox{background:var(--green);border-color:var(--green)}
+.pcq .pcaway{white-space:normal;overflow:visible}
+@media (max-width:640px){.aq .qflds{grid-template-columns:minmax(0,1fr)}.aq .qf{grid-template-columns:minmax(0,1fr);gap:0}.aq .qpv{padding:12px}.aq .qlink{display:inline-flex;align-items:center;min-height:40px;margin:-6px 0}.aq .qpic{min-height:40px}.aq .qpicrow .qpic{height:min(var(--h,96px),72px)}}
 .aq .qfor,.pcq .qfor{color:var(--faint);font-size:12px;margin-bottom:3px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
 @media (max-width:520px){.aq .qfor{white-space:normal;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2}}
 .aq label.opt{display:flex;gap:8px;align-items:flex-start;margin:6px 0 0;font-size:13px;color:var(--text);cursor:pointer}
@@ -990,6 +1028,8 @@ body.lq-liquid .aq{border:1px solid rgba(255,255,255,.08);border-left:2px solid 
 body.lq-liquid.lq-light .aq{border-color:rgba(21,26,33,.08);border-left-color:var(--amber);background:rgba(255,255,255,.55)}
 body.lq-liquid .aq h4{font:600 11px var(--sans);letter-spacing:.1em;display:flex;align-items:center;gap:6px}
 body.lq-liquid .aq .q{padding:12px 16px;margin:8px 0 0}
+/* On a phone the preview spans its lane block edge to edge, so it gets 330 px of a 390 screen: in a lane block the question box keeps only an amber top line and the card goes flat (no box in a box in a box), and -18 = the box's padding plus the block's */
+@media (max-width:480px){body.lq-liquid .agent{padding:12px 10px}body.lq-liquid .aq{padding:12px 8px}body.lq-liquid .aq .q{padding:12px 0;border-left:0;border-right:0}body.lq-liquid .aq .q .qpv{margin-left:-10px;margin-right:-9px;border-left:0;border-right:0;border-radius:0}body.lq-liquid .agent .aq{border-width:2px 0 0;border-top-color:var(--amber);border-radius:0;background:none}body.lq-liquid .agent .aq .q{background:none;border:0;border-radius:0;box-shadow:none}body.lq-liquid .agent .aq .q .qpv{margin-left:-18px;margin-right:-18px}}
 body.lq-liquid .aq label.opt{gap:10px;padding:4px 0}
 body.lq-liquid .aq .opt input{margin-top:1px}
 body.lq-liquid .who{display:inline-flex;align-items:center;gap:4px;padding:1px 8px;border-radius:999px;background:rgba(255,255,255,.07);font-size:12px;font-weight:600;color:var(--bone);white-space:nowrap}

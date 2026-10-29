@@ -84,6 +84,7 @@
     "marketing.mjs",
     "mkoverview.mjs",
     "tray.mjs",
+    "preview.mjs",
     "plain.mjs",
     "capture.mjs",
     "walkthrough.mjs",
