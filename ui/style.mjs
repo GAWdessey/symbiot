@@ -1028,7 +1028,8 @@ body.lq-liquid .aq{border:1px solid rgba(255,255,255,.08);border-left:2px solid 
 body.lq-liquid.lq-light .aq{border-color:rgba(21,26,33,.08);border-left-color:var(--amber);background:rgba(255,255,255,.55)}
 body.lq-liquid .aq h4{font:600 11px var(--sans);letter-spacing:.1em;display:flex;align-items:center;gap:6px}
 body.lq-liquid .aq .q{padding:12px 16px;margin:8px 0 0}
-@media (max-width:480px){body.lq-liquid .aq{padding:12px 10px}body.lq-liquid .aq .q{padding:12px 0;border-left:0;border-right:0}body.lq-liquid .aq .q .qpv{margin-left:-10px;margin-right:-10px;border-left:0;border-right:0;border-radius:0}}
+/* On a phone the preview spans its lane block edge to edge, so it gets 330 px of a 390 screen: in a lane block the question box keeps only an amber top line and the card goes flat (no box in a box in a box), and -18 = the box's padding plus the block's */
+@media (max-width:480px){body.lq-liquid .agent{padding:12px 10px}body.lq-liquid .aq{padding:12px 8px}body.lq-liquid .aq .q{padding:12px 0;border-left:0;border-right:0}body.lq-liquid .aq .q .qpv{margin-left:-10px;margin-right:-9px;border-left:0;border-right:0;border-radius:0}body.lq-liquid .agent .aq{border-width:2px 0 0;border-top-color:var(--amber);border-radius:0;background:none}body.lq-liquid .agent .aq .q{background:none;border:0;border-radius:0;box-shadow:none}body.lq-liquid .agent .aq .q .qpv{margin-left:-18px;margin-right:-18px}}
 body.lq-liquid .aq label.opt{gap:10px;padding:4px 0}
 body.lq-liquid .aq .opt input{margin-top:1px}
 body.lq-liquid .who{display:inline-flex;align-items:center;gap:4px;padding:1px 8px;border-radius:999px;background:rgba(255,255,255,.07);font-size:12px;font-weight:600;color:var(--bone);white-space:nowrap}
