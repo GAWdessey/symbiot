@@ -2,6 +2,13 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one), for anyone who installs the app: what changed in it, never whose work it was (no projects, people, accounts, services, run ids or task wording of the person who made it). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.94.9 — 2026-10-29
+
+- **Home no longer lists a PR to merge in a repo you can't merge into.** A Merge PR card appears only where your GitHub login has push, maintain or admin rights, checked per repo, so repos you only clone stop refilling the list.
+- **Home's chat clears cards for real.** It says "cleared" only once Home no longer shows them, and a dismissed Merge PR card stays gone when its CI line changes.
+- **A report rewritten with only new times stays read**, and two wordings of one job never run side by side.
+- The design critic now holds only PRs that touch UI files.
+
 ## 0.94.8 — 2026-10-29
 
 - **Agents and the chat now work from the same facts.** A reply typed under a question that offered options is taken as that question's answer. A new task that names an open one joins it instead of becoming a second job. A run sees the user's own words under a task the chat wrote. Every chat, not only Home's, checks a PR on GitHub before saying whether it merged. A paused lane's queued tasks show on Home. A goal is Done only with proof in the records, never just because its parts ended.
