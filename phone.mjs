@@ -392,7 +392,7 @@ async function snapshot({ now = Date.now(), fresh = false } = {}) {
     if (asked && !asked.has(y.path)) continue;
     const qs = await tryOr(() => agents.agentQuestions(y.path, "").questions, []);
     const project = lanesMod ? await tryOr(() => lanesMod.projectOf(y.path, { ledger }), "") : ""; // which project it's for, from the record (home.mjs projectFor)
-    if (qs.length) asks.push({ id: askId(y.path), path: y.path, name: plainText(String(y.name || "an agent").replace(/^Agent:\s*/, ""), 60), project, questions: qs.slice(0, 5).map((q) => { const c = codeAsk(q); return { q: plainText(q.q, 300), ...(q.task ? { task: plainText(q.task, 120) } : {}), ...(q.shown ? { shown: plainText(q.shown, 400) } : {}), options: (q.options || []).slice(0, 2).map((o) => plainText(o, 200)), ...(q.labels ? { labels: q.labels.slice(0, 2).map((o) => plainText(o, 200)) } : {}), ...(c ? { code: c } : {}) }; }) });
+    if (qs.length) asks.push({ id: askId(y.path), path: y.path, name: plainText(String(y.name || "an agent").replace(/^Agent:\s*/, ""), 60), project, questions: qs.slice(0, 5).map((q) => { const c = codeAsk(q); return { q: plainText(q.q, 300), ...(q.task ? { task: plainText(q.task, 120) } : {}), ...(q.shown ? { shown: plainText(q.shown, 400) } : {}), options: (q.options || []).slice(0, 2).map((o) => plainText(o, 200)), ...(q.labels ? { labels: q.labels.slice(0, 2).map((o) => plainText(o, 200)) } : {}), ...(c ? { code: c } : {}), ...(q.preview && q.preview.away ? { away: plainText(q.preview.away, 200) } : {}) }; }) }); // away: the phone draws no preview, so it says where it is (preview.mjs)
   }
   const proofs = [];
   // every folder an agent ran in, not just those with a question (a run that wrote a proof and stopped has none)
