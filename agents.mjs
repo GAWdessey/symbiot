@@ -2711,6 +2711,14 @@ function answerQuestions(path, answers, opts = {}) {
   for (const x of rows) { try { const c = captureSecrets(x.a, { context: x.q }); if (c.saved.length) { x.a = `${c.text}\n(${c.saved.map((n) => `"${n}"`).join(", ")} ${c.saved.length > 1 ? "are" : "is"} in Symbiot's vault: ${VAULT_READ})`; vaulted.push(...c.saved); } } catch {} }
   // a reply that asks back (explain it, put it in Reports, a question of their own) isn't an answer: the run does what they asked first
   for (const x of rows) { const opts = (openQs.find((o) => qKey(o.q) === qKey(x.q)) || {}).options || []; if (asksBack(x.a, opts)) { x.back = x.a; x.a = `${x.a}\n\n${askBackNote(x.a)}`; } }
+  // A typed reply to a card that offered options is still this card's answer: a run read "Address example.com/company/acme"
+  // under "Create the page as shown?" as no OK, ended waiting, and the page wasn't made for an hour (29 Oct 2026)
+  for (const x of rows) {
+    const q = openQs.find((o) => qKey(o.q) === qKey(x.q)), os = (q && q.options) || [];
+    if (!q || x.back || !os.length || x.remap || optsOf(x.q).has(optKey(x.a)) || /\n\(Symbiot: /.test(x.a)) continue;
+    x.plain = x.a; // the shared record keeps their words, not the note
+    x.a = `${x.a}\n\n(Symbiot: the user typed this under the question "${noId(q.q)}" instead of picking one of its options. It is their answer to that question: act on it. A correction or detail to what you proposed means yes with that change; a no means no. Ask again only if it can't be read either way, and then say what you understood.)`;
+  }
   // what was said on the card before this answer goes with it, and the card's talk is done
   for (const x of rows) { const t = talkOf(path, x.q); if (t.length) { x.a = `${x.a}\n\nOn this card, before this answer:\n${talkText(t)}`; endTalk(path, x.q); } }
   const prev = readSymbiot(path, "ANSWERS.md") || "# Answers from the user\nAnswers to the questions in QUESTIONS.md, newest last. Follow them; ask again in QUESTIONS.md if one is unclear.\n";
@@ -2723,8 +2731,8 @@ function answerQuestions(path, answers, opts = {}) {
     writeFileSync(join(path, ".symbiot", "ANSWERS.md"), prev.replace(/\s*$/, "\n") + rows.map((x) => `\n### ${x.q}${x.id ? ` {#${x.id}}` : ""}\n${x.a}${unseen(x)}\n_answered ${day}_\n`).join(""));
   } catch (e) { return { error: "Couldn't write ANSWERS.md: " + ((e && e.message) || e) }; }
   settleRecord(path, "answered"); // what its run waited for came: its record moves on (runOutcome)
-  { const lane = whereOf(path).lane; for (const x of rows) recordDone(x.q, x.back || x.a, lane, { back: !!x.back, id: x.id }); }
-  for (const x of rows) if (!x.back && closesAsk(x.a)) closeAsk(path, x.q); // "case closed": a later run restating it raises no card (needsOf)
+  { const lane = whereOf(path).lane; for (const x of rows) recordDone(x.q, x.back || x.plain || x.a, lane, { back: !!x.back, id: x.id }); }
+  for (const x of rows) if (!x.back && closesAsk(x.plain || x.a)) closeAsk(path, x.q); // "case closed": a later run restating it raises no card (needsOf)
   // Go on an adb command the membrane held, one that opens an app or acts on the screen of the user's phone (phone-go-<hold>): it may go through once (phonegate.mjs)
   for (const x of rows) { const m = String(x.id || "").match(/^phone-go-([0-9a-f]+)$/); if (m && !/^\W*(?:no|don'?t|do not|skip|stop|cancel|not now)\b/i.test(x.a)) phoneGo(m[1]); }
   // A yes to letting agents act on a site in the user's Chrome (chrome-act-<host>), or the first choice of a sign-in ask

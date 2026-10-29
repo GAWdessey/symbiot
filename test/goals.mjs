@@ -87,10 +87,10 @@ try {
   await G.goalsTick(deps({ write: no, ops: (req) => (asked.push(req), { job: "r4" }) }), { now: t0 + 6 * H });
   const g2d = G.goalById(g2.key);
   ok("…once, then \"Not finished: <goal>: <what's missing>\", with its breakdown and card", asked.length === 1 && g2d.closed.kind === "not" && G.goalCards().some((c) => c.path === g2.key && /^Not finished: Get the delivered count.*the delivered count itself/.test(c.q)) && readdirSync(join(G.folderOf(g2d), ".symbiot")).some((f) => /^NOT-FINISHED-/.test(f)), g2d);
-  ok("with no AI to judge it: closed as its parts ended, the breakdown says unverified", await (async () => {
+  ok("with no AI to judge it: never Done on its parts ending alone; closed Not finished, the breakdown says unverified", await (async () => {
     const g3 = G.openGoal("Tidy the folder", { child: "run:r5", path: ops, now: t0 }); run("r5", ops, { at: t0 + 1, state: "done", summary: "Tidied." });
     await G.goalsTick(deps(), { now: t0 + 7 * H }); const x = G.goalById(g3.key);
-    return x.closed.kind === "done" && /Not verified/.test(readFileSync(join(G.folderOf(x), ".symbiot", x.closed.report), "utf8"));
+    return x.closed.kind === "not" && /not verified/i.test(readFileSync(join(G.folderOf(x), ".symbiot", x.closed.report), "utf8"));
   })());
 
   console.log("GOALS — waiting on the user, on a reply, on a time; stalled");

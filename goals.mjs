@@ -281,12 +281,14 @@ function rollUp(g, ctx) {
 // ---- closing a goal ------------------------------------------------------------------
 // Whether its done-when is met, from what its children ended with. Conservative: not met unless
 // the record shows it. null with no AI to judge (the breakdown then says it isn't verified).
+// "met" with nothing shown for it isn't met: a goal closed Done with "verified" empty or saying it wasn't (29 Oct 2026)
+const provenBy = (o) => !!String(o.verified || "").trim() && !/^\W*(?:un|not\b.{0,12})verified|\bno (?:record|evidence|confirmation|proof)\b/i.test(String(o.verified)) && Array.isArray(o.done) && o.done.some((x) => String(x || "").trim());
 async function judgeDone(g, kids, { write } = {}) {
   if (!write) return null;
   const lines = kids.map((c) => `- ${c.key}: ${c.state}${c.ok === false ? " (did not finish)" : ""}${c.summary ? `: ${clip(c.summary, 500)}` : ""}${c.what ? ` (${clip(c.what, 160)})` : ""}`).join("\n");
-  let r; try { r = await write(`You check whether what the user asked for is done, from the agents' own records. Be strict: met only if the records show the done-when is true (sent, live, known, confirmed), not that work was attempted or handed on. Answer JSON only: {"met":true|false,"done":["what was done, with any PR, commit or link named in the records"],"verified":"how the records show it, or what's unverified","left":"what's missing, empty if met"}.`, `What the user asked for:\n${g.asked}\n\nDone when: ${doneOf(g)}\n\nThe records:\n${lines}`, { fast: true, kind: "triage" }); } catch { return null; }
+  let r; try { r = await write(`You check whether what the user asked for is done, from the agents' own records. Be strict: met only if the records show the done-when is true (sent, live, known, confirmed), not that work was attempted or handed on. An email counts as sent only with a delivery confirmation or a reply in the records, and only to the people the user named; a tool or bot counts as done only when the records show the agent itself calling it and getting a result; a file counts only at the path the user named, not a copy elsewhere. Answer JSON only: {"met":true|false,"done":["what was done, with any PR, commit or link named in the records"],"verified":"how the records show it, or what's unverified","left":"what's missing, empty if met"}.`, `What the user asked for:\n${g.asked}\n\nDone when: ${doneOf(g)}\n\nThe records:\n${lines}`, { fast: true, kind: "triage" }); } catch { return null; }
   const m = String((r && r.text) || "").match(/\{[\s\S]*\}/); if (!m) return null;
-  try { const o = JSON.parse(m[0]); return { met: o.met === true, done: Array.isArray(o.done) ? o.done.map((x) => clip(x, 300)).slice(0, 12) : [], verified: clip(o.verified, 400), left: clip(o.left, 400) }; } catch { return null; }
+  try { const o = JSON.parse(m[0]); return { met: o.met === true && provenBy(o), done: Array.isArray(o.done) ? o.done.map((x) => clip(x, 300)).slice(0, 12) : [], verified: clip(o.verified, 400), left: clip(o.left, 400) }; } catch { return null; }
 }
 const costOf = (g, ctx) => { let usd = 0, ms = 0; for (const k of g.children.filter((x) => x.startsWith("run:"))) { const j = ctx.jobs.find((x) => x.key === k); if (j) { usd += Number(j.cost) || 0; ms += Math.max(0, (j.changed || 0) - (j.at || 0)); } } return { usd, ms }; };
 // The breakdown, under Reports in the goal's own folder: what was asked, what was done, how it's
@@ -351,7 +353,7 @@ async function goalsTick(deps = {}, { now = Date.now() } = {}) {
     const start = (path, why) => { if (!path || ctx.running(path)) return false; if (deps.autoStart && !deps.autoStart(path, { key: g.key })) return false; const e = deps.start ? deps.start(path) : null; if (e && e.id) { did.push({ goal: g.key, started: path, why }); return true; } return false; };
     if (r.state === "ended") {
       const v = await judgeDone(g, r.kids, deps);
-      if (!v && !deps.write) { const ok = r.kids.every((c) => c.ok !== false); close(g, ok ? "done" : "not", { kids: r.kids, left: ok ? "" : "some of its work didn't finish" }, ctx, deps, now); did.push({ goal: g.key, closed: ok ? "done" : "not" }); } // no AI to judge: closed as its parts ended, and the breakdown says it isn't verified
+      if (!v && !deps.write) { const ok = r.kids.every((c) => c.ok !== false); close(g, "not", { kids: r.kids, left: ok ? "its parts ended, but nothing checked them against what was asked: not verified" : "some of its work didn't finish" }, ctx, deps, now); did.push({ goal: g.key, closed: "not" }); } // no AI to judge: never "Done" on the parts having ended alone; the breakdown says it isn't verified
       else if (v && v.met) { close(g, "done", { ...v, kids: r.kids }, ctx, deps, now); did.push({ goal: g.key, closed: "done" }); }
       else if ((g.leftTries || 0) < LEFT_TRIES && deps.ops) {
         g.leftTries = (g.leftTries || 0) + 1;
