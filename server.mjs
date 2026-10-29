@@ -18,7 +18,7 @@ import { createServer } from "node:http";
 import { randomBytes, createHash } from "node:crypto";
 import { EMBEDDED_UI } from "./ui.mjs";
 import { VERSION, LATEST_VERSION, REGISTRY, semverGt, checkLatest, CONFIG_PATH, loadConfig, saveConfig, moveSecrets, loadTasks, hasCmd, openTerminal, chromeBinary, CONFIG_DIR, takeAppLock, releaseAppLock, writeJsonAtomic } from "./core.mjs";
-import { whereOf, onGoalAnswer, settleRecord, autoStart, runningHandoff as goalRunning, triageSweep, onRunEnd, onAnswered, shSingle, handoffCmd, setHandoffCmd, grantAgent, runHandoff, track, detectHandoffs, connectorsInfo, linkReach, answerQuestions, skipIdea, agentsNow, startWaiting, parkLane, parkedPaths, autoAllowSweep, continueLanes, trustFull, readLastWords, sandboxState, HANDOFFS, runningHandoff, runsTick, finishedRuns } from "./agents.mjs";
+import { whereOf, onGoalAnswer, settleRecord, autoStart, runningHandoff as goalRunning, triageSweep, onRunEnd, onAnswered, shSingle, handoffCmd, setHandoffCmd, grantAgent, runHandoff, track, detectHandoffs, connectorsInfo, linkReach, answerQuestions, skipIdea, agentsNow, startWaiting, parkLane, parkedPaths, autoAllowSweep, continueLanes, trustFull, readLastWords, sandboxState, HANDOFFS, runningHandoff, runsTick, finishedRuns, previewMedia, PREVIEW_MEDIA } from "./agents.mjs";
 import { write as aiWrite, PROVIDERS, resolveProvider, connectProvider, detectHardware, recommendModels, hasOllama, ollamaInstall, ensureOllama, useOllamaModel } from "./ai.mjs";
 import { SCAN, SCAN_TIMEOUT_MS, scanRoots, scanHome, addScanRoot, removeScanRoot, mapNow, nodeDetail, repoPathMap, laneMap, setScanOptions, refreshRepos, REPO_STATE, reposState } from "./scan.mjs";
 import { computeDrift } from "./drift.mjs";
@@ -596,6 +596,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       // the answer, saved in the folder that asked; it says which lane that is, so "Sent to …"
       // names where it went (a Marketing answer said "Sent to Paperclip Robin")
       if (u.pathname === "/api/agents/answer" && req.method === "POST") { const b = await readBody(req), path = String(b.path || ""), talk = await cardTalk(path, b.answers).catch(() => null); if (talk) return json(res, talk); const r = answerQuestions(path, b.answers, { rerun: !!b.rerun, share: true }); return json(res, r && r.ok ? { ...r, lane: laneOfFolder(path) } : r); }
+      if (u.pathname === PREVIEW_MEDIA) { const m = previewMedia(String(u.searchParams.get("path") || ""), String(u.searchParams.get("f") || "")); if (!m) { res.writeHead(404); res.end("not found"); return; } res.writeHead(200, { "content-type": m.type, "cache-control": "private, max-age=300", "x-content-type-options": "nosniff" }); res.end(readFileSync(m.file)); return; }
       if (u.pathname === "/api/agents/skip" && req.method === "POST") { const b = await readBody(req); return json(res, skipIdea(String(b.path || ""), b.text)); }
       // What a run handed back (handback.mjs): facts for memory, kept only on Remember; replies it waits on.
       if (u.pathname === "/api/agents/remember" && req.method === "POST") { const b = await readBody(req); return json(res, b.skip === true ? skipFacts(String(b.path || "")) : keepFacts(String(b.path || ""), { only: Array.isArray(b.only) ? b.only.map(Number) : undefined })); }
@@ -1071,7 +1072,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       rules: () => { try { return standingList().map((x) => x.rule); } catch { return []; } },
       chat: () => { try { return (loadMind().log || []).filter((l) => l && l.role === "user" && Date.now() - (l.ts || 0) < 86400000).map((l) => ({ ts: l.ts, text: l.text })); } catch { return []; } },
       news: () => { try { return newsSince(24); } catch { return []; } }, answersOf: (dir) => { try { return readFileSync(join(dir, ".symbiot", "ANSWERS.md"), "utf8"); } catch { return ""; } },
-      notify: (t, b) => desktopNotify(t, b), map: () => laneMap(), actIn: (req, lane, o) => actIn(req, lane, o), actNow: (req, o) => actNow(req, o), autoStart, dismissed: () => Object.keys(loadDismissed()) };
+      notify: (t, b) => desktopNotify(t, b), map: () => laneMap(), parked: () => parkedPaths(), actIn: (req, lane, o) => actIn(req, lane, o), actNow: (req, o) => actNow(req, o), autoStart, dismissed: () => Object.keys(loadDismissed()) };
   };
   onRunEnd(() => { try { intuitionNudge(); } catch {} });
   // an Approve from the phone that met an agent still at work (or an Approve already going): it goes once that's done (phone.mjs)

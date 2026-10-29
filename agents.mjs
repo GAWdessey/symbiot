@@ -17,6 +17,8 @@ import { sentAfter } from "./sentmail.mjs";
 import { parseRun, lastRunText, readRunLog, runStarted, briefPlan, stepOf, runLine, waitingOn, waitUntil, RECHECK } from "./work.mjs";
 import { noteDuration, noteCost, kindOf } from "./estimate.mjs";
 import { plainAsk } from "./plain.mjs";
+import { previewOf, previewFile, missingNote } from "./preview.mjs";
+import { trayMedia } from "./tray.mjs";
 import { apiOptions, blockedSignIn, apiRoute, realChrome, ownChromeStep, CHROME_READ, CHROME_ACT } from "./browserfails.mjs";
 import { actSites, goAhead, refuseHold, holdOf, goWords, goAnswer, goHistory, signInNotNeeded, switchOnAct } from "./chromegate.mjs";
 import { pushGo } from "./pushgate.mjs";
@@ -859,7 +861,9 @@ function nothingToDo(path) {
   const md = readSymbiot(path, "TASKS.md"); if (OPEN_TASK.test(md)) return "";
   if (newAnswers(path)) return "";
   const name = path === homedir() ? "~" : path.split(/[\\/]/).filter(Boolean).pop() || path;
-  return md.trim() ? `Not started: every task on ${name}'s list is done or waiting on something, and no answer has come in since its last run, so its agent would have nothing to do. A new task starts it.`
+  // Its last run had the user's answers already: "no answer has come in" read as if the user's answer was lost (29 Oct 2026)
+  const had = !!userAnswers(readSymbiot(path, "ANSWERS.md")).trim();
+  return md.trim() ? `Not started: every task on ${name}'s list is done or waiting on something, and ${had ? "its last run already had your newest answer" : "no answer has come in since its last run"}, so its agent would have nothing to do. A new task or answer starts it.`
     : `Not started: ${name} has no .symbiot/TASKS.md, so an agent there would have nothing to do. Send it a task first.`;
 }
 // ---- where a run is: never a question for the user ---------------------------
@@ -2182,11 +2186,12 @@ const linkedIds = () => { try { return Object.keys(loadConfig().linked || {}); }
 const ID_AT_END = /\s*\{#([a-z0-9][a-z0-9._-]{1,60})\}\s*$/i;
 const qId = (h) => ((String(h || "").match(ID_AT_END) || [])[1] || "").toLowerCase();
 const noId = (h) => String(h || "").replace(ID_AT_END, "");
+const TAGGED = /^(?:\*\*)?\s*(?:🤖|👤)/u;
 function parseQuestions(md, { linked = linkedIds() } = {}) {
   const questions = [], suggestions = []; let sec = "q", cur = null;
   const clip = (s) => clipWords(String(s).trim(), TASK_MAX); // as long as a task holds (addTask), so an idea added in one click arrives whole
   for (const raw of String(md || "").split(/\r?\n/)) {
-    const l = raw.trim(); if (!l) continue;
+    const l = raw.trim(); if (!l) { if (cur && sec === "q") (cur.parts ||= []).push(""); continue; } // a blank line parts the preview's paragraphs (preview.mjs)
     let m;
     if ((m = l.match(/^###\s+(.+)$/))) {
       if (sec === "s") { suggestions.push(clip(m[1])); cur = null; }
@@ -2197,10 +2202,40 @@ function parseQuestions(md, { linked = linkedIds() } = {}) {
     if (/^#\s/.test(l)) continue;
     const b = l.match(/^(?:[-*+]|\d+[.)])\s+(?:\[[ xX]\]\s+)?(.+)$/);
     if (sec === "s") { if (b) suggestions.push(clip(b[1])); continue; }
-    if (b) { if (cur) cur.options.push(clip(b[1])); else if (/\?\s*$/.test(b[1])) questions.push({ q: clip(b[1]), context: "", options: [] }); continue; } // a bullet with no "### question" above it is a question only if it actually ends in "?" — otherwise it's preamble/prose (a file list, etc.)
-    if (cur) cur.context = clip((cur.context ? cur.context + " " : "") + l);
+    if (b) { if (cur) { cur.options.push(clip(b[1])); (cur.parts ||= []).push(cur.options.length - 1); } else if (/\?\s*$/.test(b[1])) questions.push({ q: clip(b[1]), context: "", options: [] }); continue; } // a bullet with no "### question" above it is a question only if it actually ends in "?" — otherwise it's preamble/prose (a file list, etc.)
+    if (cur) { cur.context = clip((cur.context ? cur.context + " " : "") + l); (cur.parts ||= []).push(l); }
   }
-  return { questions: questions.filter((x) => x.q).slice(0, 20).map((x) => ({ ...x, options: apiOptions(agentsPosting(linkedAsks(agentsMail(agentsCodeWork(agentsClicking(agentsGitWork(x.options))), linked), linked, x.q), linked)).slice(0, 6) })), suggestions: suggestions.filter(Boolean).slice(0, 10) };
+  // A preview's lines are context, not choices (29 Oct 2026): "- Name ...... Bookly", "- Address
+  // ...... linkedin.com/company/bookly" sat above the 🤖 options, the card showed those two as its
+  // buttons, and the Address line went down as the answer, so nothing was created. Where a question has
+  // a tagged option (🤖/👤), every bullet before the first one is the question's context, in place, with
+  // or without prose between them.
+  const lines = new Map();
+  for (const x of questions) {
+    const parts = x.parts || []; delete x.parts;
+    lines.set(x, parts.filter((p) => typeof p === "string"));
+    const first = parts.findIndex((p) => typeof p === "number" && TAGGED.test(x.options[p])); if (first < 0) continue;
+    const keep = new Set(parts.filter((p, i) => typeof p === "number" && i >= first)); if (keep.size === x.options.length) continue;
+    const ctx = parts.filter((p) => typeof p === "string" || !keep.has(p)).map((p) => typeof p === "string" ? p : "- " + x.options[p]);
+    x.context = clip(ctx.filter(Boolean).join(" ")); lines.set(x, ctx);
+    x.options = x.options.filter((_, i) => keep.has(i));
+  }
+  return { questions: questions.filter((x) => x.q).slice(0, 20).map((x) => { const y = { ...x, options: apiOptions(agentsPosting(linkedAsks(agentsMail(agentsCodeWork(agentsClicking(agentsGitWork(x.options))), linked), linked, x.q), linked)).slice(0, 6) }; QLINES.set(y, (lines.get(x) || []).slice(0, 400)); return y; }), suggestions: suggestions.filter(Boolean).slice(0, 10) };
+}
+// A question's context line by line, as written ("" for a blank line), kept beside it rather than in it, so
+// every other reader of a question sees the same shape as before: the card's preview is drawn from them.
+const QLINES = new WeakMap();
+const PREVIEW_MEDIA = "/api/agents/preview/media";
+const previewSrc = (path) => (f) => `${PREVIEW_MEDIA}?path=${encodeURIComponent(path)}&f=${encodeURIComponent(f)}`;
+// A tray's picture, for Marketing's own lane only (tray.mjs trayMedia: drafts/<product>/tray/<file>).
+const laneTray = (path) => { try { return resolve(path) === resolve(MARKETING_DIR) ? (rel) => trayMedia(rel) : null; } catch { return null; } };
+function questionPreview(path, x, lines, shown = {}) {
+  try { return previewOf(path, lines || [], { q: shown.q || x.q, options: x.options, labels: shown.labels || null, src: previewSrc(path), tray: laneTray(path) }); } catch { return null; }
+}
+// A picture of a question's preview, for its card: only from a folder an agent ran in, and only as previewFile allows.
+function previewMedia(path, f) {
+  path = String(path || ""); if (!path || !knownRun(path)) return null;
+  const r = previewFile(path, f, { tray: laneTray(path) }); return r.state === "ok" ? { file: r.file, type: r.type } : null;
 }
 // An idea for another project names it first: "[repo: symbiot] Watch GitHub
 // too" is for the symbiot repo's tasks, whichever repo's agent had it (an agent
@@ -2233,9 +2268,14 @@ function skipIdea(path, text) {
 // and `labels`, its choices the same way ("Allow" for an allow list it proposed). q and
 // options stay as the agent wrote them: an answer is saved under the agent's own words. One that
 // has the user add a card or claim a credit says money first (needs.mjs moneyNote).
-function plainly(path, x) {
+// Its preview (preview.mjs), from its lines: what it asks the user to approve, drawn on the card, and its words
+// without "as shown" when the card can't show it all. Not for a card whose context plainAsk changed.
+function plainly(path, x, lines = null) {
   let p = {}; try { p = plainAsk(path, x, { max: x.options.length }); } catch {}
-  return moneyNote({ ...x, ...(p.raw ? { shown: p.q } : {}), ...(p.labels ? { labels: p.labels } : {}), ...(p.context != null ? { context: p.context } : {}), ...(p.go ? { go: p.go } : {}) });
+  const pv = lines && p.context == null ? questionPreview(path, x, lines, { q: p.raw ? p.q : x.q, labels: p.labels }) : null;
+  const { shown: pvShown, labels: pvLabels, ...preview } = pv || {};
+  return moneyNote({ ...x, ...(p.raw ? { shown: p.q } : {}), ...(p.labels ? { labels: p.labels } : {}), ...(p.context != null ? { context: p.context } : {}), ...(p.go ? { go: p.go } : {}),
+    ...(pvShown ? { shown: pvShown } : {}), ...(pvLabels && pvLabels.some((l, i) => l !== x.options[i]) ? { labels: pvLabels } : {}), ...(pv ? { preview } : {}) });
 }
 // A question that names a report of its run ("the full report is on Reports as LOVELINK-FULL-EMAIL-REPORT"):
 // its card links it (Read the report), so it isn't a file name to go and find.
@@ -2268,7 +2308,7 @@ function agentQuestions(path, repo, { raw = false } = {}) {
   const ideas = p.suggestions.map(suggestionTarget).filter(({ text }) => !skipped.some((s) => sameTask(s, text)))
     .map(({ repo: to, text }) => ({ text, repo: to || repo, other: !!to && to !== repo, added: tasks.some((t) => t.repo === (to || repo) && sameTask(t.text, text)) })).filter((s) => !s.added);
   return {
-    questions: open.slice(0, QUESTIONS_MAX).map((x) => { const talk = talkOf(path, x.q); return plainly(path, { ...x, options: goOptions(x), task: askTask(path, x), ...askReport(path, x), ...(talk.length ? { talk } : {}) }); }), answered: p.questions.length - unanswered.length, ...(known.length ? { known } : {}),
+    questions: open.slice(0, QUESTIONS_MAX).map((x) => { const talk = talkOf(path, x.q); return plainly(path, { ...x, options: goOptions(x), task: askTask(path, x), ...askReport(path, x), ...(talk.length ? { talk } : {}) }, QLINES.get(x)); }), answered: p.questions.length - unanswered.length, ...(known.length ? { known } : {}),
     suggestions: ideas, ideasShown: IDEAS_SHOWN,
   };
 }
@@ -2678,7 +2718,9 @@ function answerQuestions(path, answers, opts = {}) {
   try {
     mkdirSync(join(path, ".symbiot"), { recursive: true });
     for (const x of rows) x.id = (openQs.find((o) => qKey(o.q) === qKey(x.q)) || {}).id || ""; // answered by its id, too
-    writeFileSync(join(path, ".symbiot", "ANSWERS.md"), prev.replace(/\s*$/, "\n") + rows.map((x) => `\n### ${x.q}${x.id ? ` {#${x.id}}` : ""}\n${x.a}\n_answered ${day}_\n`).join(""));
+    // the agent is told which of its preview's pictures the card couldn't show (preview.mjs), after the user's own words
+    const unseen = (x) => { const q = askedQs.find((o) => qKey(o.q) === qKey(x.q)); const n = q ? missingNote(questionPreview(path, q, QLINES.get(q))) : ""; return n ? `\n\n${n}` : ""; };
+    writeFileSync(join(path, ".symbiot", "ANSWERS.md"), prev.replace(/\s*$/, "\n") + rows.map((x) => `\n### ${x.q}${x.id ? ` {#${x.id}}` : ""}\n${x.a}${unseen(x)}\n_answered ${day}_\n`).join(""));
   } catch (e) { return { error: "Couldn't write ANSWERS.md: " + ((e && e.message) || e) }; }
   settleRecord(path, "answered"); // what its run waited for came: its record moves on (runOutcome)
   { const lane = whereOf(path).lane; for (const x of rows) recordDone(x.q, x.back || x.a, lane, { back: !!x.back, id: x.id }); }
@@ -2906,4 +2948,4 @@ function agentsNow({ now = Date.now() } = {}) {
 }
 const forgetAgents = () => { agentsKept = null; };
 
-export { finishedRuns, restarting, saysNoBrowser, BROWSER_NOTE, setupChore, SETUP_CHORE, lostAsks, noteLostAsks, handoffsSig, handBlocked, ensureRunnable, launcherOf, launchFault, opsWalls, walled, OPS_RO, OPS_OWN, OPS_HIDDEN, runOpen, namedRun, twinRunning, TWIN_WAIT, wholeLog, uiReview, onGoalAnswer, runOutcome, settleRecord, waitsOutside, triageSweep, runSection, autoStart, AUTO_MAX, AUTO_FOLDER_MAX, oneNeedEach, NOTHING_FOR_YOU, chaseReport, CHASED, UNMET, heldAsk, onCardGone, withOwnTools, escalation, grantCard, cardRules, cardIsPermission, runPhase, onRunEnd, isClaudeCmd, GUARD, tidyRule, tidyRules, tidySettings, pruneRuns, claudePlugins, idlePlugins, runSettings, archiveAnswers, allAnswers, answersDigest, ANSWERS_ARCHIVE, ANSWERS_KEEP, runsTick, RUN_START, HANG_MIN, noteBlocked, userAnswers, CONTINUED_FILE, onAnswered, CHANGES, toKnownHost, continueLanes, autoPick, autoDecide, FACTS, factsOf, knownRun, withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, linkReach, fillHandoff, runHandoff, nothingToDo, whereOf, whereLine, whereAnswer, askTask, PARKED_NOTE, parkedPaths, isParked, parkLane, agentMissing, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, unchangedStep, waitingFor, offLimits, startWaiting, noteUntracked, untrackedBefore, forgetUntracked, writeTasks, droppedTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, pickAgent, findOrcaCli, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, routeIdeas, agentQuestions, answerQuestions, agentsList, agentsNow, forgetAgents, AGENTS_KEEP, needsOf, settleNeeds, closeAsk, closedAsk, sameSubject, NEEDS_FOR, readLastWords, readNeeds, parseRead, READ_FILE, autoAllow, autoAllowSweep, allowlistInWork, installAllowlist, inWork, withScope, withTrust, sandboxFor, sandboxLifts, sandboxEnv, sandboxNeeds, sandboxState, sandboxWrites, SANDBOX_DIR, resumeFor, noteSession, tooLong, carryOn, RESUME_CTX, CARRY_PROMPT, trustFull, GUARD_SETTINGS, runCmdOf, claimLock, wideRoot, sandboxDenies, questionFolders, folderState, dirtyState, ANSWERS_SEEN, newAnswers, claudeDownIn, claudePause, noteClaudeDown, resetTime, PAUSE_FILE, startGap, isUrgent, urgentStop, urgentFirst, urgentUndo, urgentDone, urgentSweep, urgentState, licenceGate, stopRun, loadRunFiles, saveRunFiles, forgetRunFiles, withModel, routedModel, userWords, onShipping, waitingTask, namedBlocker, tildeNote, idleWaits };
+export { previewMedia, PREVIEW_MEDIA, QLINES, finishedRuns, restarting, saysNoBrowser, BROWSER_NOTE, setupChore, SETUP_CHORE, lostAsks, noteLostAsks, handoffsSig, handBlocked, ensureRunnable, launcherOf, launchFault, opsWalls, walled, OPS_RO, OPS_OWN, OPS_HIDDEN, runOpen, namedRun, twinRunning, TWIN_WAIT, wholeLog, uiReview, onGoalAnswer, runOutcome, settleRecord, waitsOutside, triageSweep, runSection, autoStart, AUTO_MAX, AUTO_FOLDER_MAX, oneNeedEach, NOTHING_FOR_YOU, chaseReport, CHASED, UNMET, heldAsk, onCardGone, withOwnTools, escalation, grantCard, cardRules, cardIsPermission, runPhase, onRunEnd, isClaudeCmd, GUARD, tidyRule, tidyRules, tidySettings, pruneRuns, claudePlugins, idlePlugins, runSettings, archiveAnswers, allAnswers, answersDigest, ANSWERS_ARCHIVE, ANSWERS_KEEP, runsTick, RUN_START, HANG_MIN, noteBlocked, userAnswers, CONTINUED_FILE, onAnswered, CHANGES, toKnownHost, continueLanes, autoPick, autoDecide, FACTS, factsOf, knownRun, withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, linkReach, fillHandoff, runHandoff, nothingToDo, whereOf, whereLine, whereAnswer, askTask, PARKED_NOTE, parkedPaths, isParked, parkLane, agentMissing, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, unchangedStep, waitingFor, offLimits, startWaiting, noteUntracked, untrackedBefore, forgetUntracked, writeTasks, droppedTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, pickAgent, findOrcaCli, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, routeIdeas, agentQuestions, answerQuestions, agentsList, agentsNow, forgetAgents, AGENTS_KEEP, needsOf, settleNeeds, closeAsk, closedAsk, sameSubject, NEEDS_FOR, readLastWords, readNeeds, parseRead, READ_FILE, autoAllow, autoAllowSweep, allowlistInWork, installAllowlist, inWork, withScope, withTrust, sandboxFor, sandboxLifts, sandboxEnv, sandboxNeeds, sandboxState, sandboxWrites, SANDBOX_DIR, resumeFor, noteSession, tooLong, carryOn, RESUME_CTX, CARRY_PROMPT, trustFull, GUARD_SETTINGS, runCmdOf, claimLock, wideRoot, sandboxDenies, questionFolders, folderState, dirtyState, ANSWERS_SEEN, newAnswers, claudeDownIn, claudePause, noteClaudeDown, resetTime, PAUSE_FILE, startGap, isUrgent, urgentStop, urgentFirst, urgentUndo, urgentDone, urgentSweep, urgentState, licenceGate, stopRun, loadRunFiles, saveRunFiles, forgetRunFiles, withModel, routedModel, userWords, onShipping, waitingTask, namedBlocker, tildeNote, idleWaits };

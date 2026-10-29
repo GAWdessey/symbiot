@@ -94,6 +94,16 @@ try {
   ok("…a day later it acts, unless the user chose", I.modeOf({}, { first: now }, now + DAY + 1) === "act" && I.modeOf({ intuition: "watch" }, { first: now }, now + 3 * DAY) === "watch" && I.modeOf({ intuition: "off" }, { first: now }, now) === "off" && I.modeOf({ intuition: false }, {}, now) === "off");
   ok("off: no pass", (await I.intuitionPass(deps({ config: () => ({ intuition: "off" }), write: said(moves) }), { now })).skipped === "off");
 
+  console.log("INTUITION — a lane the user paused gets no moves");
+  reset(); const n1 = started.length; let pausedPrompt = "";
+  const pz = await I.intuitionPass(deps({ parked: () => ["/w/atlas"], write: async (sys, p) => { pausedPrompt = p; return { text: JSON.stringify([
+    { kind: "act", what: "Check atlas's phone build", why: "w", lane: "atlas", confidence: 0.9 },
+    { kind: "notice", what: "Atlas's phone check failed three times", why: "w", lane: "atlas", confidence: 0.9 },
+    { kind: "act", what: "Check bookly's reminders", why: "w", lane: "bookly", confidence: 0.9 },
+  ]) }; } }), { now, force: true });
+  ok("the prompt names the paused lane, so none is proposed there", /Lanes the user paused \(no moves in them until they unpark one\): atlas/.test(pausedPrompt), pausedPrompt.slice(-200));
+  ok("…a move in it starts nothing and is rejected as paused; a notice and other lanes still go", !started.slice(n1).some((s) => s.lane === "atlas") && pz.rejected.some((x) => x.why === "its lane is paused" && /atlas's phone build/.test(x.move.what)) && pz.moves.some((m) => m.kind === "notice" && m.lane === "atlas") && started.slice(n1).some((s) => s.lane === "bookly"), { rejected: pz.rejected, started: started.slice(n1) });
+
   console.log("INTUITION — each event triaged once, with a cursor per source");
   reset(); let evPrompt = "", calls = 0;
   const evDeps = (news, js = jobs) => deps({ jobs: js, news, write: async (sys, p) => { calls++; evPrompt = sys + p; return { text: "[]" }; } });

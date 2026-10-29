@@ -205,6 +205,17 @@ console.log("LOSING WORK — a branch moved back over commits nothing else has i
   ok("…and when main already has all of it (a squash merge), nothing is lost: it goes ahead", !j("git reset --hard origin/main"), j("git reset --hard origin/main"));
   ok("…a branch already pushed goes ahead too", (g(rp, "push", "-q", "origin", "feat"), !j("git branch -D feat") || true) && !j("git checkout -B feat origin/main") ); }
 
+// one open PR per repo: an agent run opened #346 while the same lane's #345 was still open (29 Oct 2026)
+{ const open = [{ number: 345, title: "A question's buttons are its real choices", headRefName: "symbiot/critic-worktree" }], seen = [];
+  const pr = (cmd, branch, list = open) => judge("Bash", { command: cmd }, { cwd: HOME, home: HOME, branch, openPrs: (repo) => (seen.push(repo), list) });
+  const b = pr("gh pr create --head symbiot/par-7035b8 --base main --title x --body y", "symbiot/par-7035b8");
+  ok("a second PR while one is open is refused, naming the open one and its branch", !!(b && b.why) && /#345/.test(b.why) && /symbiot\/critic-worktree/.test(b.why) && /git push origin HEAD:symbiot\/critic-worktree/.test(b.why), b);
+  ok("…on the run's own branch when --head isn't given", !!pr("gh pr create --fill", "symbiot/par-7035b8"));
+  ok("…in the repo -R names", !!pr("gh pr create -R GAWdessey/symbiot --fill", "x") && seen.pop() === "GAWdessey/symbiot" && !!pr("gh pr create --repo=o/r --fill", "x") && seen.pop() === "o/r");
+  ok("the open PR's own branch goes ahead (gh adds to it or says it's there)", !pr("gh pr create --fill", "symbiot/critic-worktree") && !pr("gh pr create --head GAWdessey:symbiot/critic-worktree --fill", "y"));
+  ok("none open, or gh can't tell: it goes ahead", !pr("gh pr create --fill", "feat", []));
+  ok("other gh pr commands aren't held", !pr("gh pr list --state open", "feat") && !pr("gh pr view 345", "feat")); }
+
 rmSync(HOME, { recursive: true, force: true });
 console.log((fail ? "✗" : "✓") + " guard: " + pass + " passed, " + fail + " failed");
 if (fail) process.exit(1);

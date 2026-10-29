@@ -189,7 +189,20 @@ function withoutRemote(c) {
     return LOCAL_HOST.test(host) ? m : `${pre}ssh${args} ''`;
   });
 }
-function judgeBash(cmd, { cwd, home, branch, session = "" }) {
+// A flag's value in split words: `-R x`, `--repo x` or `--repo=x`. "" when it isn't there.
+function flagValue(w, short, long) {
+  for (let i = 0; i < w.length; i++) {
+    if (w[i] === short || w[i] === long) return unquote(w[i + 1] || "");
+    if (w[i].startsWith(long + "=")) return unquote(w[i].slice(long.length + 1));
+  }
+  return "";
+}
+// The repo's open PRs as gh has them ([{ number, title, headRefName }]); [] when gh can't tell, so a
+// gh that's offline or signed out never stops a PR on its own.
+function listOpenPrs(repo, cwd) {
+  try { return JSON.parse(execFileSync("gh", ["pr", "list", ...(repo ? ["--repo", repo] : []), "--state", "open", "--limit", "20", "--json", "number,title,headRefName"], { cwd, encoding: "utf8", timeout: 15000, stdio: ["ignore", "pipe", "ignore"] }) || "[]"); } catch { return []; }
+}
+function judgeBash(cmd, { cwd, home, branch, session = "", openPrs = null }) {
   const c = withoutRemote(String(cmd || ""));
   // the user's phone over adb: an app opened on it waits for their yes, and one run uses it at a time (phonegate.mjs)
   const ph = judgePhone(c, { session, cwd, home }); if (ph) return { ...ph, setting: true };
@@ -222,6 +235,12 @@ function judgeBash(cmd, { cwd, home, branch, session = "" }) {
       const slug = r ? unquote(r).toLowerCase() : url ? slugOf(unquote(url).replace(/\/pull\/.*$/, "")) : folderSlug(cwd);
       const held = holdsMerge(slug, { home, branch: prBranch(w.slice(3), r ? unquote(r) : "", cwd) });
       if (held.length) return { why: `merging waits for Symbiot's design critic: it hasn't passed “${held[0].item.slice(0, 120)}” in this repo yet (what it wants fixed: .symbiot/UI-REVIEW.md in ${held[0].folder}). Fix what it lists and end your run: the critic looks again, and once it passes, merging is open. Don't ask the user to merge it as it is; after two rounds it's their call, and Symbiot asks them itself` };
+    }
+    // one open PR per repo: a run opened #346 while #345, the same lane's, was still open (29 Oct 2026)
+    if (w[0] === "gh" && w[1] === "pr" && w[2] === "create") {
+      const r = flagValue(w, "-R", "--repo"), head = (flagValue(w, "-H", "--head") || branch || "").split(":").pop();
+      const other = (openPrs || listOpenPrs)(r, cwd).find((p) => p.headRefName !== head);
+      if (other) return { why: `one open PR per repo: #${other.number} (“${String(other.title || "").slice(0, 100)}”, branch ${other.headRefName}) is still open${r ? " in " + r : ""}. Put your commits on that branch instead (git fetch origin ${other.headRefName}, merge it in, then git push origin HEAD:${other.headRefName}), or mark the item [~] waiting on #${other.number} merging and carry on with the rest; open the next PR only once it has merged, from a branch rebased on origin/main` };
     }
     if (/^(npm|yarn|pnpm|bun)$/.test(w[0]) && w[1] === "publish") return { why: "publishing a package is yours to do (Approve ships it)" };
     if (/^(twine|cargo|gem|poetry)$/.test(w[0]) && /\b(upload|publish|push)\b/.test(s)) return { why: "publishing a package is yours to do" };
@@ -281,7 +300,7 @@ function needlessSignIn(text, home) {
   return { why: `this asks the user to sign in to ${n.host}, but it's signed in: a run's tab was on it signed in ${Math.max(1, Math.round((Date.now() - n.at) / 60000))} min ago and hasn't been on its sign-in page since. Don't ask them to sign in: open it in your own tab in their Chrome (navigate) and carry on, and if something else stops you, ask for what that names. If it lands on its sign-in page there, that's noted, and then the ask can go` };
 }
 const WRITES_TEXT = /(>|\btee\b|\bwrite|\bopen\(|<<|\bsed\s+-i|\breplace\()/; // a shell command that writes, not one that reads QUESTIONS.md
-function refusal(tool, input = {}, { cwd = process.cwd(), home = homedir(), branch, writes = null, session = "" } = {}) {
+function refusal(tool, input = {}, { cwd = process.cwd(), home = homedir(), branch, writes = null, session = "", openPrs = null } = {}) {
   const t = String(tool || "");
   if (t.startsWith(CHROME)) return judgeChrome(t, input, { session, home }); // the user's own Chrome: acting only where they allow it, sends and payments held for their Go (chromegate.mjs)
   if (CONNECTOR_SENDS.test(t)) return judgeConnector(t, input, { session, home }); // a connector that sends as them (mail, invites, shares): held for their Go too
@@ -290,7 +309,7 @@ function refusal(tool, input = {}, { cwd = process.cwd(), home = homedir(), bran
     try { phoneAsked(dirname(dirname(resolve(cwd, String(input.file_path)))), text, { home }); } catch {} // a phone-go card: the user's, shown at once (phonegate.mjs)
   }
   if (t === "Bash" && /QUESTIONS\.md/.test(String(input.command || "")) && WRITES_TEXT.test(String(input.command || ""))) { const r = needlessSignIn(input.command, home); if (r) return r; try { phoneAsked(cwd, input.command, { home }); } catch {} }
-  if (t === "Bash") return judgeBash(input.command, { cwd, home, session, branch: branch != null ? branch : currentBranch(cwd) });
+  if (t === "Bash") return judgeBash(input.command, { cwd, home, session, openPrs, branch: branch != null ? branch : currentBranch(cwd) });
   const p = input.file_path || input.path || input.notebook_path;
   if (!p) return null;
   const abs = expand(p, home, cwd);
