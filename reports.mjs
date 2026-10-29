@@ -234,10 +234,12 @@ const PROSE = /^(?:text|txt|plain|prose|post|linkedin|markdown|md)$/i; // a fenc
 // muted dash and n/a is muted, and a column holding the same value on every row moves
 // to a line under the table. Columns left blank to fill in stay. The box goes wider
 // than the prose and scrolls sideways itself, header and first column held (style.mjs).
+// The box is a named region a keyboard can reach and scroll (the heading over it names
+// it, or its columns do), and an empty cell says so to a screen reader (29 Oct 2026).
 const NIL = /^(?:n\/?a|—|–|-)?$/i;
 const NUM = /^[~≈<>≤≥±+−-]?\s*[$€£]?\s*\d[\d,]*(?:\.\d+)?\s*(?:%|x|×|pp|ms|s|h|k|m|bn)?(?:\s*\(\s*\d[\d,]*\s*\))?$/i;
 const LONG = 40; // a cell longer than this many characters wraps (at spaces) rather than widening its column
-function table(head, rows, o) {
+function table(head, rows, o, title) {
   const n = head.length, bare = (c) => String(c).replace(/[*_`~]/g, "").trim();
   rows = rows.map((r) => Array.from({ length: n }, (_, j) => r[j] ?? ""));
   const same = [];
@@ -247,30 +249,31 @@ function table(head, rows, o) {
   const num = Object.fromEntries(cols.map((j) => [j, rows.some((r) => !NIL.test(bare(r[j]))) && rows.every((r) => NIL.test(bare(r[j])) || NUM.test(bare(r[j])))]));
   const cell = (c) => {
     const t = bare(c);
-    if (!t) return '<span class="rnil" aria-label="empty">—</span>';
+    if (!t) return '<span class="rnil" aria-hidden="true">—</span><span class="rsr">empty</span>';
     if (NIL.test(t)) return `<span class="rnil">${escHtml(t)}</span>`;
     return inline(c, o).replace(/(\d[\d.,]*\s*%?)\s*\((\d[\d,]*)\)/g, '$1 <span class="rcount">($2)</span>');
   };
   const cls = (j, c) => [num[j] && "num", c != null && bare(c).length > LONG && "rlong"].filter(Boolean).join(" ");
   const at = (k) => (k ? ` class="${k}"` : "");
-  const html = `<div class="rtable"><table><thead><tr>${cols.map((j) => `<th${at(cls(j))}>${inline(head[j], o)}</th>`).join("")}</tr></thead><tbody>${rows.map((r) => `<tr>${cols.map((j) => `<td${at(cls(j, r[j]))}>${cell(r[j])}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
+  const name = title || `Table: ${cols.map((j) => bare(head[j])).filter(Boolean).slice(0, 4).join(", ")}`;
+  const html = `<div class="rtable" tabindex="0" role="region" aria-label="${escHtml(name)}"><table><thead><tr>${cols.map((j) => `<th${at(cls(j))}>${inline(head[j], o)}</th>`).join("")}</tr></thead><tbody>${rows.map((r) => `<tr>${cols.map((j) => `<td${at(cls(j, r[j]))}>${cell(r[j])}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
   return html + (moved.length ? `<p class="rtsame">Same on every row: ${moved.map((j) => `${inline(head[j], o)} <b>${inline(rows[0][j], o)}</b>`).join(" · ")}</p>` : "");
 }
 function mdHtml(md, o = {}) {
   const lines = String(md || "").replace(/\r\n?/g, "\n").split("\n"), out = [];
-  let i = 0, para = [];
+  let i = 0, para = [], heading = "";
   const flush = () => { if (para.length) { out.push(`<p>${inline(para.join(" "), o)}</p>`); para = []; } };
   while (i < lines.length) {
     const l = lines[i];
     const fence = l.match(/^\s*(```|~~~)\s*([\w+-]*)/);
     if (fence) { flush(); const body = []; i++; while (i < lines.length && !lines[i].trim().startsWith(fence[1])) body.push(lines[i++]); i++; out.push(`<pre${PROSE.test(fence[2]) ? ' class="prose"' : ""}><code>${escHtml(body.join("\n"))}</code></pre>`); continue; }
     const h = l.match(/^(#{1,6})\s+(.*?)\s*#*\s*$/);
-    if (h) { flush(); const n = Math.min(h[1].length + 1, 6); out.push(`<h${n}>${inline(h[2], o)}</h${n}>`); i++; continue; }
+    if (h) { flush(); heading = h[2].replace(/[*_`~]/g, "").trim(); const n = Math.min(h[1].length + 1, 6); out.push(`<h${n}>${inline(h[2], o)}</h${n}>`); i++; continue; }
     if (/^\s*([-*_])(\s*\1){2,}\s*$/.test(l)) { flush(); out.push("<hr>"); i++; continue; }
     if (/^\s*\|.*\|\s*$/.test(l) && i + 1 < lines.length && /^\s*\|?\s*:?-{2,}/.test(lines[i + 1])) {
       flush(); const head = cells(l); i += 2; const rows = [];
       while (i < lines.length && /^\s*\|.*\|\s*$/.test(lines[i])) rows.push(cells(lines[i++]));
-      out.push(table(head, rows, o));
+      out.push(table(head, rows, o, heading));
       continue;
     }
     if (/^\s*>/.test(l)) { flush(); const q = []; while (i < lines.length && /^\s*>/.test(lines[i])) q.push(lines[i++].replace(/^\s*>\s?/, "")); out.push(`<blockquote>${mdHtml(q.join("\n"), o)}</blockquote>`); continue; }

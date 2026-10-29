@@ -404,7 +404,7 @@ body.lq-pooled #lqnext,body.lq-work #lqnext{display:none}
 @media (max-width:520px){#lqnext .nxh small{display:none}#lqnext .nxh span{flex:1}}
 @media (prefers-reduced-motion: reduce){#lqnext li{transition:none}}
 /* what lit an orb, lit up where it opens: the project's asks, its Approve, its held handovers */
-.lit{scroll-margin-top:72px;position:relative;box-shadow:0 0 0 2px #F2A541,0 0 0 7px rgba(242,165,65,.18)!important;border-radius:16px;animation:lqlit 1.6s ease-out 2}
+.lit{scroll-margin-top:112px;position:relative;box-shadow:0 0 0 2px #F2A541,0 0 0 7px rgba(242,165,65,.18)!important;border-radius:16px;animation:lqlit 1.6s ease-out 2}
 @keyframes lqlit{0%{box-shadow:0 0 0 2px #F2A541,0 0 0 18px rgba(242,165,65,.35)}100%{box-shadow:0 0 0 2px #F2A541,0 0 0 7px rgba(242,165,65,.18)}}
 @media (prefers-reduced-motion: reduce){.lit{animation:none}}
 /* Settings' first steps: in order, each ticking itself, gone once all are done */
@@ -709,15 +709,18 @@ body.lq-light .rbackbar{background:rgba(246,248,251,.95);box-shadow:0 1px 0 rgba
 .rzoom{position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,.82);display:flex;align-items:center;justify-content:center;cursor:zoom-out;padding:24px}.rzoom img{max-width:100%;max-height:100%;border-radius:8px}
 .rdoc blockquote{margin:8px 0;padding:2px 12px;border-left:3px solid var(--line);color:var(--faint)}.rdoc a{color:var(--green)}
 /* a report's table (reports.mjs table): wider than the prose when it needs to be, up to the report's own width (#reportbody is the container),
-   scrolling in its own box with the header and first column held; a cell never breaks inside a word or number (29 Oct 2026) */
+   scrolling in its own box with the header and first column held; a cell never breaks inside a word or number (29 Oct 2026).
+   The box is never taller than the reading area under the "All reports" bar, so its header row always shows; a keyboard reaches and scrolls it */
 #reportbody{container-type:inline-size}
-.rdoc .rtable{position:relative;left:50%;translate:-50% 0;width:max-content;min-width:100%;max-width:100cqw;max-height:75vh;overflow:auto;overscroll-behavior-x:contain;margin:12px 0;border:1px solid var(--line);border-radius:10px;background:var(--ink2)}
+.rdoc .rtable{position:relative;left:50%;translate:-50% 0;width:max-content;min-width:100%;max-width:100cqw;max-height:max(240px,calc(100dvh - 300px));scroll-margin-top:112px;overflow:auto;overscroll-behavior-x:contain;margin:12px 0;border:1px solid var(--line);border-radius:10px;background:var(--ink2)}
 .rdoc table{border-collapse:separate;border-spacing:0;width:100%;font-size:13px;line-height:1.45;font-variant-numeric:tabular-nums}
 .rdoc th,.rdoc td{padding:5px 10px;text-align:left;vertical-align:top;white-space:nowrap;overflow-wrap:normal;word-break:normal;border-bottom:1px solid var(--line);background:var(--ink2)}
 .rdoc th{position:sticky;top:0;z-index:2;vertical-align:bottom;white-space:normal;background:var(--ink3);color:var(--bone);font-weight:600}
 .rdoc th:first-child,.rdoc td:first-child{position:sticky;left:0;z-index:1;border-right:1px solid var(--line);box-shadow:-1px 0 0 var(--line)}.rdoc th:first-child{z-index:3}
 .rdoc tbody tr:nth-child(even) td{background:color-mix(in srgb,var(--ink2) 95%,var(--bone))}.rdoc tbody tr:hover td{background:color-mix(in srgb,var(--ink2) 89%,var(--bone))}.rdoc tbody tr:last-child td{border-bottom:0}
 .rdoc th.num,.rdoc td.num{text-align:right}.rdoc td.rlong{white-space:normal;min-width:16em;max-width:32em}
+.rdoc .rtable:focus-visible{outline:2px solid var(--bone);outline-offset:2px}
+.rdoc .rsr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 .rdoc .rnil{color:var(--faint)}.rdoc .rcount{font-size:11px;color:var(--faint)}
 .rdoc .rtsame{margin:-4px 0 12px;font-size:12.5px;line-height:1.5;color:var(--faint)}.rdoc .rtsame b{color:var(--text);font-weight:600}
 .rdiff{max-height:360px;overflow:auto;font-size:11px;line-height:1.45;background:var(--ink2);border:1px solid var(--line);border-radius:8px;padding:8px;margin-top:8px;white-space:pre}
