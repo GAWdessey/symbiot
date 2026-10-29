@@ -150,7 +150,7 @@ const SYSTEM = `You are the user's chief of staff inside Symbiot, the app that r
 const EVENT_SYSTEM = `You are the user's chief of staff inside Symbiot. New events just happened. For each, decide: is it relevant to their focus (goals, projects, people), what (if anything) would a sharp assistant do about it, and is it worth interrupting them now, putting in the digest, or neither. Ignore what's irrelevant. Answer with JSON only.\n${RULES_TEXT}`;
 
 // ---- a pass ------------------------------------------------------------------------------------
-// deps: { config, write, jobs, waits, rules, chat, news, map, actIn, actNow, autoStart, dismissed,
+// deps: { config, write, jobs, waits, rules, chat, news, map, parked, actIn, actNow, autoStart, dismissed,
 //         answersOf(dir), notify(title, body) }. events: true triages new events instead of the
 // whole situation. Returns { skipped } or { pass, moves, rejected, mode }.
 async function intuitionPass(deps = {}, { now = Date.now(), force = false, events = false } = {}) {
@@ -173,10 +173,16 @@ async function intuitionPass(deps = {}, { now = Date.now(), force = false, event
   }
   const recent = st.passes.filter((p) => now - p.at < DAY).flatMap((p) => p.moves || []);
   const shunned = Object.entries(st.weights).filter(([, w]) => w <= SHUN).map(([k]) => k);
-  const prompt = `Their focus (focus.md, theirs to edit):\n${focus.trim() || "(empty: they haven't written one)"}\n\n${ask}\n\nAlready done on its own in the last day (don't repeat):\n${recent.length ? recent.map((m) => `- ${m.kind}: ${m.what}`).join("\n") : "- nothing"}\n\nTurned down by the user before (kind|lane):\n${shunned.length ? shunned.map((k) => `- ${k}`).join("\n") : "- nothing"}`;
+  // A lane the user paused gets no moves: on 28 Oct 2026 Garth paused dailify, and passes kept filing
+  // Dailify tasks there, each "Blocked: parked" for good, which read as Symbiot dropping Dailify work.
+  const map = val(deps.map, {}) || {}, parkedSet = new Set(val(deps.parked, []) || []);
+  const paused = Object.keys(map).filter((n) => parkedSet.has(map[n]));
+  const prompt = `Their focus (focus.md, theirs to edit):\n${focus.trim() || "(empty: they haven't written one)"}\n\n${ask}\n\nAlready done on its own in the last day (don't repeat):\n${recent.length ? recent.map((m) => `- ${m.kind}: ${m.what}`).join("\n") : "- nothing"}\n\nTurned down by the user before (kind|lane):\n${shunned.length ? shunned.map((k) => `- ${k}`).join("\n") : "- nothing"}` +
+    (paused.length ? `\n\nLanes the user paused (no moves in them until they unpark one): ${paused.join(", ")}` : "");
   const raw = await askMoves(deps.write, system + (() => { try { return promptFor("intuition"); } catch { return ""; } })(), prompt);
-  const { moves, rejected } = choose((Array.isArray(raw) ? raw : []).filter((m) => !asksOfUser(m)), { st, recent, cfg, now, mode });
-  const map = val(deps.map, {}) || {};
+  const offPaused = [], kept = (Array.isArray(raw) ? raw : []).filter((m) => !asksOfUser(m)).filter((m) => !(m && m.kind !== "notice" && m.kind !== "focus" && paused.includes(String(m.lane || "")) && offPaused.push(m)));
+  const { moves, rejected } = choose(kept, { st, recent, cfg, now, mode });
+  for (const m of offPaused) rejected.push({ move: { kind: String(m.kind || ""), what: clip(m.what, 300), lane: clip(m.lane, 60) }, why: "its lane is paused" });
   for (const mv of moves) carry(mv, { deps, map, st, cfg, mode, now });
   if (events) { st.evAt = now; if (!st.nudged) st.nudged = now; } // something happened: the whole picture again soon
   else { st.sig = d.sig; st.at = now; st.nudged = 0; }

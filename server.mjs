@@ -1072,7 +1072,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       rules: () => { try { return standingList().map((x) => x.rule); } catch { return []; } },
       chat: () => { try { return (loadMind().log || []).filter((l) => l && l.role === "user" && Date.now() - (l.ts || 0) < 86400000).map((l) => ({ ts: l.ts, text: l.text })); } catch { return []; } },
       news: () => { try { return newsSince(24); } catch { return []; } }, answersOf: (dir) => { try { return readFileSync(join(dir, ".symbiot", "ANSWERS.md"), "utf8"); } catch { return ""; } },
-      notify: (t, b) => desktopNotify(t, b), map: () => laneMap(), actIn: (req, lane, o) => actIn(req, lane, o), actNow: (req, o) => actNow(req, o), autoStart, dismissed: () => Object.keys(loadDismissed()) };
+      notify: (t, b) => desktopNotify(t, b), map: () => laneMap(), parked: () => parkedPaths(), actIn: (req, lane, o) => actIn(req, lane, o), actNow: (req, o) => actNow(req, o), autoStart, dismissed: () => Object.keys(loadDismissed()) };
   };
   onRunEnd(() => { try { intuitionNudge(); } catch {} });
   // an Approve from the phone that met an agent still at work (or an Approve already going): it goes once that's done (phone.mjs)
