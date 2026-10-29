@@ -87,6 +87,18 @@ try {
   ok("nor a shared answer in the background", !!a.nothingToDo(lane));
   put(lane, "ANSWERS.md", read(lane, "ANSWERS.md") + "\n### Which relay?\nThe SMTP one.\n_answered 2026-10-15_\n");
   ok("the user's own answer is", a.nothingToDo(lane) === "" && a.newAnswers(lane));
+  writeFileSync(join(lane, ".symbiot", a.ANSWERS_SEEN), JSON.stringify({ at: Date.now(), answers: a.answersDigest(lane) }));
+  ok("its last run had that answer: the note says so, not that no answer came in (29 Oct 2026)", /its last run already had your newest answer/.test(a.nothingToDo(lane)) && !/no answer has come in/.test(a.nothingToDo(lane)), a.nothingToDo(lane));
+  {
+    const H = await import("../home.mjs"), at = Date.now() - 60000, task = { id: "t1", repo: "atlas", text: "Create the page", ts: at - 60000 };
+    const why = (fails, { lastRun = 0, answered = false } = {}) => H.waitWhy({ map: { atlas: lane }, named: (_, n) => n, running: [], held: {}, ready: new Set(), isParked: () => false, deps: { cmd: () => "claude", fails, beside: () => new Set(), brief: () => ({ at: 0, tasks: [] }), lastRun: () => lastRun, answered: () => answered, otherMachine: () => false } })(task);
+    const note = () => ({ atlas: { at, note: "Not started: every task on atlas's list is done or waiting on something" } });
+    ok("a start that didn't take holds the task while nothing has changed", why(note()).kind === "blocked", why(note()));
+    const f1 = note(), w1 = why(f1, { answered: true });
+    ok("…and lets go of it once the user answers: no 'didn't start' left on the job", w1.kind !== "blocked" && !f1.atlas, w1);
+    const f2 = note(), w2 = why(f2, { lastRun: at + 1000 });
+    ok("…or once the lane has run since", w2.kind !== "blocked" && !f2.atlas, w2);
+  }
 
   // an ops folder (no git): a run that changed nothing is held, until the time it named
   const ops = join(C, "drafts", "act-abc123"); mkdirSync(ops, { recursive: true });

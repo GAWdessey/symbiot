@@ -859,7 +859,9 @@ function nothingToDo(path) {
   const md = readSymbiot(path, "TASKS.md"); if (OPEN_TASK.test(md)) return "";
   if (newAnswers(path)) return "";
   const name = path === homedir() ? "~" : path.split(/[\\/]/).filter(Boolean).pop() || path;
-  return md.trim() ? `Not started: every task on ${name}'s list is done or waiting on something, and no answer has come in since its last run, so its agent would have nothing to do. A new task starts it.`
+  // Its last run had the user's answers already: "no answer has come in" read as if the user's answer was lost (29 Oct 2026)
+  const had = !!userAnswers(readSymbiot(path, "ANSWERS.md")).trim();
+  return md.trim() ? `Not started: every task on ${name}'s list is done or waiting on something, and ${had ? "its last run already had your newest answer" : "no answer has come in since its last run"}, so its agent would have nothing to do. A new task or answer starts it.`
     : `Not started: ${name} has no .symbiot/TASKS.md, so an agent there would have nothing to do. Send it a task first.`;
 }
 // ---- where a run is: never a question for the user ---------------------------
@@ -2182,6 +2184,7 @@ const linkedIds = () => { try { return Object.keys(loadConfig().linked || {}); }
 const ID_AT_END = /\s*\{#([a-z0-9][a-z0-9._-]{1,60})\}\s*$/i;
 const qId = (h) => ((String(h || "").match(ID_AT_END) || [])[1] || "").toLowerCase();
 const noId = (h) => String(h || "").replace(ID_AT_END, "");
+const TAGGED = /^(?:\*\*)?\s*(?:🤖|👤)/u;
 function parseQuestions(md, { linked = linkedIds() } = {}) {
   const questions = [], suggestions = []; let sec = "q", cur = null;
   const clip = (s) => clipWords(String(s).trim(), TASK_MAX); // as long as a task holds (addTask), so an idea added in one click arrives whole
@@ -2197,8 +2200,20 @@ function parseQuestions(md, { linked = linkedIds() } = {}) {
     if (/^#\s/.test(l)) continue;
     const b = l.match(/^(?:[-*+]|\d+[.)])\s+(?:\[[ xX]\]\s+)?(.+)$/);
     if (sec === "s") { if (b) suggestions.push(clip(b[1])); continue; }
-    if (b) { if (cur) cur.options.push(clip(b[1])); else if (/\?\s*$/.test(b[1])) questions.push({ q: clip(b[1]), context: "", options: [] }); continue; } // a bullet with no "### question" above it is a question only if it actually ends in "?" — otherwise it's preamble/prose (a file list, etc.)
-    if (cur) cur.context = clip((cur.context ? cur.context + " " : "") + l);
+    if (b) { if (cur) { cur.options.push(clip(b[1])); (cur.parts ||= []).push(cur.options.length - 1); } else if (/\?\s*$/.test(b[1])) questions.push({ q: clip(b[1]), context: "", options: [] }); continue; } // a bullet with no "### question" above it is a question only if it actually ends in "?" — otherwise it's preamble/prose (a file list, etc.)
+    if (cur) { cur.context = clip((cur.context ? cur.context + " " : "") + l); (cur.parts ||= []).push(l); }
+  }
+  // A preview's lines are context, not choices (29 Oct 2026): "- Name ...... Dailify", "- Address
+  // ...... linkedin.com/company/dailify" sat above the 🤖 options, the card showed those two as its
+  // buttons, and the Address line went down as the answer, so nothing was created. Where a tagged
+  // option (🤖/👤) comes after prose, the bullets before that prose are the question's context, in place.
+  for (const x of questions) {
+    const parts = x.parts || []; delete x.parts;
+    const first = parts.findIndex((p) => typeof p === "number" && TAGGED.test(x.options[p])); if (first < 0) continue;
+    const prose = parts.slice(0, first).findLastIndex((p) => typeof p === "string"); if (prose < 0) continue;
+    const keep = new Set(parts.filter((p, i) => typeof p === "number" && i > prose));
+    x.context = clip(parts.filter((p, i) => typeof p === "string" || !keep.has(p)).map((p) => typeof p === "string" ? p : "- " + x.options[p]).join(" "));
+    x.options = x.options.filter((_, i) => keep.has(i));
   }
   return { questions: questions.filter((x) => x.q).slice(0, 20).map((x) => ({ ...x, options: apiOptions(agentsPosting(linkedAsks(agentsMail(agentsCodeWork(agentsClicking(agentsGitWork(x.options))), linked), linked, x.q), linked)).slice(0, 6) })), suggestions: suggestions.filter(Boolean).slice(0, 10) };
 }
