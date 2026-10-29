@@ -2,6 +2,11 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one), for anyone who installs the app: what changed in it, never whose work it was (no projects, people, accounts, services, run ids or task wording of the person who made it). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.94.8 — 2026-10-29
+
+- **Agents and the chat now work from the same facts.** A reply typed under a question that offered options is taken as that question's answer. A new task that names an open one joins it instead of becoming a second job. A run sees the user's own words under a task the chat wrote. Every chat, not only Home's, checks a PR on GitHub before saying whether it merged. A paused lane's queued tasks show on Home. A goal is Done only with proof in the records, never just because its parts ended.
+- The test suite no longer fails after 10:00 UTC on the day the shared log was added, which had stopped the 0.94.7 release from publishing.
+
 ## 0.94.7 — 2026-10-29
 
 - **Each lane keeps one shared log that every session reads first and writes to.** Agents in a lane's folder, runs beside it, background runs and handovers all add what was asked, what was done and what is still open, with who wrote it and when; every agent's brief starts from it, and the chat answers "where are we" from it too. A request another session leaves as a REQUEST.md, pulled down into the lane's folder, becomes an open request and a task for that lane, so nobody has to carry messages between sessions. `symbiot tether` shows and writes it from a terminal.

@@ -14,7 +14,7 @@ const ok = (n, c, got) => { if (c) { pass++; console.log("  ✓ " + n); } else {
 const T = await import("../tether.mjs");
 const { buildTasksMd } = await import("../tasks.mjs");
 const { actBrief } = await import("../mind.mjs");
-const LANE = "bot-desk", NOW = Date.parse("2026-10-29T10:00:00Z");
+const LANE = "bot-desk", NOW = Date.now() + 3600000 // ahead of the files the test writes, whatever day it runs;
 try {
   console.log("THE STORE");
   const a = T.addEntry(LANE, { kind: "ask", from: "symbiot", asked: "Score the model on paper", session: "chat", device: "phone" }, { now: NOW });

@@ -100,6 +100,18 @@ function unplacedCards(tasks, names) {
       sub: `so nothing picks ${n > 1 ? "them" : "it"} up: “${plain(ts[0].text, 70)}”${n > 1 ? ` and ${n - 1} more` : ""}. Pick ${n > 1 ? "their" : "its"} lane on the Workdesk`, shape: "tasks" };
   });
 }
+// Tasks queued in a paused lane: nothing runs them until the lane is unparked, and nothing on Home said so
+// ("it will be paused or dropped or forgotten within minutes", 29 Oct 2026). A card per lane, until it's unparked or
+// its tasks are done; it opens the Workdesk, where the pause is lifted. Symbiot never unparks a lane itself.
+function parkedCards(tasks, map, parked) {
+  const by = {};
+  for (const t of tasks || []) if (t && !t.done && !t.archived && !t.review && !t.later && t.repo && map[t.repo] && parked.has(map[t.repo])) (by[t.repo] = by[t.repo] || []).push(t);
+  return Object.entries(by).map(([name, ts]) => {
+    const n = ts.length, short = plain(name, 50);
+    return { kind: "lane", id: "parked:" + name, repo: name, name: short, title: `${n > 1 ? n + " tasks are" : "A task is"} queued in ${short}, which is paused`,
+      sub: `so nothing runs ${n > 1 ? "them" : "it"} until you unpark it: “${plain(ts[0].text, 70)}”${n > 1 ? ` and ${n - 1} more` : ""}. Unpark it on the Workdesk`, shape: "tasks" };
+  });
+}
 function troubles({ stuck = [], list = [], map = {}, named = displayName, now = Date.now(), drafts = [], stalls = [] } = {}) {
   const out = [], seen = new Set();
   // an agent that stalled twice (stall.mjs): Symbiot stopped it, restarted it once, and paused its lane; one urgent card
@@ -530,6 +542,7 @@ function homeState({ now = Date.now(), fresh = false, deps = {}, tick = false } 
   const stalls = deps.stalls || (() => { try { return stallCards(loadRuns().map((r) => r.path)); } catch { return []; } });
   if (!PHONE) try { you.push(...(deps.openPrs || ((m) => (Object.keys(deps).length ? [] : openPrCards(m, { now }))))(map)); } catch {} // PRs on GitHub that wait on their merge, checked live (probes.mjs)
   you.push(...troubles({ stuck: stuck(), list, map, named, now, drafts: drafts(), stalls: stalls() }));
+  try { you.push(...parkedCards((deps.tasks || loadTasks)() || [], map, new Set((() => { try { return (deps.parked || parkedPaths)() || []; } catch { return []; } })()))); } catch {}
   if (Object.keys(map).length) try { you.push(...unplacedCards((deps.tasks || loadTasks)() || [], [...Object.keys(map), "ops"])); } catch {} // no lanes read: none is known to be wrong
   // what the user asked for, followed through (goals.mjs): one waiting on them with no card of its own,
   // stalled, a follow-up to send, done or not finished; and an email that's waited a week for its reply
@@ -1647,4 +1660,4 @@ function setOnboarding({ step, skip, unskip, skipRest, done, restart } = {}) {
   return onboarding();
 }
 
-export { updateAsk, cardTalk, closeCard, closeDecided, cardFor, dropBlank, homeTick, HOME_LOOKED, WORK_KEEP, FIRST_RUN, troubles, agentDigest, garthLedger, plainAsk, dismissCard, cardKey, loadDismissed, DISMISSED_FILE, reportIdeasAdd, reportAsk, reportDraftAnswer, workTick, waitWhy, AUTO_GRACE, STUCK_AFTER, marketingState, marketingGo, marketingDraftAnswer, marketingTask, moveToMarketing, goLane, homeState, homeContext, homeAsk, homeAnswer, homeNext, nextUp, laneNamed, NEXT_FILE, workScene, forgetWork, workGo, displayName, firstSteps, onboarding, setOnboarding, startOnboarding, ONB_STEPS, ONB_STEPS_PHONE, onbSteps, phoneBits, phoneSetupFirst, finishedState, handedState, noteHanded, phoneChat, isPeak, reportIdeasDismiss, settleAsks, settleFromChat, unplacedCards };
+export { parkedCards, updateAsk, cardTalk, closeCard, closeDecided, cardFor, dropBlank, homeTick, HOME_LOOKED, WORK_KEEP, FIRST_RUN, troubles, agentDigest, garthLedger, plainAsk, dismissCard, cardKey, loadDismissed, DISMISSED_FILE, reportIdeasAdd, reportAsk, reportDraftAnswer, workTick, waitWhy, AUTO_GRACE, STUCK_AFTER, marketingState, marketingGo, marketingDraftAnswer, marketingTask, moveToMarketing, goLane, homeState, homeContext, homeAsk, homeAnswer, homeNext, nextUp, laneNamed, NEXT_FILE, workScene, forgetWork, workGo, displayName, firstSteps, onboarding, setOnboarding, startOnboarding, ONB_STEPS, ONB_STEPS_PHONE, onbSteps, phoneBits, phoneSetupFirst, finishedState, handedState, noteHanded, phoneChat, isPeak, reportIdeasDismiss, settleAsks, settleFromChat, unplacedCards };

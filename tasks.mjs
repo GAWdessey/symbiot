@@ -102,7 +102,15 @@ function addTask(text, repo, { after = "", finding = false, said = "", later } =
   // other words (sameTask): that task, not a duplicate. When the new wording has
   // a clause more, the task takes it, unless it's in review (its tick is on the
   // old words). Handed out already, a tick on either wording counts (syncTasks).
-  const dup = t.find((x) => !x.done && !x.archived && (x.repo || "") === (repo || "") && sameTask(x.text, line));
+  // A task that names an open one of the same repo ("… (task 2da95ba6553b)") is that task's follow-up, not
+  // another job: it made the same LinkedIn page twice on 29 Oct 2026 (d97c0b64c64e after 2da95ba6553b).
+  const named = new Set([...line.matchAll(/\btasks?\s+#?([0-9a-f]{12})\b/gi)].map((m) => m[1].toLowerCase()));
+  const dup = t.find((x) => !x.done && !x.archived && (x.repo || "") === (repo || "") && (named.has(String(x.id).toLowerCase()) || sameTask(x.text, line)));
+  if (dup && named.has(String(dup.id).toLowerCase()) && !sameTask(dup.text, line)) {
+    // the follow-up's words (a go-ahead, a correction) join the task, whose own words stay first
+    dup.full = `${dup.full || dup.text}\n\nUpdate: ${raw}`; dup.text = leadOf(dup.full.replace(/\s+/g, " ")) + fullLink(dup.id);
+    saveTasks(t); return { ...dup, duplicate: true, reworded: true };
+  }
   if (dup && !dup.review && taskWords(full || line).length > taskWords(dup.full || dup.text).length) {
     dup.text = lineFor(dup.id); if (long) dup.full = full; else delete dup.full;
     saveTasks(t); return { ...dup, duplicate: true, reworded: true };
@@ -1548,6 +1556,9 @@ function taskType(text) {
 }
 // Push tasks into the repos as an agent-readable brief (.symbiot/TASKS.md):
 // a checklist plus the deterministic context an agent needs to get oriented.
+// The user's own words behind a task the chat wrote, under it: a run works from the ask itself, not from the
+// last run's reading of it (the ML bot's folder was named three ways by three runs, 29 Oct 2026)
+const saidLine = (t) => { const w = String((t && t.said) || "").replace(/\s+/g, " ").trim(); return w && w !== String(t.text).trim() ? [`  - _The user's own words (the ask, to check your reading against): "${w.slice(0, 500)}"_`] : []; };
 function buildTasksMd(name, ctx, list) {
   const L = [];
   L.push(`# Symbiot tasks — ${name}`);
@@ -1564,10 +1575,10 @@ function buildTasksMd(name, ctx, list) {
   // urgent first, whatever kind it is (a crash fix filed under Docs waited behind 5 tasks, 2026-10-08)
   // t.first: Home moved it to the front (control.mjs)
   const urgent = list.filter((t) => isUrgent(t.text) || t.first); list = list.filter((t) => !urgent.includes(t));
-  if (urgent.length) { L.push("### Urgent: do these first", "Stop at a safe point in anything else you're on (your changes stay), do these, then carry on with the rest."); for (const t of urgent) L.push(`- [ ] ${t.text}`); L.push(""); }
+  if (urgent.length) { L.push("### Urgent: do these first", "Stop at a safe point in anything else you're on (your changes stay), do these, then carry on with the rest."); for (const t of urgent) L.push(`- [ ] ${t.text}`, ...saidLine(t)); L.push(""); }
   const byType = {}; for (const t of list) { const ty = taskType(t.text); (byType[ty] = byType[ty] || []).push(t); }
   const keys = Object.keys(byType).sort((a, b) => TASK_ORDER.indexOf(a) - TASK_ORDER.indexOf(b));
-  for (const ty of keys) { L.push(`### ${ty}`); for (const t of byType[ty]) L.push(`- [ ] ${t.text}`); L.push(""); }
+  for (const ty of keys) { L.push(`### ${ty}`); for (const t of byType[ty]) L.push(`- [ ] ${t.text}`, ...saidLine(t)); L.push(""); }
   if (list.concat(urgent).some((t) => isUiWork(t.text))) L.push(...designBrief()); // UI work: the specialist's standard and the screenshots it must leave (design.mjs)
   L.push(...tetherBrief(name)); // the lane's shared log: what other sessions asked, did and left open (tether.mjs)
   L.push(...ruleLines(name)); // the user's own rules for this lane, from their customisations (overrides.mjs)
@@ -1616,7 +1627,8 @@ function pushTasks(filter) {
   let reach = null; try { reach = laneReach(byName); } catch {} // what each lane reaches, for the handover rules
   for (const name of Object.keys(groups)) {
     const picked = new Map(groups[name].filter((t) => t.model).map((t) => [t.text, t.model]));
-    const list = uniqueTasks(groups[name].map((t) => t.text)).map((text) => ({ text: picked.has(text) && !/\[model:/i.test(text) ? `${text} [model: ${picked.get(text)}]` : text })), path = name && byName[name]; // near-duplicates once
+    const told = new Map(groups[name].filter((t) => t.said).map((t) => [t.text, String(t.said)]));
+    const list = uniqueTasks(groups[name].map((t) => t.text)).map((text) => ({ text: picked.has(text) && !/\[model:/i.test(text) ? `${text} [model: ${picked.get(text)}]` : text, ...(told.has(text) ? { said: told.get(text) } : {}) })), path = name && byName[name]; // near-duplicates once
     if (!path || (path === MARKETING_DIR && !ensureMarketing(path))) { unresolved.push({ name: name || "(no repo)", count: list.length }); continue; }
     try {
       // Cheap, per-repo signals only — no full drift scan (that can be very slow

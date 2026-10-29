@@ -21,14 +21,14 @@ const folder = (n) => { const p = join(HOME, n); mkdirSync(join(p, ".symbiot"), 
 const STEP = "What you do: tell the PC session, \"Read and do ~/bot/research/model_pc/REQUEST.md on the VM.\" Once the files land, I'll set up the 2-week paper run without touching the live bot";
 
 console.log("a job to carry between sessions");
-for (const t of [STEP, "Paste this into the other Claude session.", "Ask the dailify lane to redeploy it.", "Please relay this between the two sessions.", "Forward the plan to the marketing agent."]) ok(`caught: ${t.slice(0, 50)}`, carriesJob(t));
+for (const t of [STEP, "Paste this into the other Claude session.", "ask the acme lane to redeploy it.", "Please relay this between the two sessions.", "Forward the plan to the marketing agent."]) ok(`caught: ${t.slice(0, 50)}`, carriesJob(t));
 for (const t of ["Tell the agent what you found.", "Tell your agent which voice sounds better.", "Sign in to linkedin.com in your own Chrome as garth@example.com.", "Ask the bank for a statement.", "The draft is in Gmail: send it when you're happy."]) ok(`left alone: ${t.slice(0, 50)}`, !carriesJob(t));
 
 console.log("work on a place the user turned down");
 ok("nothing turned down: nothing ruled out", A.ruledOut(STEP, "trading-bot-desk") === "");
 A.addRejected("running anything on the Trading Bot VM");
 ok("the trading bot lane's step onto the VM is", A.ruledOut(STEP, "trading-bot-desk") === "running anything on the Trading Bot VM");
-ok("…named in the step itself, from any lane", A.ruledOut("Restart the signal service on the Trading Bot VM.", "dailify") !== "");
+ok("…named in the step itself, from any lane", A.ruledOut("Restart the signal service on the Trading Bot VM.", "acme") !== "");
 ok("another lane's VM isn't (Steve's server)", A.ruledOut("Restart steve.service on the VM.", "steve") === "");
 ok("data pulled from it isn't", A.ruledOut("Train it on this PC from the data pulled from the VM.", "trading-bot-desk") === "");
 ok("nor a sentence that keeps off it", A.ruledOut("I won't run anything on the VM.", "trading-bot-desk") === "");
