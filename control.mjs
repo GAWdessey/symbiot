@@ -1,5 +1,5 @@
 // Home's hands on the agents (mind.mjs "control"): stop one, cancel or move a task, answer or
-// redirect an agent, fold a duplicate into the one that has the job. Until now Home could only
+// redirect an agent, fold a duplicate into the one that has the job, clear a card off Home. Until now Home could only
 // start work, so it told the user to click a card to stop an agent (2026-10-10, two agents on the
 // same npm job). Stopping, cancelling and redirecting can all be undone, so none asks for a yes:
 // what is hard to undo stays the agent's own question on the Workdesk.
@@ -9,7 +9,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { stopRun, parkLane, answerQuestions, agentQuestions, runningHandoff, runHandoff } from "./agents.mjs";
 import { loadTasks, saveTasks } from "./core.mjs";
 
-const OPS = ["stop", "cancel", "redirect", "answer", "front", "merge"];
+const OPS = ["stop", "cancel", "redirect", "answer", "front", "merge", "clear"];
 const clip = (s, n = 60) => String(s || "").replace(/\s+/g, " ").trim().slice(0, n);
 
 // "run:/path", "ask:/path", a bare path, or a lane's name -> the folder an agent works in
@@ -91,6 +91,11 @@ function control(ops, deps = {}) {
       const r = halt(path, clip(o.id, 40)); if (!r.ok) return r;
       noteTo(keep, "From Home: another agent was on the same job", `${clip(o.id, 80)} was doing the same job, so Home stopped it. This agent owns it: carry on, and don't ask the user the other agent's questions.`);
       return { ok: true, said: "Stopped the duplicate; the other agent owns the job." };
+    }
+    if (op === "clear") {
+      // a card off "Only the user can do" (home.mjs clearCards): said done only once Home, built again, no longer shows it
+      if (!deps.clear) return { error: "cards can't be cleared from here." };
+      return deps.clear(String(o.id || "").trim());
     }
     return { error: "unknown op" };
   }
