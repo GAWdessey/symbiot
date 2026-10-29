@@ -103,9 +103,13 @@ function goalToJoin(words, { lane = "", path = "", jobs = loadJobs(), now = Date
   return mine.sort((a, b) => score(b) - score(a) || (b.changed || 0) - (a.changed || 0))[0];
 }
 // Where the user's words go: a new goal, the goal they follow up, or none at all.
-async function goalFor(words, { child = "", lane = "", path = "", now = Date.now(), write } = {}) {
+// answering: the chat's last turn ended in a question and these words are a short reply to it; the
+// chat has already acted on that reply, so it opens no goal of its own ("surprize me", 29 Oct 2026)
+const SHORT_REPLY = /^\W*(?:\S+\s+){0,7}\S*\W*$/; // eight words or fewer
+const answersQuestion = (history, words) => { const last = String(history || "").trim().split("\n").reverse().find((l) => /^(?:\S+ )?(?:User|You): /.test(l)); return !!last && /^(?:\S+ )?You: /.test(last) && /\?\W*$/.test(last) && SHORT_REPLY.test(String(words || "").trim()); };
+async function goalFor(words, { child = "", lane = "", path = "", now = Date.now(), write, answering = false } = {}) {
   const kind = await goalKind(words, { write });
-  if (kind === "none") return null;
+  if (kind === "none" || (kind === "new" && answering)) return null;
   if (kind === "new") return openGoal(words, { child, lane, path, now }); // new work in a lane with a goal open is a goal of its own
   const join = goalToJoin(words, { lane, path, now });
   return join ? (child ? linkChild(join.key, child, { path, now }) : join) : null;
@@ -469,4 +473,4 @@ function goalAnswer(path, answers = [], deps = {}, { now = Date.now() } = {}) {
   return { ok: true, saved: 1, said };
 }
 
-export { doneLine, goalKind, goalFor, goalToJoin, tidyGoals, plainlyNotWork, openGoal, linkChild, goalById, goalOf, doneWhenFor, childState, adopt, rollUp, judgeDone, writeBreakdown, goalsTick, goalCards, goalAnswer, folderOf, STALL_AFTER, NUDGE_AFTER, SURFACE_AFTER, WAIT_OLD };
+export { doneLine, goalKind, goalFor, answersQuestion, goalToJoin, tidyGoals, plainlyNotWork, openGoal, linkChild, goalById, goalOf, doneWhenFor, childState, adopt, rollUp, judgeDone, writeBreakdown, goalsTick, goalCards, goalAnswer, folderOf, STALL_AFTER, NUDGE_AFTER, SURFACE_AFTER, WAIT_OLD };
