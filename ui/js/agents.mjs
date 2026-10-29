@@ -21,10 +21,10 @@ var h="<div class='aq' data-id='"+esc(a.id)+"'>";
 // option press picks it, and the block's Send answers sends them together, so no run starts on half.
 var one=qs.length===1;
 if(qs.length){h+="<h4><i class=ic-ask></i> "+qs.length+" question"+(qs.length>1?"s":"")+" for you</h4>";
-qs.forEach(function(q,i){var rl=q.release;h+="<div class='q' data-i='"+i+"'>"+(q.task?"<div class='qfor' title='"+escQ(q.task)+"'>for: "+esc(q.task)+"</div>":"")+"<div class='qt'>"+esc(q.shown||q.q)+"</div>"+(q.context?"<div class='qc'>"+codeText(q.context)+"</div>":"")+(rl?relHtml(rl):"");
+qs.forEach(function(q,i){var rl=q.release;h+="<div class='q' data-i='"+i+"'>"+(q.task?"<div class='qfor' title='"+escQ(q.task)+"'>for: "+esc(q.task)+"</div>":"")+"<div class='qt'>"+esc(q.shown||q.q)+"</div>"+(q.preview?pvHtml(a,q,i):q.context?"<div class='qc'>"+codeText(q.context)+"</div>":"")+(rl?relHtml(rl):"");
 // a Go card (plain.mjs goCard): the hold's own line, where and what will be pressed, and its money, above its two buttons
 if(q.go&&q.go.line){var gi=q.go.line.indexOf(': ');h+="<div class='qgo'>"+(gi>0?"<b>"+esc(q.go.line.slice(0,gi))+"</b>: "+esc(q.go.line.slice(gi+2)):esc(q.go.line))+"</div>"+(q.go.money&&String(q.context||'').indexOf(q.go.money)<0?"<div class='qmoney'>"+esc(q.go.money)+"</div>":"");}
-var os=q.options||[];if(os.length)h+="<div class='qopts' role='group' aria-label='answers to choose from'>"+os.map(function(o,j){var off=rl&&rl.waiting&&DONEOPT.test(o);return "<button type='button' class='qopt "+(one&&!j?"act":"ghost")+"' data-j='"+j+"'"+(off?" disabled":"")+(one?"":" aria-pressed='false'")+">"+whoHtml(String((q.labels&&q.labels[j])||o).replace(/[ ]*[(]recommended[)][ ]*$/i,''))+(/[(]recommended[)][ ]*$/i.test(o)?"<i class='qrec'>recommended</i>":"")+(off?" <i>(once "+esc(rl.name+" "+rl.needs)+" is installed)</i>":"")+"</button>";}).join('')+"</div>";
+var os=q.options||[];if(os.length)h+="<div class='qopts' role='group' aria-label='answers to choose from'>"+os.map(function(o,j){var off=rl&&rl.waiting&&DONEOPT.test(o);return "<button type='button' class='qopt "+(one&&!j?"act":"ghost")+"' data-j='"+j+"'"+(off?" disabled":"")+(one?"":" aria-pressed='false'")+">"+whoHtml(String((q.labels&&q.labels[j])||o).replace(/[ ]*[(]recommended[)][ ]*$/i,''))+(/[(]recommended[)][ ]*$/i.test(o)?"<i class='qrec'>recommended</i>":"")+(off?" <i>(once "+esc(rl.name+" "+rl.needs)+" is installed)</i>":"")+"</button>";}).join('')+(q.preview&&q.preview.ask?"<button type='button' class='qopt ghost qaskpv'>Ask for the preview</button>":"")+"</div>";
 h+="<div class='qown'><input class='qother' aria-label='"+(q.go?"tell the agent something: it won&#39;t count as a Go":os.length?"or answer in your own words":"your answer")+"' placeholder='"+(q.go?"or tell the agent something":os.length?"or answer in your own words":"your answer")+"'>"+(one?"<button type='button' class='ghost qsend' title='saves your answer and hands the work back to its agent'>Send answer</button>":"")+"</div></div>";});
 if(!one)h+="<div class='row'><button class='act qsend' title='save the answers and hand the repo back to your agent'>Send answers &amp; continue</button><button class='ghost qsave' title='save the answers for the next run'>Save only</button></div>";}
 if(ss.length){var shown=IDEASOPEN[a.path]?ss.length:(k.ideasShown||ss.length),nf=ss.filter(function(s){return s.from;}).length;h+="<h4><i class=ic-idea></i> "+(!nf?"Ideas from the agent":nf===ss.length?"Ideas for "+esc(a.name)+" from other agents":"Ideas for "+esc(a.name))+"</h4>";ss.forEach(function(s,i){if(i>=shown)return;h+=ideaHtml(s,i,'');});
@@ -32,6 +32,37 @@ if(ss.length>shown)h+="<div class='row'><button class='ghost qmore' title='the a
 // ideas it had for another lane are on that lane's card (agents.mjs routeIdeas): here, one line saying where they went
 if(aw.length)h+="<details class='ideasent'><summary title='they show on that project&#39;s card, where + task adds them to its tasks'><i class=ic-idea></i> "+(k.sent||[]).map(function(x){return x.n+" idea"+(x.n>1?"s":"")+" sent to "+esc(x.repo);}).join(", ")+"</summary>"+aw.map(function(s,i){return ideaHtml(s,i,'1');}).join('')+"</details>";
 return h+"</div>";}
+// What a question asks the user to approve, drawn on its card (preview.mjs): the lead-in, folded at 3 lines,
+// then the preview (pictures, label and value fields, the long text folded at 4 lines), then AFTER THAT, so
+// the first button sits right under what was seen. A picture that isn't there is a named gap, and a card that
+// can't show all of it says so above it (its "as shown" is gone from its words, server side).
+var PVOPEN={};
+function pvKey(a,q,w){return a.path+'|'+q.q+'|'+w;}
+function pvSrc(p){return p.src+(p.src.indexOf('?')<0?'?':'&')+'t='+encodeURIComponent(T);}
+function pvPicHtml(p,k,wide){var ar=p.w&&p.h?p.w+' / '+p.h:(wide?'16 / 9':'1 / 1'),st="aspect-ratio:"+ar+(!wide&&p.h?";--h:"+Math.min(96,p.h)+"px":"");
+var nm=escQ(p.alt+(p.size?' · '+p.size:''));
+if(p.state!=='ok')return "<div class='qpic gap"+(wide?" wide":"")+"' role='img' aria-label='"+escQ(p.gap||p.name)+"' style='"+st+"'><span>"+esc(p.gap||p.name)+"</span></div>";
+return "<button type='button' class='qpic"+(wide?" wide":"")+"' data-k='"+k+"' aria-label='"+escQ(p.alt+(p.size?', '+p.size:'')+': open it full size')+"' title='"+nm+"' style='"+st+"'><img src='"+escQ(pvSrc(p))+"' alt='"+escQ(p.alt+(p.size?' · '+p.size:''))+"' loading='lazy'></button>";}
+function pvWide(ps){for(var i=0;i<ps.length;i++){var p=ps[i];if(p.w&&p.h?p.w/p.h>2.2:/cover|banner|header/i.test(p.alt+' '+p.name))return i;}return -1;}
+function pvHtml(a,q,qi){var v=q.preview||{},h='',ps=v.pics||[],fs=v.fields||[],lg=v.long,th=v.then||[];
+var lead=v.lead&&v.lead.length?v.lead:(q.context?[q.context]:[]),leadLong=lead.join(' ').length>260,lo=PVOPEN[pvKey(a,q,'lead')];
+if(lead.length)h+="<div class='qc qlead"+(leadLong&&!lo?" fold":"")+"' id='qlead-"+qi+"'>"+lead.map(function(p){return "<p>"+codeText(p)+"</p>";}).join('')+"</div>"+(leadLong?"<button type='button' class='qlink qleadmore' aria-expanded='"+(lo?'true':'false')+"' aria-controls='qlead-"+qi+"'>"+(lo?'less':'more')+"</button>":"");
+if(v.warn)h+="<div class='qwarn' role='note'><i class=ic-ask></i> "+esc(v.warn)+"</div>";
+if(v.heading){h+="<section class='qpv' aria-label='"+escQ(v.heading)+"'><h4>"+esc(v.heading)+"</h4>";
+if(ps.length){var wi=pvWide(ps),rest=[];h+="<div class='qpics'>";if(wi>=0)h+=pvPicHtml(ps[wi],wi,true);ps.forEach(function(p,k){if(k!==wi)rest.push(pvPicHtml(p,k,false));});
+if(rest.length)h+="<div class='qpicrow'>"+rest.join('')+"</div>";if(v.caption)h+="<div class='qcap'>"+esc(v.caption)+"</div>";h+="</div>";}
+if(fs.length)h+="<dl class='qflds'>"+fs.map(function(f){return "<div class='qf"+(String(f.value).length>40?" span":"")+"'><dt>"+esc(f.label)+"</dt><dd>"+esc(f.value).split('/').join('/<wbr>')+(f.note?"<small>"+esc(f.note)+"</small>":"")+"</dd></div>";}).join('')+"</dl>";
+if(lg&&lg.paras&&lg.paras.length){var lw=lg.paras.join(' ').length>360||lg.paras.length>2,lgo=PVOPEN[pvKey(a,q,'long')];h+="<div class='qlong'>"+(lg.label?"<div class='qlh'>"+esc(lg.label)+"</div>":"")+"<div class='qlb"+(lw&&!lgo?" fold":"")+"' id='qlong-"+qi+"'>"+lg.paras.map(function(p){return "<p>"+esc(p)+"</p>";}).join('')+"</div>"+(lw?"<button type='button' class='qlink qall' aria-expanded='"+(lgo?'true':'false')+"' aria-controls='qlong-"+qi+"'>"+(lgo?'Show less':'Show all ('+lg.paras.length+' paragraph'+(lg.paras.length>1?'s':'')+')')+"</button>":"")+"</div>";}
+if(v.files&&v.files.length)h+="<div class='qfiles'>"+v.files.map(function(f){return "<div>"+esc(f)+"</div>";}).join('')+"</div>";
+h+="</section>";}
+if(th.length)h+="<div class='qthen'><h4>After that</h4><ul>"+th.map(function(t){return "<li class='"+(t.checked===true?"on":t.checked===false?"off":"")+"'>"+(t.checked!=null?"<span class='qbox' role='img' aria-label='"+(t.checked?"ticked":"not ticked")+"'>"+(t.checked?"&#10003;":"")+"</span>":"")+"<span>"+esc(t.text)+"</span></li>";}).join('')+"</ul></div>";
+return h;}
+function wirePreview(box,a){box.querySelectorAll('.q').forEach(function(qe){var q=a.ask.questions[+qe.getAttribute('data-i')];if(!q||!q.preview)return;var ps=q.preview.pics||[];
+var list=[],at={};ps.forEach(function(p,k){if(p.state==='ok'){at[k]=list.length;list.push({src:pvSrc(p),kind:'image',name:p.alt+(p.size?' · '+p.size:'')});}});
+qe.querySelectorAll('.qpic img').forEach(function(im){if(im.complete&&im.naturalWidth)im.classList.add('in');else im.addEventListener('load',function(){im.classList.add('in');});});
+qe.querySelectorAll('.qpic[data-k]').forEach(function(b){b.addEventListener('click',function(){mkZoom(list,at[+b.getAttribute('data-k')]||0,b);});});
+function fold(sel,w,open1,shut){var b=qe.querySelector(sel);if(!b)return;b.addEventListener('click',function(){var k=pvKey(a,q,w),o=!PVOPEN[k];PVOPEN[k]=o;var t=document.getElementById(b.getAttribute('aria-controls'));if(t)t.classList.toggle('fold',!o);b.setAttribute('aria-expanded',o?'true':'false');b.textContent=o?shut:open1;});}
+fold('.qleadmore','lead','more','less');var lg=q.preview.long;if(lg&&lg.paras)fold('.qall','long','Show all ('+lg.paras.length+' paragraph'+(lg.paras.length>1?'s':'')+')','Show less');});}
 // What came of the presses this agent's user said Go or Don't to (chromegate.mjs goHistory), newest first.
 function goClock(t){try{return new Date(t).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});}catch(e){return '';}}
 var GODONE={send:'Sent',pay:'Paid','delete':'Deleted',fill:'Filled'};
@@ -68,7 +99,9 @@ if(r.talk){box.querySelectorAll('button').forEach(function(b){b.disabled=false;}
 msg.innerHTML="<div class='note ok'>&#10003; Saved "+r.saved+" answer"+(r.saved>1?"s":"")+" for <b>"+esc(a.name)+"</b> in .symbiot/ANSWERS.md"+(r.rerun?" &middot; your agent is picking them up now.":".")+(r.yours&&r.yours.length?"<div class='err'><i class=ic-person></i> Still yours to do: "+esc(r.yours.join(' '))+"</div>":"")+(r.note?"<div class='muted'>"+esc(r.note)+"</div>":"")+"</div>";box.querySelectorAll('.qopt.on').forEach(function(b){pickOpt(b,false);});loadAgents();if(current==='asks')loadAsks();});}
 var s1=box.querySelector('.qsend'),s2=box.querySelector('.qsave');
 if(s1)s1.addEventListener('click',function(){send(true);});if(s2)s2.addEventListener('click',function(){send(false);});
+wirePreview(box,a);
 box.querySelectorAll('.qopt').forEach(function(btn){btn.addEventListener('click',function(){var qe=btn.closest('.q'),q=a.ask.questions[+qe.getAttribute('data-i')];if(!q)return;
+if(btn.classList.contains('qaskpv')){pickOpt(btn,true);send(true,[{q:q.q,a:q.preview.ask}]);return;}
 if(!btn.hasAttribute('aria-pressed')){pickOpt(btn,true);send(true,[{q:q.q,a:q.options[+btn.getAttribute('data-j')]}]);return;}
 var on=!btn.classList.contains('on');qe.querySelectorAll('.qopt').forEach(function(b){pickOpt(b,on&&b===btn);});});});
 // Enter in a typed answer sends it, as the button beside it does
