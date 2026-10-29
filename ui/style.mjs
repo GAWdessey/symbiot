@@ -708,7 +708,18 @@ body.lq-light .rbackbar{background:rgba(246,248,251,.95);box-shadow:0 1px 0 rgba
 @media(max-width:520px){.rbackbar .rbpath{display:none}}
 .rzoom{position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,.82);display:flex;align-items:center;justify-content:center;cursor:zoom-out;padding:24px}.rzoom img{max-width:100%;max-height:100%;border-radius:8px}
 .rdoc blockquote{margin:8px 0;padding:2px 12px;border-left:3px solid var(--line);color:var(--faint)}.rdoc a{color:var(--green)}
-.rdoc .rtable{overflow-x:auto;margin:10px 0}.rdoc table{border-collapse:collapse;font-size:13px;min-width:100%}.rdoc th,.rdoc td{border:1px solid var(--line);padding:6px 8px;text-align:left;vertical-align:top}.rdoc th{background:var(--ink3);color:var(--bone);font-weight:600}
+/* a report's table (reports.mjs table): wider than the prose when it needs to be, up to the report's own width (#reportbody is the container),
+   scrolling in its own box with the header and first column held; a cell never breaks inside a word or number (29 Oct 2026) */
+#reportbody{container-type:inline-size}
+.rdoc .rtable{position:relative;left:50%;translate:-50% 0;width:max-content;min-width:100%;max-width:100cqw;max-height:75vh;overflow:auto;overscroll-behavior-x:contain;margin:12px 0;border:1px solid var(--line);border-radius:10px;background:var(--ink2)}
+.rdoc table{border-collapse:separate;border-spacing:0;width:100%;font-size:13px;line-height:1.45;font-variant-numeric:tabular-nums}
+.rdoc th,.rdoc td{padding:5px 10px;text-align:left;vertical-align:top;white-space:nowrap;overflow-wrap:normal;word-break:normal;border-bottom:1px solid var(--line);background:var(--ink2)}
+.rdoc th{position:sticky;top:0;z-index:2;vertical-align:bottom;white-space:normal;background:var(--ink3);color:var(--bone);font-weight:600}
+.rdoc th:first-child,.rdoc td:first-child{position:sticky;left:0;z-index:1;border-right:1px solid var(--line);box-shadow:-1px 0 0 var(--line)}.rdoc th:first-child{z-index:3}
+.rdoc tbody tr:nth-child(even) td{background:color-mix(in srgb,var(--ink2) 95%,var(--bone))}.rdoc tbody tr:hover td{background:color-mix(in srgb,var(--ink2) 89%,var(--bone))}.rdoc tbody tr:last-child td{border-bottom:0}
+.rdoc th.num,.rdoc td.num{text-align:right}.rdoc td.rlong{white-space:normal;min-width:16em;max-width:32em}
+.rdoc .rnil{color:var(--faint)}.rdoc .rcount{font-size:11px;color:var(--faint)}
+.rdoc .rtsame{margin:-4px 0 12px;font-size:12.5px;line-height:1.5;color:var(--faint)}.rdoc .rtsame b{color:var(--text);font-weight:600}
 .rdiff{max-height:360px;overflow:auto;font-size:11px;line-height:1.45;background:var(--ink2);border:1px solid var(--line);border-radius:8px;padding:8px;margin-top:8px;white-space:pre}
 .drift{border:1px solid var(--line);border-radius:10px;margin-top:10px;padding:12px 14px;background:var(--ink2)}
 .drift .dh,.agent .dh{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
