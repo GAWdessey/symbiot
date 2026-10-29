@@ -9,7 +9,7 @@
 // The app's sections (Map, Tasks, Agents, Week…) are shaped by adapt.mjs from
 // how you use them; this is the live data around them. Home's talk goes to the
 // same Symbiot as every chat (mind.mjs converse), told what home shows.
-import { prFacts, prLive, conflictsIn } from "./probes.mjs";
+import { prFacts, prLive, conflictsIn, openPrCards } from "./probes.mjs";
 import { claudeSetup } from "./claudesetup.mjs";
 import { heldAsks } from "./handover.mjs";
 import { plainAsk } from "./plain.mjs";
@@ -526,6 +526,7 @@ function homeState({ now = Date.now(), fresh = false, deps = {}, tick = false } 
   // and a run that ended in an error. Answered on its blob (homeAnswer).
   const drafts = deps.drafts || (() => { try { return draftCards(); } catch { return []; } });
   const stalls = deps.stalls || (() => { try { return stallCards(loadRuns().map((r) => r.path)); } catch { return []; } });
+  if (!PHONE) try { you.push(...(deps.openPrs || ((m) => (Object.keys(deps).length ? [] : openPrCards(m, { now }))))(map)); } catch {} // PRs on GitHub that wait on their merge, checked live (probes.mjs)
   you.push(...troubles({ stuck: stuck(), list, map, named, now, drafts: drafts(), stalls: stalls() }));
   if (Object.keys(map).length) try { you.push(...unplacedCards((deps.tasks || loadTasks)() || [], [...Object.keys(map), "ops"])); } catch {} // no lanes read: none is known to be wrong
   // what the user asked for, followed through (goals.mjs): one waiting on them with no card of its own,
