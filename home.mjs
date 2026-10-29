@@ -22,7 +22,7 @@ import { readFileSync, writeFileSync, mkdirSync, statSync, existsSync } from "no
 import { watchBoard, draftReply, draftCards, draftAnswer } from "./watch.mjs";
 import { pendingReview, pushTasks, addTask, taskType, releaseNotIn, unplacedTasks } from "./tasks.mjs";
 import { estimate, estimateWords } from "./estimate.mjs";
-import { handoffsSig, launchFault, ensureRunnable, agentQuestions, answerQuestions, heldAsk, grantCard, cardIsPermission, onCardGone, setHandoffCmd, agentsList, agentsNow, forgetAgents, runHandoff, runningHandoff, handoffCmd, loadRuns, connectorsInfo, parkedPaths, agentMissing, settleNeeds, closeAsk, sameSubject, pickAgent, detectHandoffs, linkReach, unchangedStep, whereOf, claudePause, parkLane, waitingTask, namedBlocker, autoStart, settleRecord } from "./agents.mjs";
+import { handoffsSig, newAnswers, launchFault, ensureRunnable, agentQuestions, answerQuestions, heldAsk, grantCard, cardIsPermission, onCardGone, setHandoffCmd, agentsList, agentsNow, forgetAgents, runHandoff, runningHandoff, handoffCmd, loadRuns, connectorsInfo, parkedPaths, agentMissing, settleNeeds, closeAsk, sameSubject, pickAgent, detectHandoffs, linkReach, unchangedStep, whereOf, claudePause, parkLane, waitingTask, namedBlocker, autoStart, settleRecord } from "./agents.mjs";
 import { stallCards, loadStall, saveStall } from "./stall.mjs";
 import { isDone, recordDone, recordCard, cardDone, decidedBy, endTalk, doneList, asksBack, askBackNote, wantsReport, closesAsk, heldBy, reportsSince, talkOf, addTalk, talkText, YES, asksQ, saysDone, wantsToRead } from "./asksdone.mjs";
 import { captureSecrets } from "./vault.mjs";
@@ -1443,7 +1443,10 @@ function waitWhy({ map, named, running, held, ready, isParked, deps = {} }) {
     const h = PREPARES.test(t.text) && held[lane] && !held[lane].approve ? null : held[lane];
     if (h) return h.approve ? { kind: "approve", noGo: true, text: `Waiting on your OK for ${name}'s last run, on the Workdesk`, path: h.path } : h.step ? { kind: "step", noGo: true, text: `Waiting on a step only you can do for ${name}${h.what ? ` ("${h.what}")` : ""}: its card is under Needs you`, path: h.path } : { kind: "asks", noGo: true, text: `Waiting on your answer to ${name}'s question, on the Workdesk`, path: h.path };
     if (inBrief && ready.has(lane)) return { kind: "approve", noGo: true, text: `Waiting on your OK for ${name}'s work, on the Workdesk`, path };
-    if (fail) return { kind: "blocked", failAt: fail.at, text: `Blocked: ${name}'s agent didn't start: ${String(fail.note).replace(/^Not started:\s*/i, "")}` };
+    // a start that didn't take stops holding it once the lane has run since, or the user has answered since:
+    // the marketing lane's "no answer has come in" stayed on its task after the answer (29 Oct 2026)
+    if (fail && (lastRun(path) > fail.at || (deps.answered || newAnswers)(path))) delete fails[lane];
+    else if (fail) return { kind: "blocked", failAt: fail.at, text: `Blocked: ${name}'s agent didn't start: ${String(fail.note).replace(/^Not started:\s*/i, "")}` };
     // its last run ended without finishing it: it starts again by itself, a few times an hour at most
     // (autoStart, keyed to this task), and only then waits for Go: it used to wait for Go at once, and
     // a full Workdesk sat with no agent running (25 Oct 2026)

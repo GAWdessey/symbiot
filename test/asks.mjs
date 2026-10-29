@@ -115,6 +115,15 @@ ok("Home's card for it carries the task's line", card && card.task === "Make the
 const ui = (await import("./uisource.mjs")).uiSource();
 ok("...and every card shows it: Home's, the Workdesk's and the phone's", /var tk=String\(y\.task\|\|''\)[^;]*,fr=!y\.doing&&tk&&[^\n]*?dn=y\.doing\|\|\(\(fr\?tk[^\n]*?h\+="<div class='bdoing"\+\(fr\?' bfor2':''\)[^\n]*?\(fr\?"<b>For:<\/b> ":"<i class=ic-bot><\/i>"\)\+esc\(dn\)/.test(ui) && !/"I'm on it: "\+tk/.test(ui) && /\(q\.task\?"<div class='qfor'[^"]*"\+escQ\(q\.task\)\+"'>for: "\+esc\(q\.task\)/.test(ui) && (ui.match(/<div class='qfor'/g) || []).length === 2 && /task:q\.task/.test(ui), "");
 
+// 29 Oct 2026: a page preview's "- Name ......" lines became the card's two buttons, and "Address ......" went down as the answer
+{
+  const md = "## Questions\n### Create Dailify's LinkedIn page as shown? {#dailify-linkedin-page}\nNothing is on LinkedIn yet.\n\n- Name ......... Dailify\n- Address ...... linkedin.com/company/dailify\n- About ........\n  > Dailify phones consented prospects.\n\nThen: you as super admin.\n- 🤖 Agent: create it as shown (recommended)\n- 🤖 Agent: change something first\n- 🤖 Agent: not now\n";
+  const q = a.parseQuestions(md, { linked: [] }).questions[0];
+  ok("a preview's lines above the options are context, not choices", q.options.length === 3 && q.options.every((o) => /^🤖 Agent:/.test(o)), q.options);
+  ok("…kept in the question, in their place", /Nothing is on LinkedIn yet\. - Name \.+ Dailify - Address \.+ linkedin\.com\/company\/dailify .*Then: you as super admin\./.test(q.context), q.context);
+  const plainList = a.parseQuestions("## Questions\n### Which relay?\nPick one.\n- SMTP\n- API\n", { linked: [] }).questions[0];
+  ok("a question with untagged options keeps them all", plainList.options.join("|") === "SMTP|API", plainList.options);
+}
 // 20 Oct 2026 review, S2: Paddle was asked four times in new words. A question with an id is asked once.
 console.log("ASKED ONCE — a question's id keeps its answer");
 const ops1 = join(C, "drafts", "act-ids0001"), ops2 = join(C, "drafts", "act-ids0002");
