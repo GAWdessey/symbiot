@@ -114,14 +114,20 @@ function prLive(dir, n, { now = Date.now(), gh = (args) => run("gh", args), git 
     const rec = { state: had ? had.state : "", at: now, busy: true }; PR_LIVE.set(key, rec);
     rec.done = (async () => {
       const slug = dir ? await remoteSlug(dir, git) : ""; if (!slug) return;
-      const raw = await gh(["pr", "view", String(n), "-R", slug, "--json", "state,mergeable,mergeStateStatus"]); let v = null; try { v = JSON.parse(raw); } catch {}
-      if (v && v.state) { rec.state = String(v.state).toLowerCase(); rec.conflicts = conflicting(v); }
+      const raw = await gh(["pr", "view", String(n), "-R", slug, "--json", "state,mergeable,mergeStateStatus,url,mergedAt,mergeCommit,statusCheckRollup"]); let v = null; try { v = JSON.parse(raw); } catch {}
+      if (v && v.state) {
+        rec.state = String(v.state).toLowerCase(); rec.conflicts = conflicting(v);
+        const cs = Array.isArray(v.statusCheckRollup) ? v.statusCheckRollup : [], ok = cs.filter((c) => /^(SUCCESS|NEUTRAL|SKIPPED)$/.test(String(c.conclusion || c.state || ""))).length;
+        rec.info = { url: v.url || "", sha: v.mergeCommit && v.mergeCommit.oid ? String(v.mergeCommit.oid).slice(0, 7) : "", at: v.mergedAt ? String(v.mergedAt).slice(0, 10) : "", checks: cs.length ? `${ok} of ${cs.length} passed${(cs.find((c) => c.detailsUrl) || {}).detailsUrl ? `, run ${(String(cs.find((c) => c.detailsUrl).detailsUrl).match(/runs\/(\d+)/) || [])[1] || "link"}` : ""}` : "" };
+      }
     })().catch(() => {}).finally(() => { rec.busy = false; });
   }
   return PR_LIVE.get(key).state;
 }
 prLive.wait = (dir, n) => (PR_LIVE.get(`${dir}#${n}`) || {}).done;
 prLive.clear = () => PR_LIVE.clear();
+// What GitHub said about it, for the proof line under a card (evidence.mjs): "" state until a look has come back.
+prLive.info = (dir, n) => { const r = PR_LIVE.get(`${dir}#${n}`); return r && r.state ? { state: r.state, conflicts: !!r.conflicts, ...(r.info || {}) } : null; };
 prLive.conflicts = (dir, n) => !!(PR_LIVE.get(`${dir}#${n}`) || {}).conflicts;
 // The PRs a run's last words name that GitHub says have conflicts: ["#336"], looked up in the run's own
 // repo (prLive: "" until GitHub answers, so nothing is claimed before it has). A run said "PR #336 still
