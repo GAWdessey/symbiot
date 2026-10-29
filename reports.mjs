@@ -227,6 +227,35 @@ function inline(s, o = {}) {
 }
 const cells = (line) => line.trim().replace(/^\||\|$/g, "").split(/(?<!\\)\|/).map((c) => c.trim().replace(/\\\|/g, "|"));
 const PROSE = /^(?:text|txt|plain|prose|post|linkedin|markdown|md)$/i; // a fence holding writing, not code
+// A table, readable however wide: a 12-column one squeezed into the reading column
+// broke 'EURCHF-op' and '71.6%' mid-word, 3-4 lines a row (29 Oct 2026). Now a cell
+// keeps to one line (a sentence wraps, at spaces only), a column of numbers sits
+// right in tabular figures with its "(n)" counts small and muted, an empty cell is a
+// muted dash and n/a is muted, and a column holding the same value on every row moves
+// to a line under the table. Columns left blank to fill in stay. The box goes wider
+// than the prose and scrolls sideways itself, header and first column held (style.mjs).
+const NIL = /^(?:n\/?a|—|–|-)?$/i;
+const NUM = /^[~≈<>≤≥±+−-]?\s*[$€£]?\s*\d[\d,]*(?:\.\d+)?\s*(?:%|x|×|pp|ms|s|h|k|m|bn)?(?:\s*\(\s*\d[\d,]*\s*\))?$/i;
+const LONG = 40; // a cell longer than this many characters wraps (at spaces) rather than widening its column
+function table(head, rows, o) {
+  const n = head.length, bare = (c) => String(c).replace(/[*_`~]/g, "").trim();
+  rows = rows.map((r) => Array.from({ length: n }, (_, j) => r[j] ?? ""));
+  const same = [];
+  if (rows.length >= 3 && n >= 4) for (let j = 1; j < n; j++) { const v = rows[0][j]; if (!NIL.test(bare(v)) && rows.every((r) => r[j] === v)) same.push(j); }
+  const cols = [...Array(n).keys()].filter((j) => !same.includes(j) || n - same.length < 2);
+  const moved = same.filter((j) => !cols.includes(j));
+  const num = Object.fromEntries(cols.map((j) => [j, rows.some((r) => !NIL.test(bare(r[j]))) && rows.every((r) => NIL.test(bare(r[j])) || NUM.test(bare(r[j])))]));
+  const cell = (c) => {
+    const t = bare(c);
+    if (!t) return '<span class="rnil" aria-label="empty">—</span>';
+    if (NIL.test(t)) return `<span class="rnil">${escHtml(t)}</span>`;
+    return inline(c, o).replace(/(\d[\d.,]*\s*%?)\s*\((\d[\d,]*)\)/g, '$1 <span class="rcount">($2)</span>');
+  };
+  const cls = (j, c) => [num[j] && "num", c != null && bare(c).length > LONG && "rlong"].filter(Boolean).join(" ");
+  const at = (k) => (k ? ` class="${k}"` : "");
+  const html = `<div class="rtable"><table><thead><tr>${cols.map((j) => `<th${at(cls(j))}>${inline(head[j], o)}</th>`).join("")}</tr></thead><tbody>${rows.map((r) => `<tr>${cols.map((j) => `<td${at(cls(j, r[j]))}>${cell(r[j])}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
+  return html + (moved.length ? `<p class="rtsame">Same on every row: ${moved.map((j) => `${inline(head[j], o)} <b>${inline(rows[0][j], o)}</b>`).join(" · ")}</p>` : "");
+}
 function mdHtml(md, o = {}) {
   const lines = String(md || "").replace(/\r\n?/g, "\n").split("\n"), out = [];
   let i = 0, para = [];
@@ -241,7 +270,7 @@ function mdHtml(md, o = {}) {
     if (/^\s*\|.*\|\s*$/.test(l) && i + 1 < lines.length && /^\s*\|?\s*:?-{2,}/.test(lines[i + 1])) {
       flush(); const head = cells(l); i += 2; const rows = [];
       while (i < lines.length && /^\s*\|.*\|\s*$/.test(lines[i])) rows.push(cells(lines[i++]));
-      out.push(`<div class="rtable"><table><thead><tr>${head.map((c) => `<th>${inline(c, o)}</th>`).join("")}</tr></thead><tbody>${rows.map((r) => `<tr>${r.map((c) => `<td>${inline(c, o)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`);
+      out.push(table(head, rows, o));
       continue;
     }
     if (/^\s*>/.test(l)) { flush(); const q = []; while (i < lines.length && /^\s*>/.test(lines[i])) q.push(lines[i++].replace(/^\s*>\s?/, "")); out.push(`<blockquote>${mdHtml(q.join("\n"), o)}</blockquote>`); continue; }

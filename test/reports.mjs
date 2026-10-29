@@ -123,11 +123,31 @@ console.log("SAFE HTML — a report can't put its own HTML or script on the page
   ok("a snake_case name isn't italic", !/<i>/.test(R.mdHtml("set WA_FORWARD_URL and WA_FORWARD_SECRET")));
 }
 
+console.log("TABLES — a wide one stays readable: a 12-column trading table broke 'EURCHF-op' and '71.6%' mid-word (29 Oct 2026)");
+{
+  const md = "| pair | confident calls | 0s late | UTC hours | break-even 82% | payout % |\n|---|---|---|---|---|---|\n"
+    + "| EURCHF-op | 962 | 71.6% (913) | 03-04, 18-23 | 54.95% |  |\n| EURGBP-op | 929 | n/a | 02-05 | 54.95% |  |\n| AUDUSD-op | 809 | n/a | 18-23 | 54.95% |  |";
+  const h = R.mdHtml(md), cols = (h.match(/<th[ >]/g) || []).length;
+  ok("a column of numbers is right-aligned, its header too; text and hour ranges aren't", /<th class="num">confident calls<\/th>/.test(h) && /<td class="num">962<\/td>/.test(h) && /<th class="num">0s late<\/th>/.test(h) && /<td>03-04, 18-23<\/td>/.test(h) && /<th>pair<\/th>/.test(h), h);
+  ok("a \"(n)\" count is its own small, muted part", /71\.6% <span class="rcount">\(913\)<\/span>/.test(h), h);
+  ok("n/a is muted, and an empty cell is a muted dash", /<span class="rnil">n\/a<\/span>/.test(h) && /<span class="rnil" aria-label="empty">—<\/span>/.test(h), h);
+  ok("a column with the same value on every row moves to a line under the table", cols === 5 && !/<th[^>]*>break-even 82%/.test(h) && /<p class="rtsame">Same on every row: break-even 82% <b>54\.95%<\/b><\/p>/.test(h), h);
+  ok("…but an empty column meant to be filled in stays", /<th>payout %<\/th>/.test(h), h);
+  ok("…and a short table keeps all its columns", (R.mdHtml("| a | b | c | d |\n|---|---|---|---|\n| x | 1 | 2 | 3 |\n| y | 1 | 4 | 5 |").match(/<th[ >]/g) || []).length === 4);
+  ok("a long sentence in a cell may wrap (at spaces), a short one doesn't", /<td class="rlong">/.test(R.mdHtml("| a | note |\n|---|---|\n| x | " + "this sentence is long enough to wrap at spaces ".repeat(2) + "|")) && !/rlong/.test(h));
+  ok("a ragged row is filled out to the header's columns", (R.mdHtml("| a | b | c |\n|---|---|---|\n| x |").match(/<td/g) || []).length === 3);
+  const css = readFileSync(join(ROOT, "ui", "style.mjs"), "utf8"), rule = (sel) => (css.match(new RegExp(sel.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\{([^}]*)\\}")) || [])[1] || "";
+  ok("cells never break inside a word or number: nowrap, no break-all; headers wrap at spaces only", /white-space:nowrap/.test(rule(".rdoc th,.rdoc td")) && /word-break:normal/.test(rule(".rdoc th,.rdoc td")) && /overflow-wrap:normal/.test(rule(".rdoc th,.rdoc td")) && !/\.rdoc[^{]*\{[^}]*break-all/.test(css), rule(".rdoc th,.rdoc td"));
+  ok("the table's box scrolls by itself, wider than the prose up to the report's width, header and first column held", /overflow:auto/.test(rule(".rdoc .rtable")) && /width:max-content/.test(rule(".rdoc .rtable")) && /max-width:100cqw/.test(rule(".rdoc .rtable")) && /container-type:inline-size/.test(rule("#reportbody")) && /position:sticky;top:0/.test(rule(".rdoc th")) && /position:sticky;left:0/.test(rule(".rdoc th:first-child,.rdoc td:first-child")), rule(".rdoc .rtable"));
+  ok("numbers in tabular figures, right-aligned", /tabular-nums/.test(rule(".rdoc table")) && /text-align:right/.test(rule(".rdoc th.num,.rdoc td.num")));
+}
+
 console.log("THE BRIEF AND HOME — runs know where to leave one; the user hears there's one");
 {
   const md = buildTasksMd("symbiot", { lanes: ["symbiot"] }, [{ text: "Audit the company folder" }]);
   ok("a repo's TASKS.md says to leave reports in .symbiot/ as .md, read under Reports", /\.symbiot\/.*as a `\.md`/.test(md) && md.includes("under Reports"));
-  ok("…and a run of its own (ops) is told the same", HANDBACK.every((l) => actBrief("Map ~/Company", { lanes: [] }).includes(l)));
+  ok("…and that a value the same on every row goes in the line by the table, not in a column", /same on every row goes in the line above or under it, not in a column/.test(md));
+  ok("…and a run of its own (ops) is told the same",HANDBACK.every((l) => actBrief("Map ~/Company", { lanes: [] }).includes(l)));
   ok("Reports is one of the app's parts (a droplet, or under more)", SHAPES.includes("reports"));
   const stub = { board: () => ({ cards: [] }), pending: () => [], agents: () => [], lanes: () => ({ handoffs: [] }) };
   const h = homeState({ fresh: true, deps: { ...stub, reports: () => ({ count: 2, latest: "COMPANY-AUDIT.md: mistakes" }) } });
