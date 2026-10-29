@@ -1,5 +1,5 @@
 // symbiot — the preview on a question's card: what an agent asks the user to approve, drawn where
-// they approve it. A question "Create Dailify's LinkedIn page as shown?" (29 Oct 2026) held its
+// they approve it. A question "Create the company's LinkedIn page as shown?" (29 Oct 2026) held its
 // pictures, its ten fields and its About text as markdown in the context, and the card showed it as
 // one run-on paragraph with "![cover](…)" in it: "as shown where?". Here the context, kept line by
 // line (agents.mjs parseQuestions), becomes a lead-in, pictures, label → value fields, folded long
@@ -17,7 +17,7 @@ const VID = /\.(?:mp4|mov|webm|m4v)$/i, IMG = /\.(?:png|jpe?g|gif|webp)$/i;
 const MD_IMG = /!\[([^\]]*)\]\(\s*<?([^)\s>]+)>?\s*\)/g;
 // A line that is only pictures: markdown images, bare picture or video paths, and separators.
 const PIC_ONLY = /^(?:\s*(?:!\[[^\]]*\]\([^)]*\)|`?[\w./~-]+\.(?:png|jpe?g|gif|webp|mp4|mov|webm|m4v)`?)\s*[,;·|]?)+\s*$/i;
-// "Name ......... Dailify", "Website: https://…": a short label (at most 3 words), dots or a colon, the value.
+// "Name ......... Acme", "Website: https://…": a short label (at most 3 words), dots or a colon, the value.
 const FIELD = /^(?:[-*+]\s+)?([A-Za-z][\w'&/-]*(?: [\w'&/-]+){0,2})\s*(?:\.{3,}|:(?!\/\/))\s*(.*)$/;
 const ASK_PREVIEW = "Show me the preview on the card: put the pictures and the details in the question itself.";
 const cap = (s) => String(s || "").replace(/^\s*\p{Ll}/u, (c) => c.toUpperCase());
