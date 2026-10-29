@@ -21,7 +21,7 @@ import { readFileSync, realpathSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { judgeChrome, judgeConnector, CONNECTOR_SENDS, seen as seenChrome, openTabs, signInNotNeeded, actAsk, SETTING, PREFIX as CHROME } from "./chromegate.mjs";
 import { judgePush } from "./pushgate.mjs";
-import { holdsMerge, slugOf, folderSlug } from "./design.mjs";
+import { holdsMerge, slugOf, folderSlug, isUiWork } from "./design.mjs";
 import { judgePhone, letGo as phoneLetGo, phoneAsked } from "./phonegate.mjs";
 
 // A read the membrane stops: what to do instead, never "ask the user" (a run handed the user a
@@ -202,7 +202,7 @@ function flagValue(w, short, long) {
 function listOpenPrs(repo, cwd) {
   try { return JSON.parse(execFileSync("gh", ["pr", "list", ...(repo ? ["--repo", repo] : []), "--state", "open", "--limit", "20", "--json", "number,title,headRefName"], { cwd, encoding: "utf8", timeout: 15000, stdio: ["ignore", "pipe", "ignore"] }) || "[]"); } catch { return []; }
 }
-function judgeBash(cmd, { cwd, home, branch, session = "", openPrs = null }) {
+function judgeBash(cmd, { cwd, home, branch, session = "", openPrs = null, prFiles = null }) {
   const c = withoutRemote(String(cmd || ""));
   // the user's phone over adb: an app opened on it waits for their yes, and one run uses it at a time (phonegate.mjs)
   const ph = judgePhone(c, { session, cwd, home }); if (ph) return { ...ph, setting: true };
@@ -234,7 +234,10 @@ function judgeBash(cmd, { cwd, home, branch, session = "", openPrs = null }) {
       const r = w.indexOf("--repo") >= 0 ? w[w.indexOf("--repo") + 1] : w.indexOf("-R") >= 0 ? w[w.indexOf("-R") + 1] : "", url = w.find((x) => /github\.com\/[^/]+\/[^/]+\/pull\//.test(x));
       const slug = r ? unquote(r).toLowerCase() : url ? slugOf(unquote(url).replace(/\/pull\/.*$/, "")) : folderSlug(cwd);
       const held = holdsMerge(slug, { home, branch: prBranch(w.slice(3), r ? unquote(r) : "", cwd) });
-      if (held.length) return { why: `merging waits for Symbiot's design critic: it hasn't passed “${held[0].item.slice(0, 120)}” in this repo yet (what it wants fixed: .symbiot/UI-REVIEW.md in ${held[0].folder}). Fix what it lists and end your run: the critic looks again, and once it passes, merging is open. Don't ask the user to merge it as it is; after two rounds it's their call, and Symbiot asks them itself` };
+      // the critic gates UI: a PR whose files GitHub lists and none is a UI file isn't held (29 Oct 2026: #349, probes.mjs only);
+      // files that can't be listed keep the hold
+      const files = held.length ? (prFiles || listPrFiles)(w.slice(3), r ? unquote(r) : slug, cwd) : null;
+      if (held.length && !(files && files.length && !isUiWork("", files))) return { why: `merging waits for Symbiot's design critic: it hasn't passed “${held[0].item.slice(0, 120)}” in this repo yet (what it wants fixed: .symbiot/UI-REVIEW.md in ${held[0].folder}). Fix what it lists and end your run: the critic looks again, and once it passes, merging is open. Don't ask the user to merge it as it is; after two rounds it's their call, and Symbiot asks them itself` };
     }
     // one open PR per repo: a run opened #346 while #345, the same lane's, was still open (29 Oct 2026)
     if (w[0] === "gh" && w[1] === "pr" && w[2] === "create") {
@@ -287,6 +290,11 @@ function prBranch(args, repo, cwd) {
   if (/^#?\d+$/.test(pos) || /\/pull\/\d+/.test(pos)) return run("gh", ["pr", "view", pos.replace(/^#/, ""), ...(repo ? ["--repo", repo] : []), "--json", "headRefName", "-q", ".headRefName"]);
   return pos;
 }
+// The files a PR changes, as GitHub lists them ([] when it can't be told).
+function listPrFiles(args, repo, cwd) {
+  const pos = args.filter((a, i) => !a.startsWith("-") && !MERGE_VALUE.test(args[i - 1] || "")).map(unquote)[0] || "";
+  try { return String(execFileSync("gh", ["pr", "view", ...(pos ? [pos.replace(/^#/, "")] : []), ...(repo && !/\/pull\//.test(pos) ? ["--repo", repo] : []), "--json", "files", "-q", ".files[].path"], { cwd, encoding: "utf8", timeout: 10000, stdio: ["ignore", "pipe", "ignore"] })).split("\n").filter(Boolean); } catch { return []; }
+}
 function judge(tool, input = {}, opts = {}) {
   const r = refusal(tool, input, opts);
   return r && !r.setting && !r.held && !r.why.includes(NO_SETTING) ? { ...r, why: `${r.why} (${NO_SETTING})` } : r;
@@ -300,7 +308,7 @@ function needlessSignIn(text, home) {
   return { why: `this asks the user to sign in to ${n.host}, but it's signed in: a run's tab was on it signed in ${Math.max(1, Math.round((Date.now() - n.at) / 60000))} min ago and hasn't been on its sign-in page since. Don't ask them to sign in: open it in your own tab in their Chrome (navigate) and carry on, and if something else stops you, ask for what that names. If it lands on its sign-in page there, that's noted, and then the ask can go` };
 }
 const WRITES_TEXT = /(>|\btee\b|\bwrite|\bopen\(|<<|\bsed\s+-i|\breplace\()/; // a shell command that writes, not one that reads QUESTIONS.md
-function refusal(tool, input = {}, { cwd = process.cwd(), home = homedir(), branch, writes = null, session = "", openPrs = null } = {}) {
+function refusal(tool, input = {}, { cwd = process.cwd(), home = homedir(), branch, writes = null, session = "", openPrs = null, prFiles = null } = {}) {
   const t = String(tool || "");
   if (t.startsWith(CHROME)) return judgeChrome(t, input, { session, home }); // the user's own Chrome: acting only where they allow it, sends and payments held for their Go (chromegate.mjs)
   if (CONNECTOR_SENDS.test(t)) return judgeConnector(t, input, { session, home }); // a connector that sends as them (mail, invites, shares): held for their Go too
@@ -309,7 +317,7 @@ function refusal(tool, input = {}, { cwd = process.cwd(), home = homedir(), bran
     try { phoneAsked(dirname(dirname(resolve(cwd, String(input.file_path)))), text, { home }); } catch {} // a phone-go card: the user's, shown at once (phonegate.mjs)
   }
   if (t === "Bash" && /QUESTIONS\.md/.test(String(input.command || "")) && WRITES_TEXT.test(String(input.command || ""))) { const r = needlessSignIn(input.command, home); if (r) return r; try { phoneAsked(cwd, input.command, { home }); } catch {} }
-  if (t === "Bash") return judgeBash(input.command, { cwd, home, session, openPrs, branch: branch != null ? branch : currentBranch(cwd) });
+  if (t === "Bash") return judgeBash(input.command, { cwd, home, session, openPrs, prFiles, branch: branch != null ? branch : currentBranch(cwd) });
   const p = input.file_path || input.path || input.notebook_path;
   if (!p) return null;
   const abs = expand(p, home, cwd);
