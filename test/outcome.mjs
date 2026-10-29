@@ -106,6 +106,12 @@ try {
   put("QUESTIONS.md", "## Questions\n\n### Which plan should the page show?\n- R7 a day\n- R35 a week\n");
   const a = A.answerQuestions(lane, [{ q: "Which plan should the page show?", a: "R7 a day" }]);
   ok("answered: its record is paused, no longer waiting on the user", a.ok && J.runRecord(lane).state === "paused" && J.runRecord(lane).note === "answered", [a, J.runRecord(lane)]);
+
+  console.log("OUTCOME — a read-only run in a plain folder has nothing to approve");
+  const rf = (files) => { writeFileSync(join(lane, ".symbiot", "runfiles.json"), JSON.stringify([{ id: "x", files }])); put("TASKS.md", "- [x] find notebooks\n"); return A.runOutcome(lane, { id: "x", startedAt: 0 }, 0, { final: "", questions: [], waiting: null, needs: null }); };
+  const ro = rf([".symbiot/TASKS.md", ".symbiot/triage.json", ".symbiot/triage.json.bak"]);
+  ok("only Symbiot's own tick and triage files changed: done, not review", ro.state === "done" && !ro.waitingOn, ro);
+  ok("…a real file changed too: still review", rf([".symbiot/TASKS.md", "report.md"]).state === "review");
 } catch (err) { ok("ran", false, String((err && err.stack) || err)); }
 finally { rmSync(HOME, { recursive: true, force: true }); }
 console.log(`\n${fail ? "✗" : "✓"} outcome: ${pass} passed, ${fail} failed`);
