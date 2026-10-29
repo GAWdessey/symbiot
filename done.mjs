@@ -59,14 +59,17 @@ const NOT_OUT = /\b(draft|drafts|drafted|prepare|write up|unsent|don't send|do n
 // a deploy to do, not one an item mentions: steve's size alarm said "deployed" and was reopened for a live
 // check a VM log can't give, and run again (25 Oct 2026)
 const DEPLOY = /\b(deploy|redeploy|go live|put (?:it |them )?live|release to|roll out|ship (?:it )?to (?:prod|production|the server))\b/i;
-const LOOK = /^\s*(?:find out|look into|investigate|check|audit|research|report|explain|why|work out|figure out|list|read|review|summari[sz]e|write (?:a|the) (?:report|summary|note|plan))\b/i;
+// A question or a lookup is answered, not changed: "Read-only: find every Jupyter notebook file" finished with its answer and was
+// reopened "not done yet: the run changed no files" (29 Oct 2026), so find, locate, count, search and the question words are lookups too
+const LOOK = /^\s*(?:(?:agent|now|then|please)\s*:\s*)?(?:read-only\s*:\s*|find(?: out)?|locate|count|search(?: for)?|show|tell|where|what|which|who|when|how (?:many|much|long)|look into|investigate|check|audit|research|report|explain|why|work out|figure out|list|read|review|summari[sz]e|write (?:a|the) (?:report|summary|note|plan))\b/i;
 // In a repo's lane a send is an item that starts by sending: "two older replies still start a learning goal"
 // (Steve) and "sends back 1 line" (gamerepo) are code that mentions replies, and judged as sends they were
 // reopened for a `screens verify` no code change can give, then run again in copy after copy (24 Oct 2026).
 const SEND_LEAD = /^\s*(?:(?:agent|now|then|please)\s*:\s*)?(?:send|email|e-mail|reply|post|publish|message|whatsapp|dm|invite|forward)\b/i;
+const CHANGES = /\b(fix|change|update|add|remove|delete|implement|make|rename|replace|write|patch)\b/i;
 function kindOf(item, { ops = false } = {}) {
   const t = String(item || "");
-  if (LOOK.test(t)) return "look";
+  if (LOOK.test(t) && !(/^\s*(?:(?:agent|now|then|please)\s*:\s*)?(?:find(?! out)|locate|count|search|show|tell)\b/i.test(t) && CHANGES.test(t))) return "look";
   if (DEPLOY.test(t)) return "deploy";
   if ((ops ? SEND : SEND_LEAD).test(t) && !NOT_OUT.test(t)) return "send";
   if (NOT_OUT.test(t)) return "draft";
