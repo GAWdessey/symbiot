@@ -19,6 +19,7 @@ const MD_IMG = /!\[([^\]]*)\]\(\s*<?([^)\s>]+)>?\s*\)/g;
 const PIC_ONLY = /^(?:\s*(?:!\[[^\]]*\]\([^)]*\)|`?[\w./~-]+\.(?:png|jpe?g|gif|webp|mp4|mov|webm|m4v)`?)\s*[,;·|]?)+\s*$/i;
 // "Name ......... Acme", "Website: https://…": a short label (at most 3 words), dots or a colon, the value.
 const FIELD = /^(?:[-*+]\s+)?([A-Za-z][\w'&/-]*(?: [\w'&/-]+){0,2})\s*(?:\.{3,}|:(?!\/\/))\s*(.*)$/;
+const LEADER = /^(?:[-*+]\s+)?[A-Za-z][\w'&/-]*(?: [\w'&/-]+){0,2}\s*\.{3,}/; // a field line with a dotted leader
 const ASK_PREVIEW = "Show me the preview on the card: put the pictures and the details in the question itself.";
 const cap = (s) => String(s || "").replace(/^\s*\p{Ll}/u, (c) => c.toUpperCase());
 // A file path in words the user reads: a backticked path goes, with its brackets if that's all they held.
@@ -119,11 +120,12 @@ function previewOf(path, lines, { q = "", options = [], labels = null, src = nul
       continue;
     }
     if (/^>/.test(l)) { flush(); quote.push(l.replace(/^>\s?/, "")); continue; }
-    // a run of 3 or more field lines (a blank line or a quote may not break it)
+    // a run of field lines (a blank line or a quote may not break it): 3 or more, or any count when every one
+    // has a dotted leader ("Time ...... Fri 12:30"), which no sentence has, as one "Legal name: X" line does
     if (FIELD.test(l)) {
       let j = i; const run = [];
       while (j < L.length) { const t = L[j].trim(), m = t.match(FIELD); if (!t || !m || /^Then$/i.test(m[1])) break; run.push(m); j++; }
-      if (run.length >= 3) {
+      if (run.length >= 3 || run.every((m) => LEADER.test(m[0]))) {
         flush();
         for (const m of run) {
           let value = m[2].trim(), note = "";
