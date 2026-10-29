@@ -275,6 +275,15 @@ const NOT_THEIRS = /\bconnectors?\b|\bclaude\.ai\b/i; // a connector to sign in 
 // though ops had it, and had done it (14 Oct 2026). Unless it says only the user can.
 const LANE_JOB = /\b(?:ops|marketing)(?:['’]s?)?(?: (?:lane|agent|run))? (?:has to|have to|must|needs? to|will|would|is (?:to|going to|doing|on)|does|do(?:es)? it|can|then|loads?|runs?|deploys?|applies|sets?|restarts?|ships?)\b|\b(?:hand(?:ed|ing)?|passed|sent|gave|given|went) (?:it |this |that |the [\w-]+ )?(?:over |back )?to (?:the )?(?:ops|marketing|[\w-]+(?:['’]s)? (?:lane|agent))\b|\b(?:this|my|our|the [\w-]+) lane can(?:['’]t|not) (?:reach|do|get to|touch)\b|\b(?:another|other|ops['’]?s?) lane\b|\bops['’]s? (?:job|work|side)\b|\b(?:still |now )?with (?:the )?(?:ops|marketing|[\w-]+)(?:['’]s)? (?:lane|agent)\b/i;
 const lanesJob = (t) => LANE_JOB.test(String(t || "")) && !/\bonly you\b/i.test(String(t || ""));
+// A message or a job the user is to carry from one agent to another: "What you do: tell the PC session,
+// 'Read and do … on the VM.'" (an trading bot's run, 29 Oct 2026). Agents talk to each other through a
+// handover (HANDOFF.md), never through the user. Not "tell the agent what you found": that's this card's own agent.
+const PEER = String.raw`(?:session|chat|claude(?: code)?|terminal|instance|window|tab|agent|lane|run)s?`;
+const CARRIES = new RegExp(String.raw`\b(?:tell|ask|instruct|message|ping|remind)\s+(?:the|your|that|my|our|other|another)\s+(?:[\w.-]+\s+){0,3}?${PEER}\b|` +
+  String.raw`\b(?:paste|copy|forward|pass|relay|send|give|hand|take)\b[^.!?\n]{0,80}?\b(?:in(?:to)?|to|on to|over to|across to)\s+(?:the|your|that|my|another|other)\s+(?:[\w.-]+\s+){0,3}?${PEER}\b|` +
+  String.raw`\b(?:relay|carry|pass)\w*\b[^.!?\n]{0,40}\bbetween\b[^.!?\n]{0,30}\b${PEER}\b`, "i");
+const SELF_PEER = /\b(?:the|your)\s+(?:agent|chat|run)$/i;
+const carriesJob = (t) => { const m = CARRIES.exec(String(t || "")); return !!m && !SELF_PEER.test(m[0]); };
 const SENDS = /draft|reply|email|mail|message|post/i;
 // "when / if / once / until …" before it: it says how something behaves, not that
 // something waits on the user now ("It's lit amber when something needs you: … work
@@ -362,4 +371,4 @@ function parseHandoffs(md) {
   return out.map((h) => ({ lane: h.lane, text: h.text.trim().slice(0, HANDOVER_MAX) })).filter((h) => h.lane && h.text);
 }
 
-export { dangles, askedAlready, lanesJob, agentsMail, mailWork, OPS, MARKETING, HANDOVER_MAX, handoverRules, CLI_LOGIN, ONLY_YOU, HANDBACK, gitWork, agentsGitWork, agentsClicking, agentsCodeWork, heldAsks, sitesOf, PUSH_OK, postsOnLinked, agentsPosting, APPROVE_FIRST, linkedAsks, linkedChore, parseFacts, parseAwaiting, parseHandoffs, leftToYou, commandish, blockedChecks, blockedHandover };
+export { dangles, askedAlready, lanesJob, carriesJob, agentsMail, mailWork, OPS, MARKETING, HANDOVER_MAX, handoverRules, CLI_LOGIN, ONLY_YOU, HANDBACK, gitWork, agentsGitWork, agentsClicking, agentsCodeWork, heldAsks, sitesOf, PUSH_OK, postsOnLinked, agentsPosting, APPROVE_FIRST, linkedAsks, linkedChore, parseFacts, parseAwaiting, parseHandoffs, leftToYou, commandish, blockedChecks, blockedHandover };

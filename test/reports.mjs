@@ -130,7 +130,8 @@ console.log("TABLES — a wide one stays readable: a 12-column trading table bro
   const h = R.mdHtml(md), cols = (h.match(/<th[ >]/g) || []).length;
   ok("a column of numbers is right-aligned, its header too; text and hour ranges aren't", /<th class="num">confident calls<\/th>/.test(h) && /<td class="num">962<\/td>/.test(h) && /<th class="num">0s late<\/th>/.test(h) && /<td>03-04, 18-23<\/td>/.test(h) && /<th>pair<\/th>/.test(h), h);
   ok("a \"(n)\" count is its own small, muted part", /71\.6% <span class="rcount">\(913\)<\/span>/.test(h), h);
-  ok("n/a is muted, and an empty cell is a muted dash", /<span class="rnil">n\/a<\/span>/.test(h) && /<span class="rnil" aria-label="empty">—<\/span>/.test(h), h);
+  ok("n/a is muted, and an empty cell is a muted dash", /<span class="rnil">n\/a<\/span>/.test(h) && /<span class="rnil" aria-hidden="true">—<\/span><span class="rsr">empty<\/span>/.test(h) && !/aria-label="empty"/.test(h), h);
+  ok("the table's box is a named region a keyboard can reach: its columns name it, or the heading over it", /<div class="rtable" tabindex="0" role="region" aria-label="Table: pair, confident calls, 0s late, UTC hours">/.test(h) && /<div class="rtable" tabindex="0" role="region" aria-label="2-minute expiry">/.test(R.mdHtml("## 2-minute **expiry**\n\nIntro.\n\n" + md)), h);
   ok("a column with the same value on every row moves to a line under the table", cols === 5 && !/<th[^>]*>break-even 82%/.test(h) && /<p class="rtsame">Same on every row: break-even 82% <b>54\.95%<\/b><\/p>/.test(h), h);
   ok("…but an empty column meant to be filled in stays", /<th>payout %<\/th>/.test(h), h);
   ok("…and a short table keeps all its columns", (R.mdHtml("| a | b | c | d |\n|---|---|---|---|\n| x | 1 | 2 | 3 |\n| y | 1 | 4 | 5 |").match(/<th[ >]/g) || []).length === 4);
@@ -139,6 +140,8 @@ console.log("TABLES — a wide one stays readable: a 12-column trading table bro
   const css = readFileSync(join(ROOT, "ui", "style.mjs"), "utf8"), rule = (sel) => (css.match(new RegExp(sel.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\{([^}]*)\\}")) || [])[1] || "";
   ok("cells never break inside a word or number: nowrap, no break-all; headers wrap at spaces only", /white-space:nowrap/.test(rule(".rdoc th,.rdoc td")) && /word-break:normal/.test(rule(".rdoc th,.rdoc td")) && /overflow-wrap:normal/.test(rule(".rdoc th,.rdoc td")) && !/\.rdoc[^{]*\{[^}]*break-all/.test(css), rule(".rdoc th,.rdoc td"));
   ok("the table's box scrolls by itself, wider than the prose up to the report's width, header and first column held", /overflow:auto/.test(rule(".rdoc .rtable")) && /width:max-content/.test(rule(".rdoc .rtable")) && /max-width:100cqw/.test(rule(".rdoc .rtable")) && /container-type:inline-size/.test(rule("#reportbody")) && /position:sticky;top:0/.test(rule(".rdoc th")) && /position:sticky;left:0/.test(rule(".rdoc th:first-child,.rdoc td:first-child")), rule(".rdoc .rtable"));
+  ok("a tall table's box fits under the \"All reports\" bar, so its header row always shows", /max-height:max\(240px,calc\(100dvh - 300px\)\)/.test(rule(".rdoc .rtable")) && /scroll-margin-top:112px/.test(rule(".rdoc .rtable")) && !/75vh/.test(rule(".rdoc .rtable")), rule(".rdoc .rtable"));
+  ok("the box shows a focus ring, and screen-reader-only text is hidden from sight", /outline:2px solid/.test(rule(".rdoc .rtable:focus-visible")) && /clip:rect\(0 0 0 0\)/.test(rule(".rdoc .rsr")));
   ok("numbers in tabular figures, right-aligned", /tabular-nums/.test(rule(".rdoc table")) && /text-align:right/.test(rule(".rdoc th.num,.rdoc td.num")));
 }
 
