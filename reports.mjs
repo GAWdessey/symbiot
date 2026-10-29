@@ -4,7 +4,9 @@
 // this, the only way to read one was to find the file by hand.
 //
 // - Where: the .symbiot/ of every folder runs work in (your repos, and the runs
-//   of their own under ~/.config/symbiot/drafts: handback.mjs runFolders).
+//   of their own under ~/.config/symbiot/drafts: handback.mjs runFolders), and
+//   ~/.config/symbiot/reports itself, where a run with no lane may leave one: a
+//   read-only run wrote its list there and Reports said "Nothing here" (29 Oct 2026).
 // - What counts: any .md there except the files Symbiot and the run talk through
 //   (TASKS, QUESTIONS, ANSWERS, HANDOFF, SKIPPED, CARRYON) and the briefs handed in
 //   (BRIEF*.md). Its title is its first `# ` heading, else the file name.
@@ -22,10 +24,14 @@ import { createHash } from "node:crypto";
 import { CONFIG_DIR, isFinding, readState, writeJsonAtomic, loadTasks, sameTask } from "./core.mjs";
 import { runFolders, laneOf, runTitle } from "./handback.mjs";
 import { runningHandoff } from "./agents.mjs";
+import { OPS } from "./handover.mjs";
 import { laneMap } from "./scan.mjs";
 import { MARKETING_DIR, draftFiles, draftStatuses, draftPreview, parseDraft, inLane } from "./marketing.mjs";
 
 const SEEN_FILE = join(CONFIG_DIR, "reports.json");
+const REPORTS_DIR = join(CONFIG_DIR, "reports"); // reports straight in it, no .symbiot/ under it
+const reportDir = (folder) => (folder === REPORTS_DIR ? folder : join(folder, ".symbiot"));
+const allFolders = (map) => [...runFolders(map), REPORTS_DIR];
 const NOT_REPORTS = /^(?:TASKS(?:\.[\w-]+)?|QUESTIONS|ANSWERS(?:\.archive)?|HANDOFF|SKIPPED|CLAUDE|AGENTS|CARRYON)\.md$|^BRIEF/i; // TASKS.next.md too: the tasks held for after a run; CARRYON.md is a run's note to the next (agents.mjs carryOn), and crowded out the reports (21 Oct 2026)
 const MAX_READ = 512 * 1024, MAX_LIST = 200;
 const WRITING_FOR = 15 * 60 * 1000; // a run is "still writing" a report only if the file changed in the last 15 minutes
@@ -79,11 +85,11 @@ function titleOf(text, name) {
 // run, size, mtime, new, running }]. `folders`, `running` and `seen` can be given
 // (the tests do).
 function listReports({ map, folders, running = runningHandoff, seen } = {}) {
-  if (!folders) { map = map || laneMap(); folders = runFolders(map); }
+  if (!folders) { map = map || laneMap(); folders = allFolders(map); }
   const d = seen ? { seen: obj(seen.seen), read: obj(seen.read) } : loadSeen(), out = [];
   for (const folder of folders) {
-    const groups = new Map();
-    const dir = join(folder, ".symbiot");
+    const groups = new Map(), loose = folder === REPORTS_DIR;
+    const dir = reportDir(folder);
     let names = []; try { names = readdirSync(dir).filter((f) => /\.md$/i.test(f) && !NOT_REPORTS.test(plainName(f))); } catch { continue; } // CARRYON-<run id>.md is no report either
     for (const name of names) {
       const file = join(dir, name);
@@ -95,7 +101,7 @@ function listReports({ map, folders, running = runningHandoff, seen } = {}) {
     }
     for (const [base, g] of groups) {
       const c = g.sort((a, b) => b.mtime - a.mtime || (a.name === base ? -1 : b.name === base ? 1 : 0))[0], id = idOf(join(dir, base));
-      const r = { id, title: titleOf(c.head, base), name: c.name, file: c.file, folder, lane: map ? laneOf(folder, map) : basename(folder), run: runTitle(folder), size: c.size, mtime: c.mtime, sig: c.sig, ...(g.length > 1 || c.name !== base ? { copies: g.map(({ id, name, file, mtime, sig }) => ({ id, name, file, mtime, sig })) } : {}), running: Date.now() - c.mtime < WRITING_FOR && !!running(folder), source: sourceOf(folder) };
+      const r = { id, title: titleOf(c.head, base), name: c.name, file: c.file, folder, lane: loose ? OPS : map ? laneOf(folder, map) : basename(folder), run: loose ? "Symbiot" : runTitle(folder), size: c.size, mtime: c.mtime, sig: c.sig, ...(g.length > 1 || c.name !== base ? { copies: g.map(({ id, name, file, mtime, sig }) => ({ id, name, file, mtime, sig })) } : {}), running: Date.now() - c.mtime < WRITING_FOR && !!running(folder), source: sourceOf(folder) };
       r.new = !isRead(r, d); out.push(r);
     }
   }
@@ -454,14 +460,14 @@ function jobDone(r, tasks) {
 // can be a file Symbiot reads (CARRYON.md, PROOF.md, which the phone offers to send). A copy that says something else
 // stays: it's listed as the report's newest. Returns { removed: [file] }.
 function collapseCopies({ folders, seenFile = SEEN_FILE, dry = false } = {}) {
-  if (!folders) folders = runFolders(laneMap());
+  if (!folders) folders = allFolders(laneMap());
   const d = loadSeen(seenFile), out = { removed: [] }, now = Date.now();
   const carry = (c) => { // its records, findable by what it says
     for (const t of [d.decided, d.handed]) { const x = t[c.id]; if (x && x.mtime === c.mtime && !x.sig) x.sig = c.sig; }
     if (d.seen[c.id] === c.mtime) d.read[c.sig] = d.read[c.sig] || now;
   };
   for (const folder of folders) {
-    const dir = join(folder, ".symbiot"), groups = new Map();
+    const dir = reportDir(folder), groups = new Map();
     let names = []; try { names = readdirSync(dir).filter((f) => /\.md$/i.test(f) && !NOT_REPORTS.test(plainName(f))); } catch { continue; }
     for (const name of names) {
       const file = join(dir, name); let st, text; try { st = statSync(file); if (!st.isFile()) continue; text = readFileSync(file, "utf8"); } catch { continue; }
@@ -486,7 +492,26 @@ function collapseCopies({ folders, seenFile = SEEN_FILE, dry = false } = {}) {
   return out;
 }
 
+// What a text says is on Reports, checked against the list now: a run's last words said "on the Reports page as
+// JUPYTER-NOTEBOOKS-2026-10-29.md", the chat passed that on, and Reports said "Nothing here" (29 Oct 2026). Each
+// report it names (NAME.md, or "on Reports as NAME") in a sentence that mentions Reports: { name, on, title, new, file }.
+// [] when it names none. `list` can be given (the tests do).
+const CLAIM_NAME = /(?:^|[\s`'"(\/])([A-Z0-9][\w.-]*?\.md)\b|\bReports(?: page)?,? (?:as|under|called|named) [`'"\u201c]?([A-Z0-9][A-Z0-9_-]{5,})/g;
+function reportClaims(text, { list } = {}) {
+  const t = String(text || ""); if (!/\bReports\b/.test(t)) return [];
+  const names = new Set(); // only in a sentence that says Reports: "I updated README.md" elsewhere claims nothing
+  for (const s of t.split(/(?<=[.!?])\s+|\n+/)) if (/\bReports\b/.test(s)) for (const m of s.matchAll(CLAIM_NAME)) { const n = basename(m[1] || m[2] + ".md"); if (!NOT_REPORTS.test(plainName(n))) names.add(n); }
+  if (!names.size) return [];
+  list = list || listReports();
+  return [...names].slice(0, 6).map((name) => {
+    const r = list.find((x) => x.name === name || plainName(x.name) === plainName(name) || (x.copies || []).some((c) => c.name === name));
+    return r ? { name, on: true, title: r.title, new: !!r.new, file: r.file } : { name, on: false };
+  });
+}
+// The same as words: one line each, for the chat's context and under a run's last words.
+const claimLines = (claims) => claims.map((c) => (c.on ? `${c.name} is on Reports${c.new ? ", unread" : ""}: "${c.title}"` : `${c.name} is NOT on Reports: Symbiot can't find it there, so don't say it is`));
+
 // How many reports are new, and the newest one's title (Home's droplet).
 function reportsNews(opts) { const l = listReports(opts).filter((r) => r.new); return { count: l.length, latest: l[0] ? l[0].title : "" }; }
 
-export { draftCardsIn, supersededIdeas, sweepSuperseded, supersedeContext, SEEN_FILE, NOT_REPORTS, titleOf, listReports, readReport, phoneReports, phoneReport, reportImage, imagePath, markAllRead, reportsNews, mdHtml, reportIdeas, isDraftReport, decidedOn, decide, withNeeds, phoneReportNeedsText, IDEAS_MAX, handledIdeas, openIdeas, markIdeas, collapseCopies, pastDated, plainName };
+export { reportClaims, claimLines, REPORTS_DIR, draftCardsIn, supersededIdeas, sweepSuperseded, supersedeContext, SEEN_FILE, NOT_REPORTS, titleOf, listReports, readReport, phoneReports, phoneReport, reportImage, imagePath, markAllRead, reportsNews, mdHtml, reportIdeas, isDraftReport, decidedOn, decide, withNeeds, phoneReportNeedsText, IDEAS_MAX, handledIdeas, openIdeas, markIdeas, collapseCopies, pastDated, plainName };

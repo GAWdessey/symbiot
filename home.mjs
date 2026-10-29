@@ -40,7 +40,7 @@ import { moneyNote, splitNeeds, applyText, loadCardText, blankAsk, blankText } f
 import { converse, actIn, actNow, taskIn, loadMind, dayMark } from "./mind.mjs";
 import { repoPathMap, laneMap, reposState, scanRoots } from "./scan.mjs";
 import { resolveProvider, PROVIDERS, claudeState } from "./ai.mjs";
-import { reportsNews, listReports, readReport, decide, markIdeas, sweepSuperseded, phoneReports } from "./reports.mjs";
+import { reportsNews, listReports, readReport, decide, markIdeas, sweepSuperseded, phoneReports, reportClaims, claimLines } from "./reports.mjs";
 import { awaitingState, inboxSight } from "./handback.mjs";
 import { newClashes } from "./checks.mjs";
 import { postsState } from "./post.mjs";
@@ -971,7 +971,9 @@ async function homeAsk(question, { ask, now = Date.now(), state, images = [], ac
   let open = []; try { open = loadTasks().filter((t) => t && !t.done && !t.archived && !t.review).map((t) => ({ id: t.id, text: t.text, repo: t.repo })); } catch {}
   // a PR named anywhere in what they see or ask is checked on GitHub now, so no run's old words decide whether it merged (28 Oct 2026)
   const ctx = homeContext(h); let live = []; try { live = await prFacts(`${ctx}\n${question}`, { lanes: map }); } catch {}
-  const r = await converse({ where: "Home", role, nav: true, settle: true, control: true, tasks: open, context: ctx + (live.length ? `\nPull requests checked on GitHub just now (the only source for whether a PR is open, merged or closed; they override anything an agent said):\n${live.map((x) => "- " + x).join("\n")}` : ""), question: question + (pics.length ? `\n(The user attached ${pics.length} screenshot${pics.length > 1 ? "s" : ""}: you can see ${pics.length > 1 ? "them" : "it"}.)` : ""), map, now, images: pics.map(({ mime, data, path }) => ({ mime, data, path })), ...(ask ? { ask } : {}),
+  // …and so is a report anything says is on Reports: a run said one was, the chat passed it on, and Reports said "Nothing here" (29 Oct 2026)
+  let reps = []; try { reps = claimLines(reportClaims(`${ctx}\n${question}`)); } catch {}
+  const r = await converse({ where: "Home", role, nav: true, settle: true, control: true, tasks: open, context: ctx + (live.length ? `\nPull requests checked on GitHub just now (the only source for whether a PR is open, merged or closed; they override anything an agent said):\n${live.map((x) => "- " + x).join("\n")}` : "") + (reps.length ? `\nReports checked just now (the only source for whether a report is on the Reports page; they override anything an agent said. Say one is there only when this says so; otherwise say it isn't, and where the file is if you know):\n${reps.map((x) => "- " + x).join("\n")}` : ""), question: question + (pics.length ? `\n(The user attached ${pics.length} screenshot${pics.length > 1 ? "s" : ""}: you can see ${pics.length > 1 ? "them" : "it"}.)` : ""), map, now, images: pics.map(({ mime, data, path }) => ({ mime, data, path })), ...(ask ? { ask } : {}),
     act: {
       agent: (req, known, repo, said, kind) => { const d = repo ? actIn(req + shotNote, repo, { map, known, title: "Home", said, kind }) : actNow(req + shotNote, { title: "Home", known }); noteHanded(d, req); return d; },
       task: (text, repo) => { const d = taskIn(text + shotNote, repo, { map }); noteHanded(d, text); return d; },
@@ -1279,7 +1281,8 @@ function workSceneNow({ deps = {}, full = false } = {}) {
       // Agent runs is one card for many jobs: its now line names the job at work, and how many more are,
       // or it read a bare "Working" over another run's last words (27 Oct 2026)
       if (a.status === "running" && !p.now) p.now = l === RUNS_LANE ? runsNow(a, nowLine(t, a.startedAt ? now - a.startedAt : a.elapsed || 0, p.name), p.runs) : nowLine(t, a.startedAt ? now - a.startedAt : a.elapsed || 0, p.name);
-      const line = a.status === "running" ? "" : plain(plainSummary(String(o && o.summary ? o.summary : t).split(/\n\s*\n/)[0], p.name), 900);
+      const said = a.status === "running" ? "" : plain(plainSummary(String(o && o.summary ? o.summary : t).split(/\n\s*\n/)[0], p.name), 900);
+      const line = said && (w.unlisted || []).length ? `${said} (Symbiot checked: ${w.unlisted.join(", ")} ${w.unlisted.length > 1 ? "aren't" : "isn't"} on Reports.)` : said; // a run said it was, and it wasn't (29 Oct 2026)
       const st = a.status === "running" ? "at work" : o ? (o.state === "waiting" ? (o.waitingOn === "user" && qs.length ? "asks you" : `waiting on ${who || "something"}`) : o.state === "failed" ? "failed" : o.state === "paused" ? "paused" : "done") : qs.length ? "asks you" : a.progress && a.progress.waiting && a.progress.done + a.progress.waiting === a.progress.total ? "waiting on something" : "done"; // no record: nothing open, and what's left is marked [~]
       if (line) lineOf[a.path] = { line, state: st };
       // a lane with a run at work shows what it's doing now, never an ended run's last words under its

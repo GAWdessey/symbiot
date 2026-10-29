@@ -89,6 +89,10 @@ try {
   const wo = workOf(repo, "\n=== r " + ts(0) + " ===\n$ claude -p …\n" + running);
   ok("its work, how far through TASKS.md it is, and readable text instead of JSON", wo.work && wo.work.doing === "Adding a test" && wo.progress.done === 1 && wo.progress.total === 3 && !/\{"type"/.test(wo.tail), [wo.progress, wo.tail.slice(0, 80)]);
   ok("another agent: no work view, the log's end as before", workOf(repo, "\n=== r x ===\n$ codex\nhello").work === null && /hello/.test(workOf(repo, "\n=== r x ===\n$ codex\nhello").tail), "");
+  await import("../reports.mjs"); await new Promise((r) => setTimeout(r, 0)); // agents.mjs loads it lazily
+  const said = (t) => workOf(repo, "\n=== r " + ts(0) + " ===\n$ claude -p …\n" + running + "\n" + JSON.stringify({ type: "result", result: t })).work;
+  ok("a run's last words saying a report is on Reports that isn't: the card says so (29 Oct 2026)", JSON.stringify(said("Found 17. The report is on the Reports page as `NOT-WRITTEN-2026-10-29.md`.").unlisted) === '["NOT-WRITTEN-2026-10-29.md"]', said("Found 17. The report is on the Reports page as `NOT-WRITTEN-2026-10-29.md`."));
+  ok("…and nothing when it names none", !("unlisted" in said("Fixed it and added a test.")));
   writeFileSync(join(repo, ".symbiot", "TASKS.md"), "## Tasks\n- [x] one\n- [~] read the delivered count (waits on: ops reading the report)\n");
   const ww = workOf(repo, "\n=== r " + ts(0) + " ===\n$ claude -p …\n" + running);
   ok("a [~] item waits: counted, neither done nor open, and what it waits on is kept", ww.progress.done === 1 && ww.progress.total === 2 && ww.progress.waiting === 1 && /waits on: ops/.test(ww.progress.on), ww.progress);

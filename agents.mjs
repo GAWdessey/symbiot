@@ -2766,12 +2766,17 @@ const firstOpen = (md) => { const l = String(md || "").split("\n").find((x) => /
 // finished while the run's own last words said the 16 Oct delivered count was still unread (21 Oct 2026).
 const WAITING_TASK = /^\s*-\s*\[~\]\s*/;
 const firstWaiting = (md) => { const l = String(md || "").split("\n").find((x) => WAITING_TASK.test(x)); return l ? l.replace(WAITING_TASK, "").trim() : ""; };
+// The reports a run's last words say are on Reports that aren't: { unlisted: [names] }, or {} (reports.mjs reportClaims).
+// Its words stay as it said them; what shows them says it (home.mjs, ui/js/agents.mjs), 29 Oct 2026.
+// reports.mjs imports this file, so it's loaded once both are (statically, tasks.mjs met itself half-loaded).
+let REPORTS = null; import("./reports.mjs").then((m) => { REPORTS = m; }, () => {});
+function unlistedIn(final) { if (!REPORTS || !/\bReports\b/.test(String(final || ""))) return {}; let c = []; try { c = REPORTS.reportClaims(final); } catch {} const u = c.filter((x) => !x.on).map((x) => x.name); return u.length ? { unlisted: u } : {}; }
 function workOf(path, log) {
   const w = parseRun(lastRunText(log)), md = readSymbiot(path, "TASKS.md");
   const done = (md.match(/^\s*-\s*\[x\]/gim) || []).length, waiting = (md.match(/^\s*-\s*\[~\]/gm) || []).length, total = done + waiting + (md.match(/^\s*-\s*\[ \]/gm) || []).length;
   const tail = w.stream ? (w.final || w.said.join("\n\n") || (w.doing ? w.doing + "…" : "")) : String(log).slice(-1200);
   const plan = w.stream ? briefPlan(md) : [], line = w.stream && !w.final ? runLine({ plan, step: stepOf(plan, w.talk), work: w }) : null;
-  const work = w.stream ? { model: w.model, doing: w.doing, moved: w.moved, looping: w.looping, steps: w.steps.slice(-16), todos: w.todos, cost: w.cost, turns: w.turns, tokens: w.tokens, ctx: w.ctx, tests: w.tests, files: w.files, pace: w.pace, errors: w.errors, final: w.final.slice(0, 1200), restOn: waitingOn(w.final), count: w.steps.length } : null;
+  const work = w.stream ? { model: w.model, doing: w.doing, moved: w.moved, looping: w.looping, steps: w.steps.slice(-16), todos: w.todos, cost: w.cost, turns: w.turns, tokens: w.tokens, ctx: w.ctx, tests: w.tests, files: w.files, pace: w.pace, errors: w.errors, final: w.final.slice(0, 1200), restOn: waitingOn(w.final), count: w.steps.length, ...unlistedIn(w.final) } : null;
   // its kind (a brief, or answers) from its command line, and the task it's on: what estimate.mjs compares it with
   if (line) { const c = String(log || "").slice(String(log || "").lastIndexOf("\n=== ")).split("\n")[2] || ""; line.kind = kindOf(c); line.task = firstOpen(md).slice(0, 200); }
   return { tail, work, progress: total ? { done, total, ...(waiting ? { waiting, on: firstWaiting(md).slice(0, 200) } : {}) } : null, ...(line ? { line } : {}) };
