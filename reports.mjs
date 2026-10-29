@@ -5,8 +5,9 @@
 //
 // - Where: the .symbiot/ of every folder runs work in (your repos, and the runs
 //   of their own under ~/.config/symbiot/drafts: handback.mjs runFolders), and
-//   ~/.config/symbiot/reports itself, where a run with no lane may leave one: a
-//   read-only run wrote its list there and Reports said "Nothing here" (29 Oct 2026).
+//   ~/.config/symbiot/reports itself (REPORTS_DIR), where an agent outside a lane
+//   left its report (JUPYTER-NOTEBOOKS-2026-10-29.md) and Reports read "Unread · 0"
+//   while the chat said it was there (29 Oct 2026).
 // - What counts: any .md there except the files Symbiot and the run talk through
 //   (TASKS, QUESTIONS, ANSWERS, HANDOFF, SKIPPED, CARRYON) and the briefs handed in
 //   (BRIEF*.md). Its title is its first `# ` heading, else the file name.
@@ -23,15 +24,13 @@ import { readFileSync, readdirSync, statSync, realpathSync, existsSync, unlinkSy
 import { createHash } from "node:crypto";
 import { CONFIG_DIR, isFinding, readState, writeJsonAtomic, loadTasks, sameTask } from "./core.mjs";
 import { runFolders, laneOf, runTitle } from "./handback.mjs";
-import { runningHandoff } from "./agents.mjs";
 import { OPS } from "./handover.mjs";
+import { runningHandoff } from "./agents.mjs";
 import { laneMap } from "./scan.mjs";
 import { MARKETING_DIR, draftFiles, draftStatuses, draftPreview, parseDraft, inLane } from "./marketing.mjs";
 
 const SEEN_FILE = join(CONFIG_DIR, "reports.json");
-const REPORTS_DIR = join(CONFIG_DIR, "reports"); // reports straight in it, no .symbiot/ under it
-const reportDir = (folder) => (folder === REPORTS_DIR ? folder : join(folder, ".symbiot"));
-const allFolders = (map) => [...runFolders(map), REPORTS_DIR];
+const REPORTS_DIR = join(CONFIG_DIR, "reports"); // reports of their own: every .md in it is one, under ops (no lane)
 const NOT_REPORTS = /^(?:TASKS(?:\.[\w-]+)?|QUESTIONS|ANSWERS(?:\.archive)?|HANDOFF|SKIPPED|CLAUDE|AGENTS|CARRYON)\.md$|^BRIEF/i; // TASKS.next.md too: the tasks held for after a run; CARRYON.md is a run's note to the next (agents.mjs carryOn), and crowded out the reports (21 Oct 2026)
 const MAX_READ = 512 * 1024, MAX_LIST = 200;
 const WRITING_FOR = 15 * 60 * 1000; // a run is "still writing" a report only if the file changed in the last 15 minutes
@@ -84,12 +83,15 @@ function titleOf(text, name) {
 // Every report runs left, newest first: [{ id, title, name, file, folder, lane,
 // run, size, mtime, new, running }]. `folders`, `running` and `seen` can be given
 // (the tests do).
-function listReports({ map, folders, running = runningHandoff, seen } = {}) {
-  if (!folders) { map = map || laneMap(); folders = allFolders(map); }
+// `loose`: folders whose .md files are reports themselves (no .symbiot/ in between):
+// REPORTS_DIR, unless `folders` is given.
+function listReports({ map, folders, loose, running = runningHandoff, seen } = {}) {
+  if (!loose) loose = folders ? [] : [REPORTS_DIR];
+  if (!folders) { map = map || laneMap(); folders = runFolders(map); }
   const d = seen ? { seen: obj(seen.seen), read: obj(seen.read) } : loadSeen(), out = [];
-  for (const folder of folders) {
-    const groups = new Map(), loose = folder === REPORTS_DIR;
-    const dir = reportDir(folder);
+  for (const [folder, own] of [...folders.map((f) => [f, false]), ...loose.map((f) => [f, true])]) {
+    const groups = new Map();
+    const dir = own ? folder : join(folder, ".symbiot");
     let names = []; try { names = readdirSync(dir).filter((f) => /\.md$/i.test(f) && !NOT_REPORTS.test(plainName(f))); } catch { continue; } // CARRYON-<run id>.md is no report either
     for (const name of names) {
       const file = join(dir, name);
@@ -101,7 +103,7 @@ function listReports({ map, folders, running = runningHandoff, seen } = {}) {
     }
     for (const [base, g] of groups) {
       const c = g.sort((a, b) => b.mtime - a.mtime || (a.name === base ? -1 : b.name === base ? 1 : 0))[0], id = idOf(join(dir, base));
-      const r = { id, title: titleOf(c.head, base), name: c.name, file: c.file, folder, lane: loose ? OPS : map ? laneOf(folder, map) : basename(folder), run: loose ? "Symbiot" : runTitle(folder), size: c.size, mtime: c.mtime, sig: c.sig, ...(g.length > 1 || c.name !== base ? { copies: g.map(({ id, name, file, mtime, sig }) => ({ id, name, file, mtime, sig })) } : {}), running: Date.now() - c.mtime < WRITING_FOR && !!running(folder), source: sourceOf(folder) };
+      const r = { id, title: titleOf(c.head, base), name: c.name, file: c.file, folder, lane: own ? OPS : map ? laneOf(folder, map) : basename(folder), run: own ? OPS : runTitle(folder), size: c.size, mtime: c.mtime, sig: c.sig, ...(g.length > 1 || c.name !== base ? { copies: g.map(({ id, name, file, mtime, sig }) => ({ id, name, file, mtime, sig })) } : {}), running: !own && Date.now() - c.mtime < WRITING_FOR && !!running(folder), source: own ? "" : sourceOf(folder) };
       r.new = !isRead(r, d); out.push(r);
     }
   }
@@ -460,14 +462,14 @@ function jobDone(r, tasks) {
 // can be a file Symbiot reads (CARRYON.md, PROOF.md, which the phone offers to send). A copy that says something else
 // stays: it's listed as the report's newest. Returns { removed: [file] }.
 function collapseCopies({ folders, seenFile = SEEN_FILE, dry = false } = {}) {
-  if (!folders) folders = allFolders(laneMap());
+  if (!folders) folders = runFolders(laneMap());
   const d = loadSeen(seenFile), out = { removed: [] }, now = Date.now();
   const carry = (c) => { // its records, findable by what it says
     for (const t of [d.decided, d.handed]) { const x = t[c.id]; if (x && x.mtime === c.mtime && !x.sig) x.sig = c.sig; }
     if (d.seen[c.id] === c.mtime) d.read[c.sig] = d.read[c.sig] || now;
   };
   for (const folder of folders) {
-    const dir = reportDir(folder), groups = new Map();
+    const dir = join(folder, ".symbiot"), groups = new Map();
     let names = []; try { names = readdirSync(dir).filter((f) => /\.md$/i.test(f) && !NOT_REPORTS.test(plainName(f))); } catch { continue; }
     for (const name of names) {
       const file = join(dir, name); let st, text; try { st = statSync(file); if (!st.isFile()) continue; text = readFileSync(file, "utf8"); } catch { continue; }

@@ -52,6 +52,22 @@ console.log("REPORTS — what runs left in their .symbiot/");
   ok("a run still writing is marked", R.listReports({ map, folders, running: (p) => p === run })[0].running === true);
 }
 
+console.log("REPORTS OF THEIR OWN — ~/.config/symbiot/reports is listed too");
+{
+  // a read-only agent outside a lane left JUPYTER-NOTEBOOKS-2026-10-29.md there, and Reports read "Unread · 0" (29 Oct 2026)
+  ok("it's Symbiot's own reports folder", R.REPORTS_DIR === join(CFG, "reports"), R.REPORTS_DIR);
+  const own = join(HOME, "own-reports"); mkdirSync(own, { recursive: true });
+  writeFileSync(join(own, "JUPYTER-NOTEBOOKS-2026-10-29.md"), "# Jupyter notebooks on this computer\n\n17 found.\n");
+  writeFileSync(join(own, "TASKS.md"), "# not a report\n");
+  const l = R.listReports({ map, folders, loose: [own], running: none }), j = l.find((r) => r.name === "JUPYTER-NOTEBOOKS-2026-10-29.md");
+  ok("a .md in it is a report, newest first, and unread", !!j && l[0] === j && j.new && j.title === "Jupyter notebooks on this computer", l.map((r) => r.name));
+  ok("…under ops, as a run of its own is, never 'still writing'", j && j.lane === "ops" && j.running === false, j);
+  ok("…and not what Symbiot talks through", !l.some((r) => r.folder === own && r.name === "TASKS.md"));
+  ok("…it opens, by its id", R.readReport(j.id, { list: l, mark: false }).text === "# Jupyter notebooks on this computer\n\n17 found.\n");
+  ok("given folders, only those are read (the tests' own lists stay as they are)", !R.listReports({ map, folders, running: none }).some((r) => r.folder === own));
+  ok("every brief says where a report goes, and to check Reports lists it before saying it's there", /Only there, in the folder you run in/.test(HANDBACK.join("\n")) && /`symbiot reports` lists its title/.test(HANDBACK.join("\n")) && /merged, live or done: check it first/.test(HANDBACK.join("\n")));
+}
+
 console.log("READING ONE — by its id, as safe HTML; it's read after");
 {
   const l = R.listReports({ map, folders, running: none }), a = l[0];
@@ -452,7 +468,7 @@ console.log("A REPORT IN ~/.config/symbiot/reports — a run with no lane left i
   writeFileSync(join(dir, "JUPYTER-NOTEBOOKS-2026-10-29.md"), "# Jupyter notebooks on this computer\n\n17 notebooks.\n");
   writeFileSync(join(dir, "QUESTIONS.md"), "# not a report\n");
   ok("it's where Symbiot keeps its own files", dir === join(CFG, "reports"), dir);
-  const l = R.listReports({ map: {}, folders: [dir], running: none, seen: { seen: {} } }), r = l.find((x) => /JUPYTER/.test(x.name));
+  const l = R.listReports({ map: {}, folders: [], loose: [dir], running: none, seen: { seen: {} } }), r = l.find((x) => /JUPYTER/.test(x.name));
   ok("Reports lists it, straight from that folder (no .symbiot/ under it), and it's unread", !!r && r.new === true && r.file === join(dir, "JUPYTER-NOTEBOOKS-2026-10-29.md") && r.title === "Jupyter notebooks on this computer", l);
   ok("…from ops, as a run with no lane is, and not the files Symbiot talks through", r && r.lane === "ops" && !l.some((x) => x.name === "QUESTIONS.md"), l.map((x) => [x.name, x.lane]));
   ok("…and it opens, by its id", r && /17 notebooks/.test(R.readReport(r.id, { list: l, mark: false }).text || ""));
@@ -465,7 +481,7 @@ console.log("A REPORT IN ~/.config/symbiot/reports — a run with no lane left i
   ok("…\"on Reports as NAME\" without .md too", R.reportClaims("It's on Reports as JUPYTER-NOTEBOOKS-2026-10-29, read it.", { list: l })[0].on === true);
   ok("…nothing claimed when Reports isn't mentioned", R.reportClaims("Wrote GONE-AWAY.md.", { list: l }).length === 0);
   ok("…as lines the chat is given: one there, one not, so it's not said to be", /JUPYTER.*is on Reports, unread/.test(R.claimLines(c)[0]) && /GONE-AWAY\.md is NOT on Reports/.test(R.claimLines(c)[1]), R.claimLines(c));
-  ok("the briefs say to check Reports, and GitHub for a merge, before saying so", HANDBACK.some((x) => /symbiot reports --plain/.test(x) && /gh pr view/.test(x)));
+  ok("the briefs say to check Reports, and GitHub for a merge, before saying so", HANDBACK.some((x) => /`symbiot reports`/.test(x) && /gh pr view/.test(x)));
 }
 console.log(`\n${fail ? "✗" : "✓"} reports: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
