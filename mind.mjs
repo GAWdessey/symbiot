@@ -37,6 +37,7 @@ import { laneReach, unreachable, serverOnly } from "./reach.mjs";
 import { styleOf, styleLine, userStyleLine } from "./adapt.mjs";
 import { knowledgeFor } from "./knowledge.mjs";
 import { ruleLines } from "./overrides.mjs";
+import { tetherBrief } from "./tether.mjs";
 
 const MIND_FILE = join(CONFIG_DIR, "mind.json");
 const ACT_DIR = join(CONFIG_DIR, "drafts"); // runs of their own, next to drafted replies
@@ -126,7 +127,8 @@ function forget(id) {
 // ---- acting -----------------------------------------------------------------------
 // The brief for a run of its own: the request, what the page showed, what's
 // known, and the rule that anything hard to undo is asked first.
-function actBrief(request, { title = "Symbiot", context = "", known = "", alongside = "", lanes = null, reach, now = Date.now() } = {}) {
+// lane: the project it's for, when known: its shared log is the one the brief carries (ops's own otherwise).
+function actBrief(request, { title = "Symbiot", context = "", known = "", alongside = "", lanes = null, reach, lane = "", now = Date.now() } = {}) {
   let names = lanes, map = null; if (!names) { try { map = laneMap(); names = Object.keys(map); } catch { names = []; } }
   if (reach === undefined) { try { reach = laneReach(map || {}); } catch { reach = null; } } // what each lane reaches: ops is told a repo lane reaches no server
   const short = clipWords(request.replace(/\s+/g, " "), 160); // its task line; the whole request is quoted above it
@@ -152,7 +154,7 @@ This folder isn't a repo; there's nothing to change in it but this file. Use you
 ${ONLY_YOU}
 - When it's done, tick the task (\`- [x]\`) and say what you did in your last message: it's what goes back to whoever asked. The tick is checked against what your run did when it ends: a message, email or post needs a check that it landed (\`symbiot screens verify <page> --expect "<words>"\`, or the connector's send coming back without an error), a deploy a check of the live address after it; without that it's reopened.
 
-${isUiWork(request) ? designBrief().join("\n") + "\n" : ""}${(() => { try { const r = ruleLines(OPS); return r.length ? r.join("\n") + "\n" : ""; } catch { return ""; } })()}${handoverRules(names, OPS, reach).join("\n")}
+${(() => { try { const t = tetherBrief(lane || OPS); return t.length ? t.join("\n") + "\n" : ""; } catch { return ""; } })()}${isUiWork(request) ? designBrief().join("\n") + "\n" : ""}${(() => { try { const r = ruleLines(OPS); return r.length ? r.join("\n") + "\n" : ""; } catch { return ""; } })()}${handoverRules(names, OPS, reach).join("\n")}
 ${HANDBACK.join("\n")}
 ${[...sentBrief(), ...standingBrief(), ...doneBrief(OPS)].join("\n")}`;
 }
@@ -173,7 +175,7 @@ function actNow(request, { title, context, known, alongside, lane = "", run = ru
   const into = namedRun(request);
   if (into) {
     try {
-      writeTasks(into, actBrief(request, { title, context, known, alongside, now }));
+      writeTasks(into, actBrief(request, { title, context, known, alongside, lane, now }));
       const file = join(into, ".symbiot", "ANSWERS.md"); let had = "# Answers\n"; try { had = readFileSync(file, "utf8"); } catch {}
       writeFileSync(file, `${had.replace(/\s*$/, "")}\n\n### More for you, from ${title || "Symbiot"}\nTASKS.md has more for the job you're on. It adds to that job, it doesn't replace it, so carry on from what you've done and do this as well.\n_symbiot ${new Date(now).toISOString().slice(0, 10)}_\n`);
     } catch (e) { return { error: "Couldn't add it to the run already on it: " + ((e && e.message) || e) }; }
@@ -187,7 +189,7 @@ function actNow(request, { title, context, known, alongside, lane = "", run = ru
     mkdirSync(join(dir, ".symbiot"), { recursive: true, mode: 0o700 }); try { chmodSync(ACT_DIR, 0o700); } catch {}
     // the handover's routing words ("New job:") stay out of the run's brief and name: its cards said "New job: …" with nothing launched
     const job = jobWords(request) || request;
-    writeFileSync(join(dir, ".symbiot", "TASKS.md"), actBrief(job, { title, context, known, alongside, now }));
+    writeFileSync(join(dir, ".symbiot", "TASKS.md"), actBrief(job, { title, context, known, alongside, lane, now }));
     writeFileSync(join(dir, ".symbiot", "handoff.json"), JSON.stringify({ name: clipWords("Agent: " + job.replace(/\s+/g, " "), 60), ...(lane ? { for: String(lane) } : {}) }));
   } catch (e) { return { error: "Couldn't write the brief: " + ((e && e.message) || e) }; }
   const e = run(dir, { force: true });

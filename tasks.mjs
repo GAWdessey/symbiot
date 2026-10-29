@@ -13,6 +13,7 @@ import { VERSION, LATEST_VERSION, REGISTRY, semverGt, loadConfig, saveConfig, lo
 import { handoverRules, ONLY_YOU, HANDBACK } from "./handover.mjs";
 import { laneReach } from "./reach.mjs";
 import { doneBrief, standingBrief } from "./asksdone.mjs";
+import { tetherBrief } from "./tether.mjs";
 import { sentBrief } from "./sentmail.mjs";
 import { userStyleLine } from "./adapt.mjs";
 import { inflightIds } from "./parallel.mjs";
@@ -267,7 +268,26 @@ function git(repo, args, timeout = 30000) {
 // The same, in the background: Approve's status and add can take minutes in a big
 // tree, and spawnSync held the whole app up until it timed out (ETIMEDOUT). On a
 // timeout git gets SIGTERM first, so it lets go of .git/index.lock.
+// Which GitHub login a repo's pushes, fetches and PRs go out under: its remote's owner,
+// not whichever account `gh` last switched to. A private GAWdessey repo answered "not
+// found" to GarthGhostai (29 Oct 2026), and an approved push sat as "didn't upload".
+// { GH_TOKEN } for the owner when gh holds a login of that name, else {}.
+const OWNER_TOKENS = new Map();
+function ownerEnv(repo) {
+  try {
+    const u = spawnSync("git", ["-C", repo, "remote", "get-url", "origin"], { encoding: "utf8", timeout: 5000 });
+    const m = /github\.com[/:]([^/\s]+)\//i.exec(u.status === 0 ? u.stdout : "");
+    if (!m || !hasCmd("gh")) return {};
+    const own = m[1], hit = OWNER_TOKENS.get(own);
+    if (hit && Date.now() - hit.at < 60000) return hit.env;
+    const t = spawnSync("gh", ["auth", "token", "-h", "github.com", "-u", own], { encoding: "utf8", timeout: 5000 });
+    const env = t.status === 0 && t.stdout.trim() ? { GH_TOKEN: t.stdout.trim() } : {};
+    OWNER_TOKENS.set(own, { at: Date.now(), env }); return env;
+  } catch { return {}; }
+}
+const NET_GIT = new Set(["push", "fetch", "pull", "ls-remote"]);
 function gitAsync(repo, args, timeout = 30000, { input = null, env = {} } = {}) {
+  if (NET_GIT.has(args[0]) && !env.GH_TOKEN && !process.env.GH_TOKEN) env = { ...ownerEnv(repo), ...env };
   return new Promise((resolve) => {
     let out = "", err = "", timedOut = false, done = false, kill = null;
     const p = spawn("git", ["-C", repo, ...args], { env: { ...process.env, GIT_TERMINAL_PROMPT: "0", ...env }, stdio: [input == null ? "ignore" : "pipe", "pipe", "pipe"] });
@@ -853,7 +873,7 @@ const branchSlug = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, "-").re
 // gh in the background, like gitAsync: the ship's `pr create`/`pr merge` held the app
 // up for up to a minute each. The same { status, stdout, stderr } as spawnSync gave.
 const ghRun = (path) => (args) => new Promise((resolve) => {
-  let stdout = "", stderr = "", done = false; const p = spawn("gh", args, { cwd: path, env: { ...process.env, GIT_TERMINAL_PROMPT: "0" }, stdio: ["ignore", "pipe", "pipe"] });
+  let stdout = "", stderr = "", done = false; const p = spawn("gh", args, { cwd: path, env: { ...(process.env.GH_TOKEN ? {} : ownerEnv(path)), ...process.env, GIT_TERMINAL_PROMPT: "0" }, stdio: ["ignore", "pipe", "pipe"] });
   const t = setTimeout(() => { try { p.kill("SIGTERM"); } catch {} }, 60000), end = (status, e) => { if (done) return; done = true; clearTimeout(t); resolve({ status, stdout, stderr: stderr || (e ? String(e.message) : "") }); };
   p.stdout.setEncoding("utf8"); p.stderr.setEncoding("utf8"); p.stdout.on("data", (d) => { stdout += d; }); p.stderr.on("data", (d) => { stderr += d; });
   p.on("error", (e) => end(-1, e)); p.on("close", (code) => end(code));
@@ -1549,6 +1569,7 @@ function buildTasksMd(name, ctx, list) {
   const keys = Object.keys(byType).sort((a, b) => TASK_ORDER.indexOf(a) - TASK_ORDER.indexOf(b));
   for (const ty of keys) { L.push(`### ${ty}`); for (const t of byType[ty]) L.push(`- [ ] ${t.text}`); L.push(""); }
   if (list.concat(urgent).some((t) => isUiWork(t.text))) L.push(...designBrief()); // UI work: the specialist's standard and the screenshots it must leave (design.mjs)
+  L.push(...tetherBrief(name)); // the lane's shared log: what other sessions asked, did and left open (tether.mjs)
   L.push(...ruleLines(name)); // the user's own rules for this lane, from their customisations (overrides.mjs)
   L.push("## When you finish an item", "- Tick it here (`- [x]`) as soon as it's done — that's how it reaches review. Ticking doesn't archive it: the user approves it in Symbiot, which commits it on a branch and opens a PR.", "- A tick is checked against what your run did, when it ends, and reopened if the evidence isn't there: a change needs files changed and, where the repo has tests, the tests run after your last edit and passing; a message, email or post needs a check that it landed (`symbiot screens verify <page> --expect \"<words>\"`); a deploy needs a check of the live address after it. Leave that evidence before you tick.", "- Leave your changes **uncommitted**, and don't tick anything you didn't finish or couldn't verify.", "- An item you can't finish in this run because it's blocked, handed to another lane, or waiting on a person, a reply or a later event is marked `- [~]`, never `[x]`, with what it waits on after it (`- [~] … (waits on: ops reading the delivery report)`). Name a real blocker: who or what outside this run, and what it must do. Access you could try, a check you could run or a step you could take yourself is not a blocker: do it, and finish the item. A `[~]` that names nothing real is treated as open work and your lane starts again on it. A finding is not a finished item: write it in your last message and leave the item as it is.", "- If you ever do have to make a branch or a PR yourself, first `git fetch origin`, cut the branch from `origin/<default branch>` (not the local one), run the tests, and open the PR only when they pass and nothing conflicts. If they don't, stop and say so in QUESTIONS.md.", "- If an item has numbered steps (1), 2), …), say `Step N: …` as you start each one, so Home shows how far along you are.", "- An item that runs for days or weeks (a move done step by step) stays unticked until its last step. When a round of it is finished and tested, end your last message with a line `Round done: <the item's first words>`, and Symbiot puts that round up for the user's OK under the item, which stays open.", "- To see Symbiot itself working (its Home, a layout, a card), run a copy of your own: `node index.mjs app --fresh` from this repo, or `symbiot app --fresh`. Never point a browser, a screenshot or a proxy at the user's running Symbiot (127.0.0.1:7391): it's their window and their data.", "- If the user says to drop an item (in ANSWERS.md, say), delete its line here: Symbiot closes it, so it isn't sent again. Don't delete one for any other reason.", "");
   L.push(...handoverRules(ctx.lanes || [], name, ctx.reach), ...HANDBACK, ...sentBrief(), ...standingBrief(), ...doneBrief(name));
@@ -1624,4 +1645,4 @@ function pushTasks(filter) {
   return { empty: false, written, unresolved, handoff: handoffCmd() };
 }
 
-export { noteLaneIds, closeUnchanged, applyMove, readMove, moveCheckout, laneOfRepo, laneNames, refileTask, unplacedTasks, placeTasks, unsentHeadline, setHandedLookup, setTaskModel, MODEL_PICKS, holdShip, SHIP_STALE, shipping, shippingPaths, shipJob, shipJobOf, SHIP_WAIT, workingChangesAsync, rebaseTask, sendAgain, forgetUnsent, unsentOf, readUnsent, unsentCard, repoTests, localRefused, forgetReview, gitFailed, taskPaths, addTask, toggleTask, setTaskDone, removeTask, cancelTask, restoreTask, FINDING_NOTE, completedInRepo, removalOf, applyRemovals, applyDrops, syncTasks, workingChanges, workingDiff, publishesOnMerge, unreleased, bumpOffer, learnNpm, releaseNeeded, releaseNotIn, withReleases, setVersion, changelogEntry, changelogSection, noteChangelog, releaseInput, shipWithBump, runSummary, saidFinished, pendingReview, commitSubject, shipChanges, autoMergeRepos, setAutoMerge, approveRepo, approveChanges, sendBack, TASK_ORDER, taskType, buildTasksMd, pushTasks, mergeWhenGreen, changelogItems, changelogLeaks, commitText, dropChanges };
+export { ownerEnv, noteLaneIds, closeUnchanged, applyMove, readMove, moveCheckout, laneOfRepo, laneNames, refileTask, unplacedTasks, placeTasks, unsentHeadline, setHandedLookup, setTaskModel, MODEL_PICKS, holdShip, SHIP_STALE, shipping, shippingPaths, shipJob, shipJobOf, SHIP_WAIT, workingChangesAsync, rebaseTask, sendAgain, forgetUnsent, unsentOf, readUnsent, unsentCard, repoTests, localRefused, forgetReview, gitFailed, taskPaths, addTask, toggleTask, setTaskDone, removeTask, cancelTask, restoreTask, FINDING_NOTE, completedInRepo, removalOf, applyRemovals, applyDrops, syncTasks, workingChanges, workingDiff, publishesOnMerge, unreleased, bumpOffer, learnNpm, releaseNeeded, releaseNotIn, withReleases, setVersion, changelogEntry, changelogSection, noteChangelog, releaseInput, shipWithBump, runSummary, saidFinished, pendingReview, commitSubject, shipChanges, autoMergeRepos, setAutoMerge, approveRepo, approveChanges, sendBack, TASK_ORDER, taskType, buildTasksMd, pushTasks, mergeWhenGreen, changelogItems, changelogLeaks, commitText, dropChanges };

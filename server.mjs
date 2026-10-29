@@ -9,7 +9,7 @@ import { voiceState, prepareVoice, speak, stopVoices } from "./voice.mjs";
 import { spawn, spawnSync } from "node:child_process";
 import { toggleAway, closeAway, awayOpen } from "./away.mjs";
 import { homedir } from "node:os";
-import { join, resolve, dirname } from "node:path";
+import { join, resolve, dirname, basename } from "node:path";
 import { fileURLToPath } from "node:url";
 import { gunzipSync, gzipSync } from "node:zlib";
 import { readRunLog, waitUntil } from "./work.mjs";
@@ -18,7 +18,7 @@ import { createServer } from "node:http";
 import { randomBytes, createHash } from "node:crypto";
 import { EMBEDDED_UI } from "./ui.mjs";
 import { VERSION, LATEST_VERSION, REGISTRY, semverGt, checkLatest, CONFIG_PATH, loadConfig, saveConfig, moveSecrets, loadTasks, hasCmd, openTerminal, chromeBinary, CONFIG_DIR, takeAppLock, releaseAppLock, writeJsonAtomic } from "./core.mjs";
-import { whereOf, onGoalAnswer, settleRecord, autoStart, runningHandoff as goalRunning, triageSweep, onRunEnd, onAnswered, shSingle, handoffCmd, setHandoffCmd, grantAgent, runHandoff, track, detectHandoffs, connectorsInfo, linkReach, answerQuestions, skipIdea, agentsNow, startWaiting, parkLane, parkedPaths, autoAllowSweep, continueLanes, trustFull, readLastWords, sandboxState, HANDOFFS, runningHandoff, runsTick } from "./agents.mjs";
+import { whereOf, onGoalAnswer, settleRecord, autoStart, runningHandoff as goalRunning, triageSweep, onRunEnd, onAnswered, shSingle, handoffCmd, setHandoffCmd, grantAgent, runHandoff, track, detectHandoffs, connectorsInfo, linkReach, answerQuestions, skipIdea, agentsNow, startWaiting, parkLane, parkedPaths, autoAllowSweep, continueLanes, trustFull, readLastWords, sandboxState, HANDOFFS, runningHandoff, runsTick, finishedRuns } from "./agents.mjs";
 import { write as aiWrite, PROVIDERS, resolveProvider, connectProvider, detectHardware, recommendModels, hasOllama, ollamaInstall, ensureOllama, useOllamaModel } from "./ai.mjs";
 import { SCAN, SCAN_TIMEOUT_MS, scanRoots, scanHome, addScanRoot, removeScanRoot, mapNow, nodeDetail, repoPathMap, laneMap, setScanOptions, refreshRepos, REPO_STATE, reposState } from "./scan.mjs";
 import { computeDrift } from "./drift.mjs";
@@ -46,6 +46,7 @@ import { standingList } from "./asksdone.mjs";
 import { SOURCES as INTUITION_SOURCES, noteChange as intuitionNote, digest as intuitionDigest, intuitionTick, nudge as intuitionNudge, intuitionState, acceptFocus, revoke as revokeIntuition, writeFocus, doMove, markMove, moveContext } from "./intuition.mjs";
 import { triggersTick, registerTriggers, frictionTick, applyOverride, revertOverride, applyProposal, dismissProposal, setOverrides, setSelfChange, overridesState } from "./overrides.mjs";
 import { doneList } from "./asksdone.mjs";
+import { tetherTick } from "./tether.mjs";
 import { lanesTick, shipHanded, lanesState, partlyDone, handingOf, loadLedger, orcaRelink, shareAnswer, projectOf } from "./lanes.mjs";
 import { archivedTasks } from "./sweep.mjs";
 import { sentTick } from "./sentmail.mjs";
@@ -1020,12 +1021,21 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
   every("home + work", 10000, () => { homeTick(); workTick(); }); // a waiting task starts once its lane is free (config.autoStart: false leaves it to Go); Home, then the work scene that reads its cards: what the routes read
   every("handed-over changes", 20000, () => shipHanded()); // changes made for a handed-over job go up by themselves
   every("handovers", 20000, () => lanesTick()); // agents hand work to other lanes, and hear back when it's done
+  every("shared logs", 60000, () => tetherTick(tetherDeps()), { first: 30000 }); // each lane's shared log: what every session asked, did and left open (tether.mjs)
   every("deploys", 60000, () => deployTick({ running: (p) => !!runningHandoff(p), notify: desktopNotify })); // a runbook's deploy is live once its check answers (deploy.mjs)
   setTimeout(() => { orcaRelink().catch(() => {}); }, 15000).unref(); // a lane folder a handover renamed, added again in Orca where it is now
   // an agent's allow list that stays inside your work is turned on by itself, and the agent carries on
   every("allow lists", 20000, () => autoAllowSweep(), { first: 4000 });
   every("triage", 15000, () => triageSweep()); // every question an agent writes is judged before it can be a card (triage.mjs)
   every("unchanged runs", 60000, () => closeUnchanged()); // a run that changed nothing waits on no Approve (tasks.mjs)
+  // the shared logs' sources: every folder a run works in (the lane's own, runs beside it, ops runs) with the lane it's for
+  const tetherDeps = () => {
+    const map = laneMap(), ledger = loadLedger(), sub = (d, re) => { try { return readdirSync(d).filter((x) => re.test(x)).map((x) => join(d, x)); } catch { return []; } };
+    const laneFor = (p) => { let l = ""; try { l = projectOf(p, { map, ledger }); } catch {} return l || (p.startsWith(join(CONFIG_DIR, "drafts")) ? "ops" : basename(p)); };
+    const folders = [...Object.values(map), ...sub(join(CONFIG_DIR, "drafts"), /^act-/), ...sub(join(CONFIG_DIR, "worktrees"), /-[0-9a-f]{6}$/)].map((path) => ({ path, lane: laneFor(path) }));
+    let runs = []; try { runs = finishedRuns().map((r) => ({ ...r, lane: laneFor(r.path) })); } catch {}
+    return { folders, lanes: map, handoffs: ledger.handoffs, runs, add: (text, lane) => addTask(text, lane), push: (lane) => pushTasks({ repo: lane }) };
+  };
   // what the user asked for, followed through to done or "not finished", never dropped (goals.mjs)
   const goalDeps = () => {
     let cardPaths = new Set(); try { cardPaths = new Set(onUser().map((c) => c.path).filter(Boolean)); } catch {}

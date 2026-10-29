@@ -2,6 +2,11 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one), for anyone who installs the app: what changed in it, never whose work it was (no projects, people, accounts, services, run ids or task wording of the person who made it). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.94.7 — 2026-10-29
+
+- **Each lane keeps one shared log that every session reads first and writes to.** Agents in a lane's folder, runs beside it, background runs and handovers all add what was asked, what was done and what is still open, with who wrote it and when; every agent's brief starts from it, and the chat answers "where are we" from it too. A request another session leaves as a REQUEST.md, pulled down into the lane's folder, becomes an open request and a task for that lane, so nobody has to carry messages between sessions. `symbiot tether` shows and writes it from a terminal.
+- Small fixes and improvements.
+
 ## 0.94.6 — 2026-10-29
 
 - **Reports shows what agents leave in Symbiot's own reports folder.** A report written by a run outside any lane is listed on Reports, and the chat says a report is on Reports only when Reports lists it.

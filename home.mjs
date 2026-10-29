@@ -63,6 +63,7 @@ function withPcReports(rep) {
 const pairedPhone = () => { if (!PHONE) return false; try { return !!loadConfig().computer; } catch { return false; } };
 import { draftPreview, MARKETING, MARKETING_DIR, aboutMarketing, displayName, productNames, productOf, untagged, tagged, draftFiles, setDraftStatus, postedCmd } from "./marketing.mjs";
 import { noteCardWords } from "./triage.mjs";
+import { tetherLines } from "./tether.mjs";
 
 const KEEP = 15000; // the slower reads (git per repo awaiting review) are cached this long
 let cached = null, cachedSig = ""; // cachedSig: the runs it was built with (agents.mjs handoffsSig)
@@ -936,6 +937,7 @@ function homeContext(h, { cards } = {}) {
     `Agents working now (the live agent list, the only source for 'is anything running?'; a run in the job record below that isn't here has stopped): ${h.working}${h.working ? "" : ", so nothing is running"}.`, ...(h.runs || []).map((r) => `- [${r.id}] ${dayMark(r.started, h.at)}${r.name}: ${r.line}${r.eta ? ` (${r.eta})` : ""}${r.quiet ? ` (no progress in ${r.quiet} min)` : ""}${r.looping ? " (repeating the same step)" : ""}`),
     ...sentMailLines(),
     ...jobsLines({ now: h.at }),
+    ...(() => { try { return tetherLines({ now: h.at }); } catch { return []; } })(),
     ...(() => { try { return intuitionLines({ now: h.at }); } catch { return []; } })(),
     "Agents finished in the last 24h (their own last words; answer 'did it work?' from these):", ...((h.finished || []).length ? h.finished.map((f) => `- ${dayMark(f.at, h.at)}${f.name}: ${f.end}${f.changed ? `, ${f.changed} file${f.changed > 1 ? "s" : ""} changed` : ""}${f.asks.length ? `; asked: ${f.asks.join(" / ")}` : ""}${f.said ? `; said: ${f.said}` : ""}`) : ["- none"]),
     "What each agent has done, asked and been told (running, or finished in the last 24h; answer 'why is it asking again?' and 'did it work?' from this):", ...((h.digest || []).length ? h.digest.flatMap((d) => [`- ${dayMark(d.at, h.at)}${d.name}${d.lane ? ` [${d.lane}${d.queued ? `, ${d.queued} queued` : ""}]` : ""} (${d.running ? "running" : "finished"})`,
