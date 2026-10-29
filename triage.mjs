@@ -29,6 +29,8 @@ import { readFileSync, statSync } from "node:fs";
 import { CONFIG_DIR, readState, writeJsonAtomic } from "./core.mjs";
 import { promptFor } from "./overrides.mjs";
 import { addsPayment, warnsHold } from "./sends.mjs";
+import { carriesJob } from "./handover.mjs";
+import { ruledOut } from "./asksdone.mjs";
 
 const FILE = "triage.json", FAULTS = join(CONFIG_DIR, "faults.json");
 const VERDICTS = ["user", "answered", "agent", "symbiot", "redo"];
@@ -115,8 +117,13 @@ function heldBefore(all, known) {
   const words = new Set(String(all).toLowerCase().match(/[a-z][a-z0-9-]{3,}/g) || []);
   return String(known || "").split("\n").find((l) => /\b(?:hold|held|reserv\w*|charged|pre-?auth\w*)\b/i.test(l) && /\d/.test(l) && (l.toLowerCase().match(/[a-z][a-z0-9-]{3,}/g) || []).some((w) => words.has(w) && !/^(?:card|hold|held|charged|reserved|account|billing|payment|when|added|with|from|that|this|their|your)$/.test(w))) || "";
 }
-function precheck(q, known = "") {
+function precheck(q, known = "", lane = "") {
   const all = [q.q, q.context, ...(q.options || [])].filter(Boolean).join("\n");
+  // work on a place the user turned down, or an option that has them carry a job to another session (29 Oct 2026:
+  // "tell the PC session, 'Read and do … on the VM'"): already settled, and never theirs
+  const no = ruledOut([q.q, ...(q.options || [])].join("\n"), lane);
+  if (no) return { verdict: "answered", why: `the user turned this down: ${no}`, answer: `No: the user turned this down ("${no}"). Do the work where they allow it instead (on this computer, from data already pulled), and ask only if more is needed.` };
+  if ((q.options || []).some((t) => !byAgent(t) && carriesJob(t))) return { verdict: "agent", why: "it has the user carry a message or a job to another agent or session; agents hand over between themselves in .symbiot/HANDOFF.md, never through the user" };
   // adding a card, billing details or claiming a credit presented as free: it isn't (sends.mjs addsPayment)
   if (addsPayment(all) && !warnsHold(all)) {
     const was = heldBefore(all, known).trim().replace(/^[-*]\s*/, "").slice(0, 200);
@@ -138,7 +145,7 @@ function precheck(q, known = "") {
 }
 // One verdict for one question. write: ai.mjs write. ctx: { answers, rules, lane }.
 async function judge(q, { answers = "", rules = [], lane = "", known = "" } = {}, { write }) {
-  const pre = precheck(q, known); if (pre) return pre;
+  const pre = precheck(q, known, lane); if (pre) return pre;
   const opts = (q.options || []).map((o) => `- ${o}`).join("\n");
   const prompt = `Agent's lane: ${lane || "unknown"}\n\nThe question:\n### ${q.q}\n${q.context ? q.context + "\n" : ""}${opts}\n\nThe user's standing rules:\n${rules.map((r) => `- ${r}`).join("\n") || "(none)"}${known ? `\n\nWhat Symbiot remembers that may bear on it:\n${known.slice(0, 3000)}` : ""}\n\nThe user's newest answers in this lane (newest last):\n${String(answers || "").slice(-5000) || "(none)"}`;
   const r = await write(SYSTEM + promptFor("triage") + missesForPrompt(), prompt, { fast: true, kind: "triage" });
