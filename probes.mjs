@@ -145,12 +145,17 @@ function conflictsIn(dir, text, opts = {}) {
 // synchronously (homeState); a look that isn't back yet is started and shows at the next build.
 const OPEN_PRS = new Map(), OPEN_PRS_MS = 2 * 60000;
 const oneLine = (t, n) => { const x = String(t || "").replace(/<!--[\s\S]*?-->/g, " ").replace(/[`*#>_\[\]]/g, "").split("\n").map((l) => l.trim()).find((l) => l.length > 3) || ""; return x.length > n ? x.slice(0, n - 1) + "…" : x; };
-// Garth's own accounts: a PR is his to merge when its repo is owned by one, or one opened it. A lane that only clones or
-// forks someone else's repo (flutter/flutter) lists none of that repo's PRs (29 Oct 2026).
-const MINE = /^(?:GAWdessey|GarthGhostai)$/i;
-const isMine = (slug, v) => MINE.test(String(slug).split("/")[0]) || MINE.test(String((v.author && v.author.login) || ""));
+// A PR is Garth's to merge only where his GitHub login can: push, maintain or admin on the repo (gh api repos/<slug>),
+// looked up once per repo and kept an hour. A lane that only clones someone else's repo (flutter/flutter, bilawalsidhu/
+// gods-eye-view) lists none of its PRs, whoever opened them (29 Oct 2026). Unknown (GitHub didn't answer) is not cached.
+const CAN_MERGE = new Map(), CAN_MERGE_MS = 60 * 60000;
+async function canMerge(slug, gh, now) {
+  const had = CAN_MERGE.get(slug); if (had && now - had.at < CAN_MERGE_MS) return had.ok;
+  let p = null; try { p = JSON.parse(await gh(["api", `repos/${slug}`, "--jq", ".permissions"])); } catch {}
+  if (!p || typeof p !== "object") return had ? had.ok : false;
+  const ok = !!(p.push || p.maintain || p.admin); CAN_MERGE.set(slug, { ok, at: now }); return ok;
+}
 function mergeCard(slug, lane, v) {
-  if (!isMine(slug, v)) return null;
   const st = prState({ ...v, state: "OPEN" });
   if (v.isDraft || /conflicts|check failed/.test(st)) return null; // a fix run's job (actOn), not a merge for the user
   const how = v.autoMergeRequest ? (st === "checks running" ? "auto-merge is on and CI is still running; it merges itself when green" : "auto-merge is on") : st === "checks running" ? "auto-merge is off and CI is still running: merge it yourself when green" : "ready, and auto-merge is off: merge it yourself";
@@ -165,6 +170,7 @@ function openPrCards(map = {}, { now = Date.now(), gh = (args) => run("gh", args
       const rec = { cards: had ? had.cards : [], at: now, busy: true }; OPEN_PRS.set(dir, rec);
       rec.done = (async () => {
         const slug = await remoteSlug(dir, git); if (!slug) return;
+        if (!(await canMerge(slug, gh, now))) { rec.cards = []; return; }
         const raw = await gh(["pr", "list", "-R", slug, "--state", "open", "--limit", "30", "--json", "number,title,url,body,author,isDraft,mergeable,mergeStateStatus,autoMergeRequest,statusCheckRollup"]);
         let list = null; try { list = JSON.parse(raw); } catch {}
         if (!Array.isArray(list)) return; // GitHub didn't answer: what was shown stays
@@ -176,7 +182,7 @@ function openPrCards(map = {}, { now = Date.now(), gh = (args) => run("gh", args
   return out;
 }
 openPrCards.wait = () => Promise.all([...OPEN_PRS.values()].map((r) => r.done));
-openPrCards.clear = () => OPEN_PRS.clear();
+openPrCards.clear = () => { OPEN_PRS.clear(); CAN_MERGE.clear(); };
 
 // ---- npm ------------------------------------------------------------------------------
 // A lane's package that's published (publishConfig), or Symbiot's own: { lane, name, version }.
