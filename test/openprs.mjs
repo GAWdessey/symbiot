@@ -18,29 +18,29 @@ const { openPrCards } = await import("../probes.mjs");
 
 try {
   const a = join(HOME, "a"), b = join(HOME, "b");
-  for (const [d, u] of [[a, "https://github.com/GAWdessey/symbiot.git"], [b, "git@github.com:GarthGhostai/dailify.git"]]) { mkdirSync(d, { recursive: true }); sh(d, "init", "-q"); sh(d, "remote", "add", "origin", u); }
+  for (const [d, u] of [[a, "https://github.com/GAWdessey/symbiot.git"], [b, "git@github.com:Acme/widgets.git"]]) { mkdirSync(d, { recursive: true }); sh(d, "init", "-q"); sh(d, "remote", "add", "origin", u); }
   const pr = (number, extra = {}) => ({ number, title: `Title ${number}`, url: `https://github.com/x/y/pull/${number}`, body: "<!-- c -->\nFixes the thing", isDraft: false, mergeable: "MERGEABLE", mergeStateStatus: "CLEAN", autoMergeRequest: null, statusCheckRollup: [{ conclusion: "SUCCESS" }], ...extra });
-  let board = { "GAWdessey/symbiot": [pr(333, { autoMergeRequest: { enabledAt: "x" }, statusCheckRollup: [{ status: "IN_PROGRESS" }] }), pr(334, { mergeable: "CONFLICTING", mergeStateStatus: "DIRTY" }), pr(335, { isDraft: true }), pr(336, { statusCheckRollup: [{ conclusion: "FAILURE" }] })], "GarthGhostai/dailify": [pr(598)] };
+  let board = { "GAWdessey/symbiot": [pr(333, { autoMergeRequest: { enabledAt: "x" }, statusCheckRollup: [{ status: "IN_PROGRESS" }] }), pr(334, { mergeable: "CONFLICTING", mergeStateStatus: "DIRTY" }), pr(335, { isDraft: true }), pr(336, { statusCheckRollup: [{ conclusion: "FAILURE" }] })], "Acme/widgets": [pr(598)] };
   const asked = [];
   const gh = async (args) => { asked.push(args.join(" ")); return JSON.stringify(board[args[args.indexOf("-R") + 1]]); };
   console.log("1) each lane's own repo, mergeable PRs only");
   openPrCards.clear();
-  const map = { symbiot: a, dailify: b };
+  const map = { symbiot: a, widgets: b };
   openPrCards(map, { gh });
   await openPrCards.wait();
   const cards = openPrCards(map, { gh });
-  ok("asked GitHub for each lane's own remote, never another repo", asked.length === 2 && asked.some((x) => x.includes("-R GAWdessey/symbiot")) && asked.some((x) => x.includes("-R GarthGhostai/dailify")), asked);
-  ok("a mergeable PR on each repo is a card, a conflicting, draft or failing one is not", cards.map((c) => c.id).sort().join() === "pr:GAWdessey/symbiot#333,pr:GarthGhostai/dailify#598", cards.map((c) => c.id));
+  ok("asked GitHub for each lane's own remote, never another repo", asked.length === 2 && asked.some((x) => x.includes("-R GAWdessey/symbiot")) && asked.some((x) => x.includes("-R Acme/widgets")), asked);
+  ok("a mergeable PR on each repo is a card, a conflicting, draft or failing one is not", cards.map((c) => c.id).sort().join() === "pr:Acme/widgets#598,pr:GAWdessey/symbiot#333", cards.map((c) => c.id));
   const c598 = cards.find((c) => /598/.test(c.id)), c333 = cards.find((c) => /333/.test(c.id));
-  ok("the card has its link, title, what it fixes and who merges", c598.url.endsWith("/598") && /Title 598/.test(c598.title) && /Fixes the thing/.test(c598.sub) && /auto-merge is off/.test(c598.sub) && c598.repo === "dailify", c598);
+  ok("the card has its link, title, what it fixes and who merges", c598.url.endsWith("/598") && /Title 598/.test(c598.title) && /Fixes the thing/.test(c598.sub) && /auto-merge is off/.test(c598.sub) && c598.repo === "widgets", c598);
   ok("one behind CI with auto-merge on says so", /CI is still running/.test(c333.sub) && /merges itself/.test(c333.sub), c333.sub);
   console.log("2) it clears when the PR merges");
-  board["GarthGhostai/dailify"] = [];
+  board["Acme/widgets"] = [];
   openPrCards(map, { gh, now: Date.now() + 3 * 60000 }); await openPrCards.wait();
   ok("the next look drops it", !openPrCards(map, { gh }).some((c) => /598/.test(c.id)));
   console.log("3) Home");
   const { homeState } = await import("../home.mjs");
-  const st = homeState({ fresh: true, deps: { repos: () => ({ dailify: b }), openPrs: () => [mergeOne()], board: () => ({ cards: [] }), pending: () => [], agents: () => [], lanes: () => ({ handoffs: [] }), reports: () => ({ count: 0 }), connected: () => true, waits: () => [], clashes: () => [], agentGone: () => "", signedOut: () => [], stuck: () => [], drafts: () => [], stalls: () => [], tasks: () => [], rootsSet: () => true, marketing: () => false, dismissed: () => ({}), cardText: () => ({}), syncJobs: () => {}, intuition: () => [], overrides: () => [], reviewHolds: () => [], pairedPhone: () => false, goalCards: () => [], troubles: () => [] } });
+  const st = homeState({ fresh: true, deps: { repos: () => ({ widgets: b }), openPrs: () => [mergeOne()], board: () => ({ cards: [] }), pending: () => [], agents: () => [], lanes: () => ({ handoffs: [] }), reports: () => ({ count: 0 }), connected: () => true, waits: () => [], clashes: () => [], agentGone: () => "", signedOut: () => [], stuck: () => [], drafts: () => [], stalls: () => [], tasks: () => [], rootsSet: () => true, marketing: () => false, dismissed: () => ({}), cardText: () => ({}), syncJobs: () => {}, intuition: () => [], overrides: () => [], reviewHolds: () => [], pairedPhone: () => false, goalCards: () => [], troubles: () => [] } });
   ok("Home shows it under Only the user can do", st.you.some((y) => y.kind === "merge" && y.url), st.you);
   function mergeOne() { return { ...c333 }; }
 } finally { rmSync(HOME, { recursive: true, force: true }); }

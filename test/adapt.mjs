@@ -542,6 +542,10 @@ try {
     const m2 = mk(merge612, ended, "merged", []);
     ok("…and merged reads Done with no handover rows left", m2.pill === "Done", m2.pill);
     ok("the card's words say what GitHub says now, before the run's 'needs a merge'", /^PR 612 is merged now\. Handed/.test(m.summary) && /^PR 612 was closed without merging\. Handed/.test(x.summary) && /^Handed/.test(u2.summary), [m.summary, x.summary, u2.summary]);
+    // PR #336 (29 Oct 2026): "still merges by itself once CI passes" while GitHub said it had conflicts
+    const cf = workScene({ deps: { repos: () => ({ symbiot: "/sy" }), pending: () => [], tasks: () => [], parked: () => [], handing: () => [], conflictsIn: (dir, t) => (dir === "/sy" && /PR #?336/.test(t) ? ["#336"] : []),
+      agents: () => [{ name: "symbiot", path: "/sy", status: "done", startedAt: Date.now() - 60000, work: { final: "All done. PR #336 still merges by itself once CI passes." }, outcome: { state: "finished", summary: "All done. PR #336 still merges by itself once CI passes." } }] } }).projects.find((p) => p.repo === "symbiot");
+    ok("a lane whose run names a PR GitHub says has conflicts reads so on Home, first, never Done (PR #336, 29 Oct 2026)", cf && cf.pill === "Has conflicts: PR #336" && /^PR #336 has conflicts on GitHub: it won't merge by itself/.test(cf.summary), cf);
     const b = mk("Handed the deploy to ops. Nothing else is open.", ended);
     ok("…and with no blocker named it reads Done/Idle, never Waiting on someone else", b.pill !== "Waiting on someone else", b.pill);
     const c = mk("Handed the deploy to ops.", "Sent: its agent is on it now");

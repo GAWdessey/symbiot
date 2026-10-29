@@ -36,6 +36,8 @@ function openedPrs(tasks = loadTasks(), now = Date.now()) {
   }
   return [...seen.values()];
 }
+// GitHub won't merge it, auto-merge or not: PR #336 sat "will merge automatically" with conflicts and its required check never reported (29 Oct 2026)
+const conflicting = (v) => !!v && v.state === "OPEN" && (v.mergeable === "CONFLICTING" || v.mergeStateStatus === "DIRTY");
 // gh pr view's JSON, as one word for where it stands.
 function prState(v) {
   if (!v) return "";
@@ -93,9 +95,9 @@ async function prFacts(text, { lanes = {}, gh = (args) => run("gh", args), git }
     let slug = r.slug;
     if (!slug && r.lane && lanes[r.lane]) { if (!slugs.has(r.lane)) slugs.set(r.lane, await remoteSlug(lanes[r.lane], git)); slug = slugs.get(r.lane); }
     if (!slug) continue;
-    const raw = await gh(["pr", "view", r.n, "-R", slug, "--json", "state,mergedAt,title"]);
+    const raw = await gh(["pr", "view", r.n, "-R", slug, "--json", "state,mergedAt,title,mergeable,mergeStateStatus"]);
     let v = null; try { v = JSON.parse(raw); } catch {}
-    const word = v ? (v.state === "MERGED" ? `merged${v.mergedAt ? ` on ${String(v.mergedAt).slice(0, 10)}` : ""}` : v.state === "CLOSED" ? "closed, not merged" : "open") : raw === null ? "" : "no such PR";
+    const word = v ? (v.state === "MERGED" ? `merged${v.mergedAt ? ` on ${String(v.mergedAt).slice(0, 10)}` : ""}` : v.state === "CLOSED" ? "closed, not merged" : conflicting(v) ? `open, has conflicts with its base branch: it won't merge, by itself or by hand, until they're resolved` : "open") : raw === null ? "" : "no such PR";
     if (word) lines.push(`PR #${r.n} (${slug}): ${word}${v && v.title ? `, "${String(v.title).slice(0, 80)}"` : ""}`);
   }
   return lines;
@@ -104,6 +106,7 @@ async function prFacts(text, { lanes = {}, gh = (args) => run("gh", args), git }
 // A lane's PR as GitHub said within the last few minutes, for what reads synchronously (a lane card's
 // badge): "open", "merged", "closed", or "" until a look has come back, which this starts. A card names
 // "Needs your merge: PR #612" only when this says open: never from a run's words alone (28 Oct 2026).
+// prLive.conflicts: that look also said it has conflicts, so it won't merge by itself (29 Oct 2026).
 const PR_LIVE = new Map(), PR_LIVE_MS = 5 * 60000;
 function prLive(dir, n, { now = Date.now(), gh = (args) => run("gh", args), git } = {}) {
   const key = `${dir}#${n}`, had = PR_LIVE.get(key);
@@ -111,14 +114,23 @@ function prLive(dir, n, { now = Date.now(), gh = (args) => run("gh", args), git 
     const rec = { state: had ? had.state : "", at: now, busy: true }; PR_LIVE.set(key, rec);
     rec.done = (async () => {
       const slug = dir ? await remoteSlug(dir, git) : ""; if (!slug) return;
-      const raw = await gh(["pr", "view", String(n), "-R", slug, "--json", "state"]); let v = null; try { v = JSON.parse(raw); } catch {}
-      if (v && v.state) rec.state = String(v.state).toLowerCase();
+      const raw = await gh(["pr", "view", String(n), "-R", slug, "--json", "state,mergeable,mergeStateStatus"]); let v = null; try { v = JSON.parse(raw); } catch {}
+      if (v && v.state) { rec.state = String(v.state).toLowerCase(); rec.conflicts = conflicting(v); }
     })().catch(() => {}).finally(() => { rec.busy = false; });
   }
   return PR_LIVE.get(key).state;
 }
 prLive.wait = (dir, n) => (PR_LIVE.get(`${dir}#${n}`) || {}).done;
 prLive.clear = () => PR_LIVE.clear();
+prLive.conflicts = (dir, n) => !!(PR_LIVE.get(`${dir}#${n}`) || {}).conflicts;
+// The PRs a run's last words name that GitHub says have conflicts: ["#336"], looked up in the run's own
+// repo (prLive: "" until GitHub answers, so nothing is claimed before it has). A run said "PR #336 still
+// merges by itself once CI passes" while GitHub showed it conflicting, and Garth found out there (29 Oct 2026).
+function conflictsIn(dir, text, opts = {}) {
+  if (!dir || !/\b(?:PRs?|pull request)\b|#\d/i.test(String(text || ""))) return [];
+  const ns = [...new Set(prRefs(text).filter((r) => !r.slug).map((r) => r.n))].slice(0, 4);
+  return ns.filter((n) => prLive(dir, n, opts) === "open" && prLive.conflicts(dir, n)).map((n) => `#${n}`);
+}
 
 
 // Every open PR on a lane's own repo that is mergeable, as Home's "Only the user can do" cards: Garth asked "why don't I
@@ -245,4 +257,4 @@ function actOn(items, { map = {}, add, run, merged, now = Date.now() } = {}) {
   return did;
 }
 
-export { prRefs, prFacts, prLive, openPrCards, mergeCard, STATUS_URL, readStates, actOn, prItems, prState, openedPrs, npmItems, packagesOf, metaItems, metaOf, envOf };
+export { prRefs, prFacts, prLive, conflictsIn, conflicting, openPrCards, mergeCard, STATUS_URL, readStates, actOn, prItems, prState, openedPrs, npmItems, packagesOf, metaItems, metaOf, envOf };

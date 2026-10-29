@@ -9,7 +9,7 @@
 // The app's sections (Map, Tasks, Agents, Week…) are shaped by adapt.mjs from
 // how you use them; this is the live data around them. Home's talk goes to the
 // same Symbiot as every chat (mind.mjs converse), told what home shows.
-import { prFacts, prLive, openPrCards } from "./probes.mjs";
+import { prFacts, prLive, conflictsIn, openPrCards } from "./probes.mjs";
 import { claudeSetup } from "./claudesetup.mjs";
 import { heldAsks } from "./handover.mjs";
 import { plainAsk } from "./plain.mjs";
@@ -1329,6 +1329,12 @@ function workSceneNow({ deps = {}, full = false } = {}) {
       // its words still say the PR needs a merge: the card says what GitHub says now, first, where a 3-line card shows it
       if (gh === "merged" || gh === "closed") p.summary = `PR ${n} ${gh === "merged" ? "is merged now" : "was closed without merging"}. ${String(p.summary || "").trim()}`.trim();
       if (b) p.blocker = b; else if (!n && (p.handing || []).length && p.handing.every((x) => /run ended/.test(x.why || ""))) p.state = "done";
+    }
+    // a PR its run's last words name that GitHub says has conflicts: the card says so first and its pill names it, whatever
+    // the run claimed. PR #336 read "merges by itself once CI passes" while GitHub said it conflicted (29 Oct 2026)
+    if (!p.running && p.summary && map[p.repo]) {
+      let c = []; try { c = (deps.conflictsIn || conflictsIn)(map[p.repo], p.summary); } catch {}
+      if (c.length) { p.conflicts = c; p.blocker = `Has conflicts: PR ${c[0]}`; if (p.state === "done") p.state = "idle"; p.summary = `PR ${c.join(", ")} ${c.length > 1 ? "have" : "has"} conflicts on GitHub: it won't merge by itself until they're resolved. ${String(p.summary).trim()}`; }
     }
     p.pill = pillOf(p); // one of the 7 (cardwords.mjs): never a raw state
     if (p.handing) p.handing = p.handing.map((x) => ({ ...x, words: handWords(x), ...(/asked you something first/.test(x.why || "") ? { ask: x.askLane || x.lane } : {}) }));

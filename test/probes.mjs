@@ -111,6 +111,16 @@ try {
     const live0 = P.prLive("/p/lanex", 612, { gh: gh2, git: git2 });
     await P.prLive.wait("/p/lanex", 612);
     ok("a card's PR state is unknown until GitHub answers, then GitHub's word", live0 === "" && P.prLive("/p/lanex", 612, { gh: gh2, git: git2 }) === "merged");
+    // PR #336 (29 Oct 2026): a run said it "still merges by itself once CI passes" while GitHub showed it conflicting
+    P.prLive.clear();
+    const gh3 = async (a) => JSON.stringify(a[2] === "336" ? { state: "OPEN", mergeable: "CONFLICTING", mergeStateStatus: "DIRTY" } : { state: "OPEN", mergeable: "MERGEABLE", mergeStateStatus: "BLOCKED" });
+    const said336 = "PR #336 still merges by itself once CI passes, and PR #337 too.";
+    const c0 = P.conflictsIn("/p/symbiot", said336, { gh: gh3, git });
+    await P.prLive.wait("/p/symbiot", "336"); await P.prLive.wait("/p/symbiot", "337");
+    ok("a PR a run names that GitHub says conflicts is found, only once GitHub has answered", c0.length === 0 && JSON.stringify(P.conflictsIn("/p/symbiot", said336, { gh: gh3, git })) === JSON.stringify(["#336"]));
+    ok("…a mergeable one isn't, and no PR named is no call", P.prLive("/p/symbiot", "337", { gh: gh3, git }) === "open" && !P.prLive.conflicts("/p/symbiot", "337") && P.conflictsIn("/p/symbiot", "Nothing to merge.", { gh: async () => { throw new Error("called"); }, git }).length === 0);
+    const f3 = await P.prFacts("- [symbiot] PR #336 merges by itself once CI passes", { gh: gh3, git, lanes });
+    ok("Home's chat hears that it has conflicts and won't merge by itself", /^PR #336 \(GAWdessey\/symbiot\): open, has conflicts .*won't merge/.test(f3[0]), f3);
     ok("no PR named, no call", (await P.prFacts("nothing here", { gh: async () => { throw new Error("called"); }, git })).length === 0);
   }
 } catch (e) { ok("ran", false, String((e && e.stack) || e)); }
