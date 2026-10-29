@@ -23,6 +23,7 @@
     "goals.mjs",
     "scan.mjs",
     "tasks.mjs",
+    "tether.mjs",
     "origin.mjs",
     "deploy.mjs",
     "jobs.mjs",

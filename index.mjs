@@ -24,7 +24,7 @@
 // drift.mjs, server.mjs (`symbiot app`'s server) and ui.mjs (its page).
 
 import { spawn, spawnSync } from "node:child_process";
-import { homedir } from "node:os";
+import { homedir, hostname } from "node:os";
 import { join, basename, resolve } from "node:path";
 import { realpathSync, readFileSync, mkdirSync, openSync, rmSync, existsSync, statSync, renameSync, chmodSync } from "node:fs";
 import { createInterface } from "node:readline";
@@ -713,6 +713,29 @@ async function cmdScreens() {
 
 // ---- `symbiot watch`: pages Symbiot keeps track of, and what's new on them ----
 // new, board, seen, add, remove and check print JSON, for you or an agent.
+// symbiot tether: each lane's shared log (tether.mjs), read and written from a terminal: by an
+// agent whose run can't leave a TETHER.json, by a session on another device that reaches this one.
+async function cmdTether() {
+  const T = await import("./tether.mjs");
+  const VAL = ["--asked", "--done", "--open", "--kind", "--to", "--session", "--device", "--run", "--note", "--by"];
+  const [sub = "lanes", lane, id] = argv.slice(1).filter((x, i, all) => !x.startsWith("--") && !VAL.includes(all[i]) && !VAL.includes(all[i - 1]));
+  const fail = (m) => { console.log(c.y(m)); process.exitCode = 1; };
+  if (sub === "lanes") { const ls = T.lanesLogged(); if (!ls.length) return console.log(c.d("No lane has a shared log yet. Runs start one as they work; or  symbiot tether add <lane> --asked \"…\"")); for (const l of ls) console.log(`${l}  ${c.d(`${T.loadLog(l).entries.length} entries, ${T.openOf(l).length} open`)}`); return; }
+  if (!lane) return fail("Which lane? symbiot tether show <lane>  (symbiot tether lanes lists them)");
+  if (sub === "show" || sub === "read") return console.log(T.logText(lane));
+  if (sub === "open") { const o = T.openOf(lane); return console.log(o.length ? o.map((e) => "- " + T.entryLine(e)).join("\n") : `Nothing open in ${lane}'s log.`); }
+  if (sub === "add" || sub === "write") {
+    const r = T.addEntry(lane, { kind: flag("kind", ""), to: flag("to", ""), asked: flag("asked", ""), done: flag("done", ""), open: flag("open", ""), session: flag("session", "terminal"), device: flag("device", hostname()), run: flag("run", "") });
+    return r.error ? fail(r.error) : console.log(`${r.had ? "Already logged" : "Logged"}: ${T.entryLine(r.entry)}`);
+  }
+  if (sub === "close") {
+    if (!id) return fail("Which entry? symbiot tether close <lane> <id> --note \"what was done\"");
+    const r = T.closeEntry(lane, id, { by: flag("by", "terminal"), note: flag("note", "") });
+    return r.error ? fail(r.error) : console.log(`${r.had ? "Already closed" : "Closed"}: ${T.entryLine(r.entry)}`);
+  }
+  fail(`Unknown: tether ${sub}. Use  lanes · show <lane> · open <lane> · add <lane> --asked … --done … --open … · close <lane> <id> --note …`);
+}
+
 async function cmdWatch() {
   const [sub = "list", a1, a2] = argv.slice(1).filter((x, i, all) => !x.startsWith("--") && !["--every", "--hours"].includes(all[i - 1]));
   const out = (x) => { console.log(JSON.stringify(x, null, 2)); if (x && x.error) process.exitCode = 1; };
@@ -1278,6 +1301,7 @@ async function main() {
   if (cmd === "shoot") return cmdShoot();
   if (cmd === "overrides") return cmdOverrides();
   if (cmd === "watch") return cmdWatch();
+  if (cmd === "tether" || cmd === "log") return cmdTether();
   if (cmd === "phone") return cmdPhone();
   if (cmd === "post" || cmd === "posts") return cmdPost();
   if (cmd === "marketing") return cmdMarketing();
