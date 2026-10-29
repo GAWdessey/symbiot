@@ -2203,8 +2203,8 @@ function parseQuestions(md, { linked = linkedIds() } = {}) {
     if (b) { if (cur) { cur.options.push(clip(b[1])); (cur.parts ||= []).push(cur.options.length - 1); } else if (/\?\s*$/.test(b[1])) questions.push({ q: clip(b[1]), context: "", options: [] }); continue; } // a bullet with no "### question" above it is a question only if it actually ends in "?" — otherwise it's preamble/prose (a file list, etc.)
     if (cur) { cur.context = clip((cur.context ? cur.context + " " : "") + l); (cur.parts ||= []).push(l); }
   }
-  // A preview's lines are context, not choices (29 Oct 2026): "- Name ...... Dailify", "- Address
-  // ...... linkedin.com/company/dailify" sat above the 🤖 options, the card showed those two as its
+  // A preview's lines are context, not choices (29 Oct 2026): "- Name ...... Bookly", "- Address
+  // ...... linkedin.com/company/bookly" sat above the 🤖 options, the card showed those two as its
   // buttons, and the Address line went down as the answer, so nothing was created. Where a tagged
   // option (🤖/👤) comes after prose, the bullets before that prose are the question's context, in place.
   for (const x of questions) {
