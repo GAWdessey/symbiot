@@ -28,6 +28,7 @@ import { randomBytes } from "node:crypto";
 import { VERSION, CONFIG_DIR, clipWords, jobWords, readState, writeJsonAtomic } from "./core.mjs";
 import { track } from "./jobs.mjs";
 import { goalFor, answersQuestion } from "./goals.mjs";
+import { prFacts } from "./probes.mjs";
 import { write, textOf } from "./ai.mjs";
 import { handoffCmd, runHandoff, runningHandoff, namedRun, writeTasks, isUrgent, urgentStop, urgentFirst, urgentUndo } from "./agents.mjs";
 import { addTask, pushTasks } from "./tasks.mjs";
@@ -441,6 +442,9 @@ async function converse({ where, role = "", context = "", history = "", question
   const system = `${IDENTITY} ${role}\n\n${rulesFor(Object.keys(lanes), selfLane(lanes), nav, settle, tasks, control, laneAbouts())}${languageLine()}`;
   let prompt = `${dayLine(now)}\n\n` + (known ? `What you know (from across the app):\n${known}\n\n` : "") + (kn.text ? kn.text + "\n\n" : "") + (elsewhere ? `Lately, elsewhere in the app (other chats: a short answer here doesn't reply to these):\n${elsewhere}\n\n` : "") +
     (nav && tasks.length ? `Open tasks (id: task):\n${tasks.slice(0, 40).map((t) => `- ${t.id}: ${String(t.text || "").replace(/\s+/g, " ").slice(0, 90)}${t.repo ? ` [${t.repo}]` : ""}`).join("\n")}\n\n` : "") + (context ? context + "\n\n" : "") + (history ? `This chat so far:\n${history}\n\n` : "") + `They say (on ${where}): ${question}`;
+  // Every chat, not only Home's: a PR named anywhere in what it is about to read is checked on GitHub now, and
+  // GitHub's word overrides an agent's (the chat said a PR was not merged after the user had merged it, 29 Oct 2026)
+  if (!/Pull requests checked on GitHub/.test(prompt)) { try { const live = await prFacts(`${prompt}\n${history}`, { lanes }); if (live.length) prompt += `\n\nPull requests checked on GitHub just now (the only source for whether a PR is open, merged or closed; they override anything an agent said):\n${live.map((x) => "- " + x).join("\n")}`; } catch {} }
   if (kept.length) prompt += `\n(Symbiot saved what they pasted, under ${kept.map((n) => `"${n}"`).join(", ")}. Say so in a few words, and carry on with what they asked.)`;
   const turned = rejectedLines(); // options they refused before: check these before offering any choice
   if (turned.length) prompt += `\n\nOptions they have already turned down. Never offer these again, in any words; offer another route instead:\n${turned.join("\n")}`;
