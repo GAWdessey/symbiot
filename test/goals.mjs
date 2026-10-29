@@ -211,6 +211,9 @@ try {
   const none = await G.goalFor("yes", { child: "run:rb", lane: "atlas", path: lanePath });
   const fol = await G.goalFor("do it yourself", { child: "run:rc", lane: "atlas", path: join(CFG, "drafts", "act-99990000") });
   ok("a request opens a goal; \"yes\" opens none; \"do it yourself\" joins the lane's goal with its run", ga && none === null && fol && fol.key === ga.key && G.goalById(ga.key).children.includes("run:rc") && J.goalRows().length === before + 1, [ga && ga.key, none, fol && fol.key]);
+  const hist = "User: what would you want to see behind each status on Home?\nYou: Proof lines. Want me to build them, or something else?";
+  ok("…a short reply to the chat's own question is seen as one", G.answersQuestion(hist, "surprize me") && !G.answersQuestion(hist, "Build the proof lines on Home and show the PR state, the report and the last step of each run now") && !G.answersQuestion("User: hi\nYou: Hello.", "surprize me") && !G.answersQuestion("", "surprize me"));
+  ok("…and opens no goal of its own, where the same words alone still do", (await G.goalFor("surprize me", { lane: "nowhere2", path: "", answering: true })) === null && !!(await G.goalFor("surprize me", { lane: "nowhere2", path: "" })));
   ok("…a follow-up with nothing open to join opens nothing", (await G.goalFor("do it again", { lane: "nowhere", path: "" })) === null);
   console.log("GOALS — rows opened before from questions and replies are closed as not goals");
   const junk = G.openGoal("who makes these cards? is it not you?", { lane: "ops" }), real = G.openGoal("Ship the redesigned demo console", { lane: "ops" });
