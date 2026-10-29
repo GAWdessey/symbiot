@@ -462,5 +462,26 @@ console.log("REPORTS — copies of one report under run-id names are one report,
   const after = L(), j3 = after.find((r) => /Lee/.test(r.title)), u3 = after.find((r) => /Sam/.test(r.title));
   ok("…and what you did to them is carried over: still read, steps still dropped, the approval still holds", j3.id === before.id && j3.new === false && R.withNeeds(after, { seenFile: sf, tasks: [] }).find((r) => r.id === j3.id).needs === "" && R.decidedOn(u3, sf) === "approved", [j3, R.decidedOn(u3, sf)]);
 }
+console.log("A REPORT IN ~/.config/symbiot/reports — a run with no lane left it there (29 Oct 2026)");
+{
+  const dir = R.REPORTS_DIR; mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, "JUPYTER-NOTEBOOKS-2026-10-29.md"), "# Jupyter notebooks on this computer\n\n17 notebooks.\n");
+  writeFileSync(join(dir, "QUESTIONS.md"), "# not a report\n");
+  ok("it's where Symbiot keeps its own files", dir === join(CFG, "reports"), dir);
+  const l = R.listReports({ map: {}, folders: [], loose: [dir], running: none, seen: { seen: {} } }), r = l.find((x) => /JUPYTER/.test(x.name));
+  ok("Reports lists it, straight from that folder (no .symbiot/ under it), and it's unread", !!r && r.new === true && r.file === join(dir, "JUPYTER-NOTEBOOKS-2026-10-29.md") && r.title === "Jupyter notebooks on this computer", l);
+  ok("…from ops, as a run with no lane is, and not the files Symbiot talks through", r && r.lane === "ops" && !l.some((x) => x.name === "QUESTIONS.md"), l.map((x) => [x.name, x.lane]));
+  ok("…and it opens, by its id", r && /17 notebooks/.test(R.readReport(r.id, { list: l, mark: false }).text || ""));
+  ok("the full list looks there too, without being told", R.listReports({ map: {}, running: none, seen: { seen: {} } }).some((x) => x.file === join(dir, "JUPYTER-NOTEBOOKS-2026-10-29.md")));
+  // and what's said about it is checked against the list, not taken from a run's words
+  const said = "I ticked the task in `.symbiot/TASKS.md`. I also fixed README.md.\n\nThe report is on the Reports page as `JUPYTER-NOTEBOOKS-2026-10-29.md`. Also under Reports: GONE-AWAY.md.";
+  const c = R.reportClaims(said, { list: l });
+  ok("a report a text says is on Reports, and is, is confirmed; one that isn't, isn't", c.length === 2 && c[0].on === true && c[0].new === true && c[1].name === "GONE-AWAY.md" && c[1].on === false, c);
+  ok("…only names in a sentence that says Reports, never TASKS.md", !c.some((x) => /README|TASKS/.test(x.name)), c);
+  ok("…\"on Reports as NAME\" without .md too", R.reportClaims("It's on Reports as JUPYTER-NOTEBOOKS-2026-10-29, read it.", { list: l })[0].on === true);
+  ok("…nothing claimed when Reports isn't mentioned", R.reportClaims("Wrote GONE-AWAY.md.", { list: l }).length === 0);
+  ok("…as lines the chat is given: one there, one not, so it's not said to be", /JUPYTER.*is on Reports, unread/.test(R.claimLines(c)[0]) && /GONE-AWAY\.md is NOT on Reports/.test(R.claimLines(c)[1]), R.claimLines(c));
+  ok("the briefs say to check Reports, and GitHub for a merge, before saying so", HANDBACK.some((x) => /`symbiot reports`/.test(x) && /gh pr view/.test(x)));
+}
 console.log(`\n${fail ? "✗" : "✓"} reports: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

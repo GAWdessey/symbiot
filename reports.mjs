@@ -494,7 +494,26 @@ function collapseCopies({ folders, seenFile = SEEN_FILE, dry = false } = {}) {
   return out;
 }
 
+// What a text says is on Reports, checked against the list now: a run's last words said "on the Reports page as
+// JUPYTER-NOTEBOOKS-2026-10-29.md", the chat passed that on, and Reports said "Nothing here" (29 Oct 2026). Each
+// report it names (NAME.md, or "on Reports as NAME") in a sentence that mentions Reports: { name, on, title, new, file }.
+// [] when it names none. `list` can be given (the tests do).
+const CLAIM_NAME = /(?:^|[\s`'"(\/])([A-Z0-9][\w.-]*?\.md)\b|\bReports(?: page)?,? (?:as|under|called|named) [`'"\u201c]?([A-Z0-9][A-Z0-9_-]{5,})/g;
+function reportClaims(text, { list } = {}) {
+  const t = String(text || ""); if (!/\bReports\b/.test(t)) return [];
+  const names = new Set(); // only in a sentence that says Reports: "I updated README.md" elsewhere claims nothing
+  for (const s of t.split(/(?<=[.!?])\s+|\n+/)) if (/\bReports\b/.test(s)) for (const m of s.matchAll(CLAIM_NAME)) { const n = basename(m[1] || m[2] + ".md"); if (!NOT_REPORTS.test(plainName(n))) names.add(n); }
+  if (!names.size) return [];
+  list = list || listReports();
+  return [...names].slice(0, 6).map((name) => {
+    const r = list.find((x) => x.name === name || plainName(x.name) === plainName(name) || (x.copies || []).some((c) => c.name === name));
+    return r ? { name, on: true, title: r.title, new: !!r.new, file: r.file } : { name, on: false };
+  });
+}
+// The same as words: one line each, for the chat's context and under a run's last words.
+const claimLines = (claims) => claims.map((c) => (c.on ? `${c.name} is on Reports${c.new ? ", unread" : ""}: "${c.title}"` : `${c.name} is NOT on Reports: Symbiot can't find it there, so don't say it is`));
+
 // How many reports are new, and the newest one's title (Home's droplet).
 function reportsNews(opts) { const l = listReports(opts).filter((r) => r.new); return { count: l.length, latest: l[0] ? l[0].title : "" }; }
 
-export { REPORTS_DIR, draftCardsIn, supersededIdeas, sweepSuperseded, supersedeContext, SEEN_FILE, NOT_REPORTS, titleOf, listReports, readReport, phoneReports, phoneReport, reportImage, imagePath, markAllRead, reportsNews, mdHtml, reportIdeas, isDraftReport, decidedOn, decide, withNeeds, phoneReportNeedsText, IDEAS_MAX, handledIdeas, openIdeas, markIdeas, collapseCopies, pastDated, plainName };
+export { reportClaims, claimLines, REPORTS_DIR, draftCardsIn, supersededIdeas, sweepSuperseded, supersedeContext, SEEN_FILE, NOT_REPORTS, titleOf, listReports, readReport, phoneReports, phoneReport, reportImage, imagePath, markAllRead, reportsNews, mdHtml, reportIdeas, isDraftReport, decidedOn, decide, withNeeds, phoneReportNeedsText, IDEAS_MAX, handledIdeas, openIdeas, markIdeas, collapseCopies, pastDated, plainName };
