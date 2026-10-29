@@ -121,6 +121,16 @@ ok("previewFile: a Marketing tray, when the lane has one", previewFile(lane, "dr
 ok("picSize reads a PNG's size", JSON.stringify(picSize(join(tray, "cover.png"))) === JSON.stringify({ w: 1128, h: 191 }));
 ok("dropShown leaves the sentence whole", dropShown("Create it as shown, then post it") === "Create it, then post it" && dropShown("Post it like this?") === "Post it?");
 
+// critic, 29 Oct: two dotted field lines right above the choices are fields, not a raw line and a "no preview" warning
+{
+  const { q, p: two } = pv("## Questions\n### Post the launch update as shown? {#launch-post}\nThe post is ready.\n\n- Account ...... Bookwell page\n- Time ......... Fri 30 Oct 12:30\n- 🤖 Agent: post it (recommended)\n- 🤖 Agent: not now\n");
+  ok("the two lines aren't choices", q.options.length === 2 && /post it/.test(q.options[0]), q.options);
+  ok("they read label → value", two.fields && two.fields.length === 2 && two.fields[0].label === "Account" && two.fields[0].value === "Bookwell page" && two.fields[1].label === "Time" && two.fields[1].value === "Fri 30 Oct 12:30", two.fields);
+  ok("…under \"what you're approving\", with no warning and \"as shown\" kept", two.heading === "Preview · what you're approving" && !two.warn && !two.shown && !two.ask, two);
+  ok("and the lead-in is only the sentence", two.lead && two.lead.length === 1 && two.lead[0] === "The post is ready.", two.lead);
+  const { p: colon } = pv("## Questions\n### Ship 3.2 as shown?\nVersion: 3.2\nNotes: the basket waits\n- 🤖 Agent: ship it (recommended)\n");
+  ok("two colon lines stay words: a sentence can read like one", !colon.fields, colon);
+}
 // a question with no preview and no "as shown": as before, but its paragraphs kept
 {
   const { p: plain } = pv("## Questions\n### Ship 3.2 today?\n3.2 is ready.\n\nThe basket waits for 3.3.\n- 🤖 Agent: ship it (recommended)\n- 🤖 Agent: wait\n");

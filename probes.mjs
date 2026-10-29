@@ -145,7 +145,12 @@ function conflictsIn(dir, text, opts = {}) {
 // synchronously (homeState); a look that isn't back yet is started and shows at the next build.
 const OPEN_PRS = new Map(), OPEN_PRS_MS = 2 * 60000;
 const oneLine = (t, n) => { const x = String(t || "").replace(/<!--[\s\S]*?-->/g, " ").replace(/[`*#>_\[\]]/g, "").split("\n").map((l) => l.trim()).find((l) => l.length > 3) || ""; return x.length > n ? x.slice(0, n - 1) + "…" : x; };
+// Garth's own accounts: a PR is his to merge when its repo is owned by one, or one opened it. A lane that only clones or
+// forks someone else's repo (flutter/flutter) lists none of that repo's PRs (29 Oct 2026).
+const MINE = /^(?:GAWdessey|GarthGhostai)$/i;
+const isMine = (slug, v) => MINE.test(String(slug).split("/")[0]) || MINE.test(String((v.author && v.author.login) || ""));
 function mergeCard(slug, lane, v) {
+  if (!isMine(slug, v)) return null;
   const st = prState({ ...v, state: "OPEN" });
   if (v.isDraft || /conflicts|check failed/.test(st)) return null; // a fix run's job (actOn), not a merge for the user
   const how = v.autoMergeRequest ? (st === "checks running" ? "auto-merge is on and CI is still running; it merges itself when green" : "auto-merge is on") : st === "checks running" ? "auto-merge is off and CI is still running: merge it yourself when green" : "ready, and auto-merge is off: merge it yourself";
@@ -160,7 +165,7 @@ function openPrCards(map = {}, { now = Date.now(), gh = (args) => run("gh", args
       const rec = { cards: had ? had.cards : [], at: now, busy: true }; OPEN_PRS.set(dir, rec);
       rec.done = (async () => {
         const slug = await remoteSlug(dir, git); if (!slug) return;
-        const raw = await gh(["pr", "list", "-R", slug, "--state", "open", "--limit", "30", "--json", "number,title,url,body,isDraft,mergeable,mergeStateStatus,autoMergeRequest,statusCheckRollup"]);
+        const raw = await gh(["pr", "list", "-R", slug, "--state", "open", "--limit", "30", "--json", "number,title,url,body,author,isDraft,mergeable,mergeStateStatus,autoMergeRequest,statusCheckRollup"]);
         let list = null; try { list = JSON.parse(raw); } catch {}
         if (!Array.isArray(list)) return; // GitHub didn't answer: what was shown stays
         rec.cards = list.map((v) => mergeCard(slug, lane, v)).filter(Boolean);
