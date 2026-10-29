@@ -2,6 +2,15 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one), for anyone who installs the app: what changed in it, never whose work it was (no projects, people, accounts, services, run ids or task wording of the person who made it). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.94.6 — 2026-10-29
+
+- **Reports shows what agents leave in Symbiot's own reports folder.** A report written by a run outside any lane is listed on Reports, and the chat says a report is on Reports only when Reports lists it.
+- **A finished read-only run is done.** A lookup that changed no files isn't reopened or left waiting for Approve.
+- **A lane card says where its work really stands.** It reads Idle until GitHub answers, names the real blocker ("Needs your merge: PR #…") only while the PR is open, and says when it has been merged.
+- **A run beside a lane stays under its lane,** even once its copy is gone, and a copy a run is on is never removed.
+- **The design critic of a run beside a lane gets a worktree of its own** and never asks you to make one.
+- **On Home, the chat and a "Needs you" card no longer overlap.**
+
 ## 0.94.5 — 2026-10-28
 
 - **A card you answered stays answered.** Answer a Home card in either wording, from its own chat, or by a standing decision, and a later run no longer brings it back.
