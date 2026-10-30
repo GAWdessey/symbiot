@@ -690,6 +690,21 @@ const LABEL_OF = `
     const img = e.querySelector('img[alt],svg title,[aria-label]');
     return img ? clean(img.getAttribute('alt') || img.getAttribute('aria-label') || img.textContent) : '';
   };
+  // An on/off switch drawn by the site (LinkedIn's page settings, Material's toggles) keeps its real
+  // checkbox 1px or clipped away (sr-only: margin -1px puts even that pixel off the switch) and shows
+  // something else in its place: its label, else (no label) the box around it that takes the click.
+  // That face is what's mapped and pressed; null for any other element.
+  const faceOf = (e) => {
+    if (!(e && e.tagName === 'INPUT' && /^(checkbox|radio)$/i.test(e.type))) return null;
+    const b = e.getBoundingClientRect(); if (b.width >= 4 && b.height >= 4) return null;
+    const seen = (n) => { const r = n.getBoundingClientRect(); return r.width >= 4 && r.height >= 4 && r.width * r.height <= innerWidth * innerHeight / 4 && getComputedStyle(n).visibility !== 'hidden'; };
+    const lab = (e.labels && e.labels[0]) || deepClosest(e, 'label');
+    if (lab && seen(lab)) return lab;
+    const CLK = window.__symbiotClicks;
+    for (let n = upOf(e), i = 0; n && n !== document.body && i < 4; n = upOf(n), i++)
+      if (seen(n) && (getComputedStyle(n).cursor === 'pointer' || typeof n.onclick === 'function' || (CLK && CLK.has(n)) || /^(switch|checkbox|radio)$/.test(n.getAttribute('role') || ''))) return n;
+    return null;
+  };
 `;
 
 // Runs in the page: everything you could click or type in that's on screen now
@@ -782,13 +797,8 @@ const collectJs = (whole, list = null) => `(() => { ${SCROLLER} ${DEEP} ${LABEL_
     if ((!inList && kinds.has(e)) || e.disabled || deepClosest(e, '[aria-hidden=true],[inert]')) continue;
     const kind = took.has(e) ? 'button' : kindOf(e), up = upOf(e) && deepClosest(upOf(e), SEL);
     if (up && kinds.get(up) === kind && kind !== 'field') continue;
-    // an on/off switch drawn by the site (LinkedIn's page settings, Material's toggles) keeps its real
-    // checkbox 1px or clipped away and shows a label or box in its place: that is what to press
-    let b = e.getBoundingClientRect(), face = null;
-    if (e.tagName === 'INPUT' && /^(checkbox|radio)$/i.test(e.type) && (b.width < 4 || b.height < 4)) {
-      const lab = (e.labels && e.labels[0]) || e.closest('label');
-      if (lab) { const lb = lab.getBoundingClientRect(); if (lb.width >= 4 && lb.height >= 4 && getComputedStyle(lab).visibility !== 'hidden') { b = lb; face = lab; } }
-    }
+    // an on/off switch drawn by the site shows its face (faceOf) in its real checkbox's place
+    const face = faceOf(e), b = (face || e).getBoundingClientRect();
     const CL = inList ? LB : { left: 0, top: 0, right: W, bottom: H };
     // cut off at the list's bottom: the next part shows all of it (it overlaps), unless this is the
     // last; cut off at its top, the part before showed all of it
@@ -1389,7 +1399,7 @@ const findRegion = (r, c, full) => `(() => { ${DEEP} ${LABEL_OF}
   all = all.filter((e) => { const b = e.getBoundingClientRect(); return b.width && b.height; });
   const top = !full && c.x >= 0 && c.y >= 0 && c.x < innerWidth && c.y < innerHeight ? deepAt(c.x, c.y) : null;
   const down = (e) => { let x = full ? scrollX : 0, y = full ? scrollY : 0; if (full) for (let n = upOf(e); n && n !== document.body; n = upOf(n)) { x += n.scrollLeft || 0; y += n.scrollTop || 0; } return { x, y }; };
-  const atSpot = (e) => { const b = e.getBoundingClientRect(), o = down(e);
+  const atSpot = (e) => { const b = (faceOf(e) || e).getBoundingClientRect(), o = down(e);
     if (!(c.x >= b.left + o.x - 1 && c.x <= b.right + o.x + 1 && c.y >= b.top + o.y - 1 && c.y <= b.bottom + o.y + 1)) return false;
     return full || (!!top && (top === e || deepContains(e, top) || deepContains(top, e))); };
   const go = (e) => { const a = deepClosest(e, 'a[target]'); if (a) a.removeAttribute('target'); };
@@ -1397,9 +1407,11 @@ const findRegion = (r, c, full) => `(() => { ${DEEP} ${LABEL_OF}
   const there = !e && top && top !== document.body && top !== document.documentElement && deepClosest(top, ${JSON.stringify(CLICKABLE)});
   if (there) { go(there); return { x: c.x, y: c.y, by: 'spot' }; }
   e = e || all[0]; if (!e) return null;
-  go(e); e.scrollIntoView({ block: 'center', inline: 'center' }); const b = e.getBoundingClientRect(), x = b.left + b.width / 2, y = b.top + b.height / 2;
+  // a switch whose real checkbox is hidden is pressed on its face: the checkbox's own pixel is off it
+  const f = faceOf(e) || e;
+  go(e); f.scrollIntoView({ block: 'center', inline: 'center' }); const b = f.getBoundingClientRect(), x = b.left + b.width / 2, y = b.top + b.height / 2;
   const t = b.width && b.height && deepAt(x, y);
-  return b.width && b.height ? { x, y, by: 'selector', clear: !!t && (t === e || deepContains(e, t) || deepContains(t, e)) } : null;
+  return b.width && b.height ? { x, y, by: 'selector', clear: !!t && (t === e || t === f || deepContains(e, t) || deepContains(f, t) || deepContains(t, e)) } : null;
 })()`;
 
 // Act on a mapped region: find it (by its selector, else at the same spot) and give
@@ -1469,8 +1481,22 @@ const clickAt = async (page, at) => { for (const type of ["mouseMoved", "mousePr
 function pressRegion(id, regionId, { confirmed = false, noSend = false, who = "" } = {}) {
   const s = noSend ? loadScreens().find((x) => x.id === id) : null, host = s && s.page ? hostOf(s.page.url) : "";
   return actOnRegion(id, regionId, "Press", confirmed, (r) => (noSend && isSend(r, host) ? `"${r.label}" sends or posts. This run only drafts: it never presses Send, Post, Comment or Reply. The draft stays for the user to send or post.` : ""),
-    async (page, at, r) => { if (r.frame) await clickKeepingTab(page, at); else await clickAt(page, at); return { pressed: r.label }; }, who);
+    async (page, at, r) => {
+      const was = await switchState(page, r);
+      if (r.frame) await clickKeepingTab(page, at); else await clickAt(page, at);
+      // a switch or checkbox that's still as it was: the press missed it, though something was clicked
+      if (was !== null && !(r.kind === "radio" && was)) {
+        let now = was; for (let i = 0; i < 6 && now === was; i++) { await sleep(100); now = await switchState(page, r); }
+        if (now === was) return { pressed: r.label, error: `Pressed "${r.label}", but it is still ${was ? "on" : "off"}: the press didn't reach it. Map the page again and press it there, or say what blocks it.` };
+      }
+      return { pressed: r.label };
+    }, who);
 }
+// On or off now, for a region that is a checkbox, radio or switch (its checked, else aria-checked); else null.
+const switchState = async (page, r) => !r.selector || !/^(checkbox|radio|switch)$/.test(r.kind) ? null : (await page.send("Runtime.evaluate", { returnByValue: true, expression: `(() => { ${DEEP}
+  const e = deepOne(${JSON.stringify(r.selector)}); if (!e) return null;
+  if (e.tagName === 'INPUT' && /^(checkbox|radio)$/i.test(e.type)) return e.checked;
+  const a = e.getAttribute('aria-checked'); return a === 'true' ? true : a === 'false' ? false : null; })()` }).catch(() => null))?.result?.value ?? null;
 // Click in a frame, and a tab the click opens is opened in this one instead, so what it leads
 // to is what's mapped next: findRegion keeps a link in the page from opening a new tab, but
 // can't reach into a frame (an ad box's link opens one).

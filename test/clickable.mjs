@@ -23,6 +23,7 @@ const { chromeBinary } = await import("../core.mjs");
 const h = await import("../headless.mjs");
 console.log("CLICKABLE TEXT — a sign-in's pop-up, mapped and pressed as it is");
 // the sign-in: Email over where the pop-up's PIN field opens, so a PIN typed at its spot lands in Email
+const SR_ONLY = "position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0";
 const page = `<!doctype html><title>Sign in</title><body style="margin:0;font:16px sans-serif">
 <form style="padding:20px"><input id="email" placeholder="Email" style="position:absolute;left:300px;top:300px;width:300px;height:30px">
 <button type="button" id="signin" style="position:absolute;left:300px;top:360px">Sign In</button></form>
@@ -30,7 +31,14 @@ const page = `<!doctype html><title>Sign in</title><body style="margin:0;font:16
 <div style="cursor:pointer;padding:20px;width:300px"><button type="button">Inside a pointer card</button></div>
 <div id="all" style="padding:20px">The page itself listens for clicks.</div>
 <div id="own" style="padding:20px;width:200px">Its own mousedown</div>
-<div style="padding:20px"><input type="checkbox" role="switch" id="msgbtn" aria-label="Message button" style="position:absolute;width:1px;height:1px;clip:rect(0 0 0 0);overflow:hidden"><label for="msgbtn" style="display:inline-block;width:44px;height:24px;border-radius:12px;background:#999;cursor:pointer"></label></div>
+<!-- LinkedIn's page settings, Edit page > Buttons: the real checkbox sr-only (1px, clipped, margin -1px, so even
+     its pixel is off the switch), named by text across the row, drawn by a label at the row's far end -->
+<div style="position:absolute;left:700px;top:20px;width:420px">
+<div style="display:flex;justify-content:space-between;padding:10px 0"><span id="msgtxt">Message button</span>
+<span><input type="checkbox" role="switch" id="msgbtn" aria-labelledby="msgtxt" style="${SR_ONLY}"><label for="msgbtn" style="display:inline-block;width:44px;height:24px;border-radius:12px;background:#999;cursor:pointer"></label></span></div>
+<div id="mailwrap" style="display:inline-flex;gap:8px;align-items:center;padding:10px 0;cursor:pointer"><input type="checkbox" id="mail" aria-label="Email notifications" style="${SR_ONLY}"><span style="width:44px;height:24px;border-radius:12px;background:#999"></span><span>Email notifications</span></div>
+<div style="padding:10px 0"><input type="checkbox" id="locked" aria-label="Locked setting" style="width:20px;height:20px"></div>
+</div>
 <div id="otpCellModal" role="dialog" aria-modal="true" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.4)">
   <div style="background:#fff;position:absolute;left:250px;top:250px;width:400px;height:300px;padding:16px">
     <h4>Two-Factor Verification</h4>
@@ -48,6 +56,11 @@ document.getElementById("resend").addEventListener("click", () => { document.tit
 document.addEventListener("click", (e) => { if (e.target.closest(".email-otp")) document.title = "email otp sent"; });
 document.body.addEventListener("click", () => {});
 document.getElementById("msgbtn").addEventListener("change", (e) => { document.title = "message " + (e.target.checked ? "on" : "off"); });
+// no <label>: the box around it takes the click and flips it
+document.getElementById("mailwrap").addEventListener("click", (e) => { const i = document.getElementById("mail"); if (e.target !== i) { i.checked = !i.checked; i.dispatchEvent(new Event("change")); } });
+document.getElementById("mail").addEventListener("change", (e) => { document.title = "mail " + (e.target.checked ? "on" : "off"); });
+// a checkbox the page won't let change
+document.getElementById("locked").addEventListener("click", (e) => e.preventDefault());
 document.getElementById("own").addEventListener("mousedown", () => { document.title = "own"; });
 </script></body>`;
 if (!chromeBinary()) console.log("  - no Chrome here: skipped");
@@ -63,9 +76,18 @@ else {
     ok("…and a part with a mousedown handler of its own is a button", find(s1, /^Its own mousedown$/, "button"), labels(s1));
     ok("…a card that points as a link isn't a button of its own around the button in it", find(s1, /Inside a pointer card/, "button") && labels(s1).filter((l) => /Inside a pointer card/.test(l)).length === 1, labels(s1));
     const sw = find(s1, /^Message button$/);
-    ok("an on/off switch whose real checkbox is clipped away is mapped, by its visible face", sw && sw.w >= 40 && sw.h >= 20, labels(s1));
+    ok("an on/off switch whose real checkbox is sr-only (LinkedIn's Buttons rows) is mapped, by its visible face", sw && sw.w >= 40 && sw.h >= 20, labels(s1));
     const swp = sw && await h.pressRegion(s1.id, sw.id, { confirmed: true });
-    ok("…and pressing it switches it", swp && !swp.error && swp.found && swp.name === "message on", swp && { error: swp.error, found: swp.found, name: swp.name });
+    ok("…and pressing it switches it on", swp && !swp.error && swp.found && swp.name === "message on", swp && { error: swp.error, found: swp.found, name: swp.name });
+    const swq = sw && await h.pressRegion(s1.id, sw.id, { confirmed: true });
+    ok("…and again, off", swq && !swq.error && swq.name === "message off", swq && { error: swq.error, name: swq.name });
+    const ml = find(s1, /^Email notifications$/, "checkbox");
+    ok("a switch with no <label> is mapped by the box around it that takes the click", ml && ml.w >= 44, labels(s1));
+    const mlp = ml && await h.pressRegion(s1.id, ml.id, { confirmed: true });
+    ok("…and pressing it switches it", mlp && !mlp.error && mlp.found && mlp.name === "mail on", mlp && { error: mlp.error, found: mlp.found, name: mlp.name });
+    const lk = find(s1, /^Locked setting$/, "checkbox");
+    const lkp = lk && await h.pressRegion(s1.id, lk.id, { confirmed: true });
+    ok("a press that leaves a checkbox as it was says so, not found with no error", lkp && /still off/.test(lkp.error || ""), lkp && { error: lkp.error, found: lkp.found });
     const s2 = await h.pressRegion(s1.id, find(s1, /^Sign In$/).id, { confirmed: true });
     ok("Sign In opens the pop-up: its field and button are mapped, and not what's behind it", s2 && !s2.error && find(s2, /^PIN$/, "field") && find(s2, /^Verify$/) && !find(s2, /^Email$/), s2 && (s2.error || labels(s2)));
     ok("…and its clickable text too: a bare <a> with a click handler, and text the site points at", find(s2, /^Resend One-Time PIN$/, "button") && find(s2, /^Send Email OTP instead\?$/, "button"), labels(s2));
