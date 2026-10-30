@@ -44,11 +44,32 @@ try {
   board["Acme/widgets"] = [];
   openPrCards(map, { gh, now: Date.now() + 3 * 60000 }); await openPrCards.wait();
   ok("the next look drops it", !openPrCards(map, { gh }).some((c) => /598/.test(c.id)));
-  console.log("3) Home");
+  console.log("3) a private repo names the login that can see it, and offers to merge it");
+  const e = join(HOME, "e"); mkdirSync(e, { recursive: true }); sh(e, "init", "-q"); sh(e, "remote", "add", "origin", "https://github.com/example-owner/private-notes.git");
+  board["example-owner/private-notes"] = [pr(10)]; perms["example-owner/private-notes"] = { admin: true, push: true };
+  const priv = { "example-owner/private-notes": true };
+  const gh2 = async (args) => { if (args[0] === "api" && args[1] === "user") return "example-owner\n"; if (args[0] === "api") return JSON.stringify({ archived: false, private: !!priv[args[1].slice(6)], permissions: perms[args[1].slice(6)] || {} }); return JSON.stringify(board[args[args.indexOf("-R") + 1]]); };
+  openPrCards.clear(); openPrCards({ notes: e, widgets: b }, { gh: gh2 }); await openPrCards.wait();
+  const pc = openPrCards({ notes: e, widgets: b }, { gh: gh2 }), p10 = pc.find((c) => /private-notes#10/.test(c.id)), pub = pc.find((c) => /widgets/.test(c.id));
+  ok("the private repo's card says which GitHub login sees it, that others get a 404, and offers Merge it for me", p10 && p10.private && p10.login === "example-owner" && /signed in as example-owner/.test(p10.sub) && /404/.test(p10.sub) && /Merge it for me/.test(p10.sub) && p10.pr === 10, p10);
+  ok("a public repo's card says nothing about logins", !pub || (!pub.private && !/signed in as/.test(pub.sub)), pub);
+  console.log("4) Home");
   const { homeState } = await import("../home.mjs");
   const st = homeState({ fresh: true, deps: { repos: () => ({ widgets: b }), openPrs: () => [mergeOne()], board: () => ({ cards: [] }), pending: () => [], agents: () => [], lanes: () => ({ handoffs: [] }), reports: () => ({ count: 0 }), connected: () => true, waits: () => [], clashes: () => [], agentGone: () => "", signedOut: () => [], stuck: () => [], drafts: () => [], stalls: () => [], tasks: () => [], rootsSet: () => true, marketing: () => false, dismissed: () => ({}), cardText: () => ({}), syncJobs: () => {}, intuition: () => [], overrides: () => [], reviewHolds: () => [], pairedPhone: () => false, goalCards: () => [], troubles: () => [] } });
   ok("Home shows it under Only the user can do", st.you.some((y) => y.kind === "merge" && y.url), st.you);
   function mergeOne() { return { ...c333 }; }
+  console.log("5) the card's buttons (the page's own code)");
+  const { EMBEDDED_UI } = await import("../ui.mjs");
+  const js = [...EMBEDDED_UI.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]).join("\n");
+  const grab = (name) => { const i = js.indexOf("function " + name + "("); let depth = 0, j = js.indexOf("{", i); for (; j < js.length; j++) { if (js[j] === "{") depth++; else if (js[j] === "}" && --depth === 0) break; } return js.slice(i, j + 1); };
+  const blob = js.slice(js.indexOf("if(y.kind!=='ask')return h+"), js.indexOf("if(y.kind!=='ask')return h+") + 1200);
+  ok("a private repo's card opens GitHub 'as' its login and has a Merge it for me button", /y\.private&&y\.login\?'Open it on GitHub as '/.test(blob) && /class='nopt nmg'><span class='bt'>Merge it for me/.test(blob), blob.slice(0, 400));
+  const calls = [], said = [], btn = () => ({ disabled: false, on: {}, addEventListener(t, f) { this.on[t] = f; }, classList: { add() {}, remove() {}, toggle() {} } });
+  const mg = btn(), boxed = { classList: { add() {} }, querySelector: (q) => (q === ".nmg" ? mg : null), querySelectorAll: () => [mg] };
+  const F = new Function("api", "lqSaid", "localStorage", ["var BLOBBUSY={},BLOBSENT={},BLOBFAIL={},BLOBFAIL_FOR=60000,LQ={};function lqLoad(){}", "function loadLinks(){}function loadTrusted(){}", ...["bdKey", "blobFailed", "bdAll", "bdGet", "signInSaid", "openSignIn", "wireBlob"].map(grab)].join("\n") + "\nreturn { wireBlob };")(
+    (path, body) => { calls.push({ path, body }); return Promise.resolve({ ok: true, merged: body.pr }); }, (t, bad) => said.push({ t, bad }), { getItem: () => null, setItem() {} });
+  F.wireBlob(boxed, { ...p10, repo: "notes" }, {}); mg.on.click(); await new Promise((r) => setTimeout(r, 0));
+  ok("Merge it for me asks Symbiot to merge it (/api/pending/merge, its lane and PR) and says it merged", calls.length === 1 && calls[0].path === "/api/pending/merge" && calls[0].body.repo === "notes" && calls[0].body.pr === "10" && said.some((x) => /Merged PR #10/.test(x.t) && !x.bad), [calls, said]);
 } finally { rmSync(HOME, { recursive: true, force: true }); }
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

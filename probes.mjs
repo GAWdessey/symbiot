@@ -150,22 +150,28 @@ const oneLine = (t, n) => { const x = String(t || "").replace(/<!--[\s\S]*?-->/g
 // gods-eye-view) lists none of its PRs, whoever opened them (29 Oct 2026). Unknown (GitHub didn't answer) is not cached.
 // An archived repo is read-only, so nobody can merge there whatever his permissions say: Home showed GAWdessey/paperclip #1
 // as "ready, and auto-merge is off: merge it yourself" though the repo was archived on 8 Oct 2026 (30 Oct 2026).
-const CAN_MERGE = new Map(), CAN_MERGE_MS = 60 * 60000;
+// A private repo's page is a 404 to any other GitHub login: Garth's browser was signed in as GarthGhostai and
+// GAWdessey/symbiot-marketing #10 "didn't exist" (30 Oct 2026). So the look also keeps whether it is private and which
+// login gh asked as (gh api user, once): the card names that login, and offers to merge it with gh as that login.
+const CAN_MERGE = new Map(), CAN_MERGE_MS = 60 * 60000; let GH_LOGIN = null;
 async function canMerge(slug, gh, now) {
-  const had = CAN_MERGE.get(slug); if (had && now - had.at < CAN_MERGE_MS) return had.ok;
-  let r = null; try { r = JSON.parse(await gh(["api", `repos/${slug}`, "--jq", "{archived: .archived, permissions: .permissions}"])); } catch {}
+  const had = CAN_MERGE.get(slug); if (had && now - had.at < CAN_MERGE_MS) return had;
+  let r = null; try { r = JSON.parse(await gh(["api", `repos/${slug}`, "--jq", "{archived: .archived, private: .private, permissions: .permissions}"])); } catch {}
   const p = r && r.permissions;
-  if (!p || typeof p !== "object") return had ? had.ok : false;
-  const ok = !r.archived && !!(p.push || p.maintain || p.admin); CAN_MERGE.set(slug, { ok, at: now }); return ok;
+  if (!p || typeof p !== "object") return had || { ok: false };
+  const ok = !r.archived && !!(p.push || p.maintain || p.admin);
+  if (ok && r.private && !GH_LOGIN) GH_LOGIN = String((await gh(["api", "user", "--jq", ".login"])) || "").trim() || null;
+  const rec = { ok, private: !!r.private, login: r.private ? GH_LOGIN || "" : "", at: now }; CAN_MERGE.set(slug, rec); return rec;
 }
-function mergeCard(slug, lane, v) {
+function mergeCard(slug, lane, v, repo = {}) {
   const st = prState({ ...v, state: "OPEN" });
   if (v.isDraft || /conflicts|check failed/.test(st)) return null; // a fix run's job (actOn), not a merge for the user
   // BLOCKED with nothing running: a rule GitHub enforces (a required review or check) stops the merge, so it is not "ready".
   const blocked = v.mergeStateStatus === "BLOCKED" && st !== "checks running";
   const how = v.autoMergeRequest ? (st === "checks running" ? "auto-merge is on and CI is still running; it merges itself when green" : blocked ? "auto-merge is on, but GitHub blocks the merge until a required review or check passes" : "auto-merge is on") : st === "checks running" ? "auto-merge is off and CI is still running: merge it yourself when green" : blocked ? "not mergeable yet: GitHub blocks it until a required review or check passes; open it to see which" : "ready, and auto-merge is off: merge it yourself";
   const fixes = oneLine(v.body, 140);
-  return { kind: "merge", id: `pr:${slug}#${v.number}`, repo: lane, name: lane, title: `Merge PR #${v.number}: ${oneLine(v.title, 90)}`, sub: `${slug} #${v.number} · ${how}${fixes ? ` · ${fixes}` : ""}`, url: v.url, shape: "tasks" };
+  const who = repo.private ? ` · a private repo: GitHub shows it only ${repo.login ? `while you're signed in as ${repo.login}` : "to a login with access"}, and any other login gets a 404 page; or press "Merge it for me" and Symbiot merges it with gh${repo.login ? ` as ${repo.login}` : ""} once its checks pass` : "";
+  return { kind: "merge", id: `pr:${slug}#${v.number}`, repo: lane, name: lane, title: `Merge PR #${v.number}: ${oneLine(v.title, 90)}`, sub: `${slug} #${v.number} · ${how}${who}${fixes ? ` · ${fixes}` : ""}`, url: v.url, pr: v.number, ...(repo.private ? { private: true, login: repo.login || "" } : {}), shape: "tasks" };
 }
 function openPrCards(map = {}, { now = Date.now(), gh = (args) => run("gh", args), git } = {}) {
   const out = [], seen = new Set();
@@ -175,11 +181,11 @@ function openPrCards(map = {}, { now = Date.now(), gh = (args) => run("gh", args
       const rec = { cards: had ? had.cards : [], at: now, busy: true }; OPEN_PRS.set(dir, rec);
       rec.done = (async () => {
         const slug = await remoteSlug(dir, git); if (!slug) return;
-        if (!(await canMerge(slug, gh, now))) { rec.cards = []; return; }
+        const can = await canMerge(slug, gh, now); if (!can.ok) { rec.cards = []; return; }
         const raw = await gh(["pr", "list", "-R", slug, "--state", "open", "--limit", "30", "--json", "number,title,url,body,author,isDraft,mergeable,mergeStateStatus,autoMergeRequest,statusCheckRollup"]);
         let list = null; try { list = JSON.parse(raw); } catch {}
         if (!Array.isArray(list)) return; // GitHub didn't answer: what was shown stays
-        rec.cards = list.map((v) => mergeCard(slug, lane, v)).filter(Boolean);
+        rec.cards = list.map((v) => mergeCard(slug, lane, v, can)).filter(Boolean);
       })().catch(() => {}).finally(() => { rec.busy = false; });
     }
     for (const c of OPEN_PRS.get(dir).cards) if (!seen.has(c.id)) { seen.add(c.id); out.push({ ...c, repo: lane, name: lane }); }
@@ -187,7 +193,7 @@ function openPrCards(map = {}, { now = Date.now(), gh = (args) => run("gh", args
   return out;
 }
 openPrCards.wait = () => Promise.all([...OPEN_PRS.values()].map((r) => r.done));
-openPrCards.clear = () => { OPEN_PRS.clear(); CAN_MERGE.clear(); };
+openPrCards.clear = () => { OPEN_PRS.clear(); CAN_MERGE.clear(); GH_LOGIN = null; };
 
 // ---- npm ------------------------------------------------------------------------------
 // A lane's package that's published (publishConfig), or Symbiot's own: { lane, name, version }.

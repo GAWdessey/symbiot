@@ -188,6 +188,7 @@ const calls = [
   ["/api/pending/diff?repo=x", "GET"],
   ["/api/pending/approve", "POST"], // no repo -> "nothing awaiting review", no git runs
   ["/api/pending/job?repo=x", "GET"], // no Approve going there -> { none }
+  ["/api/pending/merge", "POST"],   // no repo or PR -> "Say which repo and PR.", nothing merged
   ["/api/pending/sendback", "POST"],
   ["/api/pending/send", "POST"],    // no repo -> "repo not found", nothing pushed
   ["/api/pending/leave", "POST"],   // no repo -> "repo not found", nothing forgotten
