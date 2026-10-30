@@ -782,7 +782,14 @@ const collectJs = (whole, list = null) => `(() => { ${SCROLLER} ${DEEP} ${LABEL_
     if ((!inList && kinds.has(e)) || e.disabled || deepClosest(e, '[aria-hidden=true],[inert]')) continue;
     const kind = took.has(e) ? 'button' : kindOf(e), up = upOf(e) && deepClosest(upOf(e), SEL);
     if (up && kinds.get(up) === kind && kind !== 'field') continue;
-    const b = e.getBoundingClientRect(), CL = inList ? LB : { left: 0, top: 0, right: W, bottom: H };
+    // an on/off switch drawn by the site (LinkedIn's page settings, Material's toggles) keeps its real
+    // checkbox 1px or clipped away and shows a label or box in its place: that is what to press
+    let b = e.getBoundingClientRect(), face = null;
+    if (e.tagName === 'INPUT' && /^(checkbox|radio)$/i.test(e.type) && (b.width < 4 || b.height < 4)) {
+      const lab = (e.labels && e.labels[0]) || e.closest('label');
+      if (lab) { const lb = lab.getBoundingClientRect(); if (lb.width >= 4 && lb.height >= 4 && getComputedStyle(lab).visibility !== 'hidden') { b = lb; face = lab; } }
+    }
+    const CL = inList ? LB : { left: 0, top: 0, right: W, bottom: H };
     // cut off at the list's bottom: the next part shows all of it (it overlaps), unless this is the
     // last; cut off at its top, the part before showed all of it
     if (inList && b.height <= LB.bottom - LB.top && ((!IN.last && b.bottom > LB.bottom + 1) || (LIST.scrollTop > 0 && b.top < LB.top - 1))) continue;
@@ -798,7 +805,7 @@ const collectJs = (whole, list = null) => `(() => { ${SCROLLER} ${DEEP} ${LABEL_
     // a site-drawn radio or checkbox has its own touch-target span over the input: a hit in the same
     // radio host or label (Angular Material's mat-radio-button) is the control itself, not a banner
     const host = bare && deepClosest(e, 'mat-radio-button,mat-checkbox,label,[role=radio],[role=checkbox]');
-    if (!top || !(top === e || deepContains(e, top) || deepContains(top, e) || (host && deepContains(host, top)))) continue;
+    if (!top || !(top === e || deepContains(e, top) || deepContains(top, e) || (host && deepContains(host, top)) || (face && (top === face || deepContains(face, top))))) continue;
     ${whole ? "if (y >= H - 200 && stuck(e)) continue; // stuck to the window's bottom: left out of the whole page's picture" : ""}
     const full = e.tagName === 'IFRAME' ? frameLabel(e) : labelOf(e), at = inList ? Math.round(b.top + LIST.scrollTop) + '|' + kind + '|' + full : '';
     if (at && kept.at.has(at)) { kinds.set(e, kind); continue; }

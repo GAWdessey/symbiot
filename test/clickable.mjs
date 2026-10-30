@@ -30,6 +30,7 @@ const page = `<!doctype html><title>Sign in</title><body style="margin:0;font:16
 <div style="cursor:pointer;padding:20px;width:300px"><button type="button">Inside a pointer card</button></div>
 <div id="all" style="padding:20px">The page itself listens for clicks.</div>
 <div id="own" style="padding:20px;width:200px">Its own mousedown</div>
+<div style="padding:20px"><input type="checkbox" role="switch" id="msgbtn" aria-label="Message button" style="position:absolute;width:1px;height:1px;clip:rect(0 0 0 0);overflow:hidden"><label for="msgbtn" style="display:inline-block;width:44px;height:24px;border-radius:12px;background:#999;cursor:pointer"></label></div>
 <div id="otpCellModal" role="dialog" aria-modal="true" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.4)">
   <div style="background:#fff;position:absolute;left:250px;top:250px;width:400px;height:300px;padding:16px">
     <h4>Two-Factor Verification</h4>
@@ -46,6 +47,7 @@ document.getElementById("resend").addEventListener("click", () => { document.tit
 // a delegated handler, as jQuery's on("click", ".email-otp"): only its cursor says it's clickable
 document.addEventListener("click", (e) => { if (e.target.closest(".email-otp")) document.title = "email otp sent"; });
 document.body.addEventListener("click", () => {});
+document.getElementById("msgbtn").addEventListener("change", (e) => { document.title = "message " + (e.target.checked ? "on" : "off"); });
 document.getElementById("own").addEventListener("mousedown", () => { document.title = "own"; });
 </script></body>`;
 if (!chromeBinary()) console.log("  - no Chrome here: skipped");
@@ -60,6 +62,10 @@ else {
     ok("the sign-in is mapped, without its plain words or the page that listens for clicks", find(s1, /^Sign In$/) && find(s1, /^Email$/, "field") && !find(s1, /Plain words/) && !find(s1, /^The page itself/), labels(s1));
     ok("…and a part with a mousedown handler of its own is a button", find(s1, /^Its own mousedown$/, "button"), labels(s1));
     ok("…a card that points as a link isn't a button of its own around the button in it", find(s1, /Inside a pointer card/, "button") && labels(s1).filter((l) => /Inside a pointer card/.test(l)).length === 1, labels(s1));
+    const sw = find(s1, /^Message button$/);
+    ok("an on/off switch whose real checkbox is clipped away is mapped, by its visible face", sw && sw.w >= 40 && sw.h >= 20, labels(s1));
+    const swp = sw && await h.pressRegion(s1.id, sw.id, { confirmed: true });
+    ok("…and pressing it switches it", swp && !swp.error && swp.found && swp.name === "message on", swp && { error: swp.error, found: swp.found, name: swp.name });
     const s2 = await h.pressRegion(s1.id, find(s1, /^Sign In$/).id, { confirmed: true });
     ok("Sign In opens the pop-up: its field and button are mapped, and not what's behind it", s2 && !s2.error && find(s2, /^PIN$/, "field") && find(s2, /^Verify$/) && !find(s2, /^Email$/), s2 && (s2.error || labels(s2)));
     ok("…and its clickable text too: a bare <a> with a click handler, and text the site points at", find(s2, /^Resend One-Time PIN$/, "button") && find(s2, /^Send Email OTP instead\?$/, "button"), labels(s2));

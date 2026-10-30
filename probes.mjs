@@ -148,17 +148,22 @@ const oneLine = (t, n) => { const x = String(t || "").replace(/<!--[\s\S]*?-->/g
 // A PR is Garth's to merge only where his GitHub login can: push, maintain or admin on the repo (gh api repos/<slug>),
 // looked up once per repo and kept an hour. A lane that only clones someone else's repo (flutter/flutter, bilawalsidhu/
 // gods-eye-view) lists none of its PRs, whoever opened them (29 Oct 2026). Unknown (GitHub didn't answer) is not cached.
+// An archived repo is read-only, so nobody can merge there whatever his permissions say: Home showed GAWdessey/paperclip #1
+// as "ready, and auto-merge is off: merge it yourself" though the repo was archived on 8 Oct 2026 (30 Oct 2026).
 const CAN_MERGE = new Map(), CAN_MERGE_MS = 60 * 60000;
 async function canMerge(slug, gh, now) {
   const had = CAN_MERGE.get(slug); if (had && now - had.at < CAN_MERGE_MS) return had.ok;
-  let p = null; try { p = JSON.parse(await gh(["api", `repos/${slug}`, "--jq", ".permissions"])); } catch {}
+  let r = null; try { r = JSON.parse(await gh(["api", `repos/${slug}`, "--jq", "{archived: .archived, permissions: .permissions}"])); } catch {}
+  const p = r && r.permissions;
   if (!p || typeof p !== "object") return had ? had.ok : false;
-  const ok = !!(p.push || p.maintain || p.admin); CAN_MERGE.set(slug, { ok, at: now }); return ok;
+  const ok = !r.archived && !!(p.push || p.maintain || p.admin); CAN_MERGE.set(slug, { ok, at: now }); return ok;
 }
 function mergeCard(slug, lane, v) {
   const st = prState({ ...v, state: "OPEN" });
   if (v.isDraft || /conflicts|check failed/.test(st)) return null; // a fix run's job (actOn), not a merge for the user
-  const how = v.autoMergeRequest ? (st === "checks running" ? "auto-merge is on and CI is still running; it merges itself when green" : "auto-merge is on") : st === "checks running" ? "auto-merge is off and CI is still running: merge it yourself when green" : "ready, and auto-merge is off: merge it yourself";
+  // BLOCKED with nothing running: a rule GitHub enforces (a required review or check) stops the merge, so it is not "ready".
+  const blocked = v.mergeStateStatus === "BLOCKED" && st !== "checks running";
+  const how = v.autoMergeRequest ? (st === "checks running" ? "auto-merge is on and CI is still running; it merges itself when green" : blocked ? "auto-merge is on, but GitHub blocks the merge until a required review or check passes" : "auto-merge is on") : st === "checks running" ? "auto-merge is off and CI is still running: merge it yourself when green" : blocked ? "not mergeable yet: GitHub blocks it until a required review or check passes; open it to see which" : "ready, and auto-merge is off: merge it yourself";
   const fixes = oneLine(v.body, 140);
   return { kind: "merge", id: `pr:${slug}#${v.number}`, repo: lane, name: lane, title: `Merge PR #${v.number}: ${oneLine(v.title, 90)}`, sub: `${slug} #${v.number} · ${how}${fixes ? ` · ${fixes}` : ""}`, url: v.url, shape: "tasks" };
 }
