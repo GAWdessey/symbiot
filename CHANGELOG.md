@@ -2,6 +2,11 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one), for anyone who installs the app: what changed in it, never whose work it was (no projects, people, accounts, services, run ids or task wording of the person who made it). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.94.10 — 2026-10-30
+
+- **Home makes no Merge PR card for an archived repo**, even where you're an admin on it, and never calls a PR that GitHub blocks "ready".
+- **Pressing an on/off switch works when its real checkbox is hidden**: the switch is pressed on its face, and Press says when a switch didn't change.
+
 ## 0.94.9 — 2026-10-29
 
 - **Home no longer lists a PR to merge in a repo you can't merge into.** A Merge PR card appears only where your GitHub login has push, maintain or admin rights, checked per repo, so repos you only clone stop refilling the list.
