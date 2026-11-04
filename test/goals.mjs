@@ -154,7 +154,7 @@ try {
   await G.goalsTick(deps({ waits }), { now: sinceAt + 3 * DAY + H });
   ok("…three days on: the card says it's had no reply", /^No reply in 3 days/.test(G.goalById(g5.key).card.q), G.goalById(g5.key).card);
   const sent = [];
-  G.goalAnswer(g5.key, [{ q: "x", a: "Send the follow-up as drafted" }], deps({ waits, ops: (req) => (sent.push(req), { job: "r7", dir: ops }) }));
+  G.goalAnswer(g5.key, [{ q: "x", a: "Send the follow-up as drafted" }], deps({ waits, ops: (req) => (sent.push(req), run("r7", ops, { state: "running" }), { job: "r7", dir: ops }) }));
   ok("…sent only on the user's word, exactly as drafted, on the same thread", sent.length === 1 && /exactly as written/.test(sent[0]) && /"Routes", to alex@example\.com/.test(sent[0]) && /Could you send the routes/.test(sent[0]), sent);
 
   const p6 = join(HOME, "work", "quartz"); G.openGoal("Check the window tomorrow", { child: "run:r8", path: p6, now: t0 });
@@ -197,8 +197,9 @@ try {
   A.onGoalAnswer((p, a) => ({ ok: true, routed: p, a }));
   ok("a goal card's answer goes through answerQuestions, by its path", A.answerQuestions(g4.key, [{ q: "x", a: "Keep waiting" }]).routed === g4.key);
   const many = Array.from({ length: 320 }, (_, i) => ({ key: "run:n" + i, kind: "agent", state: "done", at: i, changed: i, history: [] }));
+  const gKeep = G.openGoal("Ship the partner routes page", { lane: "meridian" });
   J.saveJobs([...J.loadJobs(), ...many]);
-  ok("open goals are never pushed out of the record by newer rows", J.loadJobs().some((j) => j.key === g5.key));
+  ok("open goals are never pushed out of the record by newer rows", J.loadJobs().some((j) => j.key === gKeep.key));
 
   console.log("GOALS — only a request for work opens one; a follow-up joins its goal");
   const replies = ["yes", "1", "proceeed", "who makes these cards? is it not you?", "how should i know you are the one thats manning it not me", "give me a list of whats open so i can be disappointed in you please", "everytime i say approve it fails so wtf? (The user attached 1 screenshot)", "did you launch it so i can?"];
@@ -215,6 +216,23 @@ try {
   ok("…a short reply to the chat's own question is seen as one", G.answersQuestion(hist, "surprize me") && !G.answersQuestion(hist, "Build the proof lines on Home and show the PR state, the report and the last step of each run now") && !G.answersQuestion("User: hi\nYou: Hello.", "surprize me") && !G.answersQuestion("", "surprize me"));
   ok("…and opens no goal of its own, where the same words alone still do", (await G.goalFor("surprize me", { lane: "nowhere2", path: "", answering: true })) === null && !!(await G.goalFor("surprize me", { lane: "nowhere2", path: "" })));
   ok("…a follow-up with nothing open to join opens nothing", (await G.goalFor("do it again", { lane: "nowhere", path: "" })) === null);
+  console.log("GOALS — a run trimmed from the record has ended, it isn't still going (4 Nov 2026)");
+  ok("a run with no record reads as ended", G.childState("run:gone0001", { ...base(), jobs: [] }).state === "ended", G.childState("run:gone0001", { ...base(), jobs: [] }));
+  const gTr = G.openGoal("Fix the installs figure that shows n/a in the daily report", { child: "run:gone0002", lane: "bookly", path: lane, now: Date.now() - 6 * DAY });
+  ok("…so a goal made only of trimmed runs ends and is judged, not left running", G.rollUp(G.goalById(gTr.key), { ...base(), jobs: J.loadJobs() }).state === "ended");
+  run("held01", lane, { at: Date.now() - 6 * DAY }); G.linkChild(gTr.key, "run:held01");
+  for (let i = 0; i < 320; i++) J.track("you:filler" + i, { kind: "card", state: "asked" });
+  const keptRows = J.loadJobs();
+  ok("…and an open goal's own runs are kept when the record is trimmed to its newest rows", keptRows.some((j) => j.key === "run:held01") && keptRows.length <= 300 + 5 && keptRows.some((j) => j.key === gTr.key), [keptRows.length, keptRows.some((j) => j.key === "run:held01")]);
+  console.log("GOALS — goals that all end at once start a few \"what's left\" runs a tick, none in a paused lane");
+  const openNow = J.goalRows().filter((x) => x.state !== "done");
+  for (const x of openNow) { const y = G.goalById(x.key); y.state = "done"; J.putGoal(y); }
+  const endedG = [1, 2, 3, 4].map((i) => G.openGoal("Ship the report page fix number " + i, { child: "run:old" + i, lane: "bookly", path: join(HOME, "work", "lane" + i), now: Date.now() - 6 * DAY }));
+  const leftAsks = [];
+  const didT = await G.goalsTick({ ...base(), jobs: J.loadJobs(), write: ai({ met: false, done: [], verified: "", left: "the fix isn't on main" }), ops: (req) => { leftAsks.push(req); return { job: "left" + leftAsks.length }; }, parked: () => [join(HOME, "work", "lane1")] });
+  ok("…two at most per tick", leftAsks.length === 2 && didT.filter((d) => d.whatsLeft).length === 2, [leftAsks.length, didT]);
+  const gP = G.goalById(endedG[0].key);
+  ok("…and a goal in a paused lane waits on it, with no run started there", gP.state === "waiting" && gP.waitingOn === "paused lane" && !(gP.leftTries > 0) && !leftAsks.some((r) => /number 1\b/.test(r)), gP);
   console.log("GOALS — rows opened before from questions and replies are closed as not goals");
   const junk = G.openGoal("who makes these cards? is it not you?", { lane: "ops" }), real = G.openGoal("Ship the redesigned demo console", { lane: "ops" });
   const n = G.tidyGoals();

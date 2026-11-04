@@ -38,6 +38,7 @@ import { isDone, decidedBy } from "./asksdone.mjs";
 const DAY = 86400e3, H = 3600e3, DEAD_RUN = 3 * H; // runs that hang are stopped after 45 minutes (agents.mjs runsTick)
 const GOALS_DIR = join(CONFIG_DIR, "drafts"); // a goal's breakdown is a report in a folder of its own there (act-<id>)
 const ELSEWHERE = "another computer"; // a task whose lane is only on the other machine (laneids.mjs otherMachine): it runs there, and its wait isn't a stall
+const LEFT_PER_TICK = 2; // "what's left" runs one tick starts at most
 const STALL_AFTER = DAY, NUDGE_AFTER = DAY, SURFACE_AFTER = 3 * DAY, WAIT_OLD = 7 * DAY, LEFT_TRIES = 1;
 const CARDS_FILE = join(CONFIG_DIR, "goal-cards.json"); // the old-wait cards' "keep waiting" (an email wait isn't a goal)
 const clip = (s, n) => String(s || "").replace(/\s+/g, " ").trim().slice(0, n);
@@ -186,7 +187,9 @@ function childState(key, ctx) {
     return { state: "active", path: ctx.map[t.repo] || "" };
   }
   if (kind === "run") {
-    const j = ctx.jobs.find((x) => x.key === key); if (!j) return { state: "active" };
+    // no record: it was trimmed from the job record (jobs.mjs keeps the newest), so it ended long ago.
+    // Read as "still going", it held its goal open for good: 15 goals unmoved for 5-10 days (4 Nov 2026)
+    const j = ctx.jobs.find((x) => x.key === key); if (!j) return { state: "ended", what: "its record is gone: it ended before the record was trimmed" };
     if (ctx.running(j.path)) return { state: "active", path: j.path };
     const over = superseded(j, ctx); if (over) return over; // never its summary: that asked for what's done now
     if (j.state === "running" && (ctx.now || Date.now()) - (j.changed || j.at || 0) > DEAD_RUN) return { state: "ended", path: j.path, at: j.changed, summary: "its end wasn't recorded: nothing has run there since" }; // a record still "running" with nothing running there held its goal open for good
@@ -339,7 +342,8 @@ function askIn(said) {
 //   tasks, ledger, waits, jobs, map }. Returns what it did, for the log and the tests.
 async function goalsTick(deps = {}, { now = Date.now() } = {}) {
   const ctx = { tasks: deps.tasks || loadTasks(), ledger: deps.ledger || { handoffs: [] }, waits: deps.waits || [], jobs: deps.jobs || loadJobs(), map: deps.map || {}, running: deps.running || (() => false), openItems: deps.openItems, answered: deps.answered, elsewhere: deps.elsewhere || elsewhereFrom(), now };
-  const did = [];
+  const did = []; let lefts = 0;
+  const parkedList = (() => { try { return new Set(deps.parked ? deps.parked() : []); } catch { return new Set(); } })(), parked = (g) => (g.paths || []).some((p) => parkedList.has(p));
   if (!deps.jobs) { try { tidyGoals({ now }); ctx.jobs = loadJobs(); } catch {} }
   for (const g0 of goalRows({ jobs: ctx.jobs })) {
     if (ENDED.has(g0.state) || g0.dropped) continue;
@@ -355,7 +359,10 @@ async function goalsTick(deps = {}, { now = Date.now() } = {}) {
       const v = await judgeDone(g, r.kids, deps);
       if (!v && !deps.write) { const ok = r.kids.every((c) => c.ok !== false); close(g, "not", { kids: r.kids, left: ok ? "its parts ended, but nothing checked them against what was asked: not verified" : "some of its work didn't finish" }, ctx, deps, now); did.push({ goal: g.key, closed: "not" }); } // no AI to judge: never "Done" on the parts having ended alone; the breakdown says it isn't verified
       else if (v && v.met) { close(g, "done", { ...v, kids: r.kids }, ctx, deps, now); did.push({ goal: g.key, closed: "done" }); }
+      else if ((g.leftTries || 0) < LEFT_TRIES && deps.ops && parked(g)) { g.state = "waiting"; g.waitingOn = "paused lane"; g.what = `its lane is paused: nothing more is run on it until it's turned back on`; }
+      else if ((g.leftTries || 0) < LEFT_TRIES && deps.ops && lefts >= LEFT_PER_TICK) { /* the rest next tick: goals that all end at once don't start a run each in one go */ }
       else if ((g.leftTries || 0) < LEFT_TRIES && deps.ops) {
+        lefts++;
         g.leftTries = (g.leftTries || 0) + 1;
         const e = deps.ops(`What's left on this, and do it: ${g.asked}\n\nDone when: ${doneOf(g)}\n\nWhat was found missing: ${(v && v.left) || "nothing judged it done"}. Check the earlier runs' reports first and don't redo what they finished. If something only the user can do is all that's left, ask it in QUESTIONS.md.`, { title: `What's left on: ${clip(g.text, 60)}` });
         if (e && (e.job || e.dir)) { if (e.job) g.children.push("run:" + e.job); if (e.dir) g.paths.push(e.dir); did.push({ goal: g.key, whatsLeft: e.job || e.dir }); }
