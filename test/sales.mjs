@@ -29,6 +29,8 @@ const DAY = 86400000;
 
 // Made-up store data, in Lemon Squeezy's JSON:API shape.
 const at = (d) => new Date(Date.UTC(2026, 9, d, 10)).toISOString();
+// The date a cancelled subscription is paid up to: always ahead of the run, so it never ends before the test does.
+const PAID_TO = new Date(Date.now() + 30 * DAY).toISOString();
 const order = (id, o) => ({ type: "orders", id: String(id), attributes: { store_id: 1, order_number: 1000 + id, user_name: "Ann Buyer", user_email: `buyer${id}@example.com`, status: "paid", refunded: false, test_mode: true, created_at: at(10), first_order_item: { variant_id: 11, variant_name: "Monthly", product_name: "Symbiot Pro" }, ...o } });
 const invoice = (id, o) => ({ type: "subscription-invoices", id: String(id), attributes: { store_id: 1, subscription_id: 501, user_name: "Ann Buyer", user_email: "buyer1@example.com", billing_reason: "renewal", status: "paid", refunded: false, test_mode: true, created_at: at(18), ...o } });
 const sub = (id, o) => ({ type: "subscriptions", id: String(id), attributes: { store_id: 1, order_id: 1, user_email: "buyer1@example.com", variant_id: 11, variant_name: "Monthly", product_name: "Symbiot Pro", status: "active", ends_at: null, test_mode: true, updated_at: at(10), ...o } });
@@ -145,7 +147,7 @@ try {
   console.log("REFUNDS AND CANCELLATIONS — a question each, never revoked by themselves");
   const revoked = join(REPO, "site", "licences", "revoked.json"), revokedBefore = readFileSync(revoked, "utf8");
   STORE.orders[1].attributes.status = "refunded"; STORE.orders[1].attributes.refunded = true; STORE.orders[1].attributes.refunded_at = at(12);
-  STORE.subscriptions[0].attributes.status = "cancelled"; STORE.subscriptions[0].attributes.ends_at = at(30);
+  STORE.subscriptions[0].attributes.status = "cancelled"; STORE.subscriptions[0].attributes.ends_at = PAID_TO;
   STORE.orders.push(order(10, { status: "refunded", refunded: true }));
   did = await poll({ adapter: adapter(), send });
   const hs = heads();
@@ -153,27 +155,27 @@ try {
   ok("a cancelled subscription: asked, leaving it to end by itself recommended", hs.some((h) => /buyer1@example\.com now that they cancelled/.test(h)) && /cancelled their subscription\?\n[^\n]+\n- 🤖 Agent: leave the key: it ends by itself[^\n]*\(recommended\)/.test(questions()), hs);
   ok("…about the subscription's key", loadState().reversals["ls:cancel:501"].key === km.id, loadState().reversals);
   const ends = () => { try { return JSON.parse(readFileSync(join(LANE, "site", "licences", "revoked.json"), "utf8")).ends || {}; } catch { return {}; } };
-  ok("the subscription's key gets its end on the site: the date it's paid up to", ends()[km.id] === Date.parse(at(30)) && did.ended.join() === km.id, ends());
+  ok("the subscription's key gets its end on the site: the date it's paid up to", ends()[km.id] === Date.parse(PAID_TO) && did.ended.join() === km.id, ends());
   ok("…which says so in the question, not \"ends by itself\"", /ends on [^\n]*the site's list of keys/.test(questions()), questions());
   const { licenceState } = await import("../licence.mjs");
   const cfgOf = (key) => ({ licence: { key, trialStart: 1 } });
   const mine = sent.find((s) => s.to === "buyer1@example.com").text.match(/SYM1-\S+/)[0];
   writeFileSync(join(HOME, ".config", "symbiot", "licence-revoked.json"), JSON.stringify({ at: Date.now(), ids: [] }));
-  const before30 = licenceState(Date.parse(at(29)), cfgOf(mine));
+  const before30 = licenceState((Date.parse(PAID_TO) - DAY), cfgOf(mine));
   ok("on the customer's Symbiot, before the list has it: Pro, renewing, no end", before30.plan === "pro" && before30.renews === "monthly" && !before30.expires, before30);
   writeFileSync(join(HOME, ".config", "symbiot", "licence-revoked.json"), JSON.stringify({ at: Date.now(), ids: [], ends: ends() }));
-  const s29 = licenceState(Date.parse(at(29)), cfgOf(mine)), s40 = licenceState(Date.parse(at(30)) + 8 * DAY, cfgOf(mine));
-  ok("…once it has: Pro until the date it was paid up to, then Free after the grace days", s29.plan === "pro" && s29.expires === Date.parse(at(30)) && !s29.renews && s40.plan === "free", [s29, s40]);
+  const s29 = licenceState((Date.parse(PAID_TO) - DAY), cfgOf(mine)), s40 = licenceState(Date.parse(PAID_TO) + 8 * DAY, cfgOf(mine));
+  ok("…once it has: Pro until the date it was paid up to, then Free after the grace days", s29.plan === "pro" && s29.expires === Date.parse(PAID_TO) && !s29.renews && s40.plan === "free", [s29, s40]);
   STORE.subscriptions[0].attributes.status = "active"; STORE.subscriptions[0].attributes.ends_at = null;
   did = await poll({ adapter: adapter(), send });
   ok("resumed before it ended: the end comes off the site again", !ends()[km.id] && did.resumed.join() === km.id, [ends(), did]);
-  STORE.subscriptions[0].attributes.status = "expired"; STORE.subscriptions[0].attributes.ends_at = at(30);
+  STORE.subscriptions[0].attributes.status = "expired"; STORE.subscriptions[0].attributes.ends_at = PAID_TO;
   did = await poll({ adapter: adapter(), send });
-  ok("lapsed later (a card that failed): the end goes back on", ends()[km.id] === Date.parse(at(30)), [ends(), did]);
+  ok("lapsed later (a card that failed): the end goes back on", ends()[km.id] === Date.parse(PAID_TO), [ends(), did]);
   STORE.subscriptions[0].attributes.status = "active"; STORE["subscription-invoices"].push(invoice(903, { created_at: new Date(Date.now() + 60000).toISOString() }));
   did = await poll({ adapter: adapter(), send });
   ok("paid again: the same key carries on, its end off the site, nothing sent", !ends()[km.id] && did.renewed.join() === "ls:invoice:903" && !sent.slice(sentBefore).some((m) => m.to === "buyer1@example.com"), [ends(), did]);
-  STORE.subscriptions[0].attributes.status = "cancelled"; STORE.subscriptions[0].attributes.ends_at = at(30); STORE["subscription-invoices"].pop();
+  STORE.subscriptions[0].attributes.status = "cancelled"; STORE.subscriptions[0].attributes.ends_at = PAID_TO; STORE["subscription-invoices"].pop();
   ok("refunded before it was ever keyed: no key, no question", !loadState().payments["ls:order:10"]?.key && !hs.some((h) => /buyer10/.test(h)), loadState().payments["ls:order:10"]);
   ok("nothing was revoked by itself", readFileSync(revoked, "utf8") === revokedBefore);
   const n = heads().length;

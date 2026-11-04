@@ -351,7 +351,7 @@ const andList = (a) => (a.length > 1 ? `${a.slice(0, -1).join(", ")} and ${a.at(
 // The words for what shoot couldn't help: still loading at the limit first, then broken images.
 function shootNote(late, broken) {
   const sizes = Object.keys(late), all = [...new Set(Object.values(late).flat())], out = [];
-  if (sizes.length) out.push(`The page was still loading ${things(all.length, "thing", "things")} after ${SHOOT_MS / 1000} seconds (${all.slice(0, 3).join(", ")}), so the ${andList(sizes)} ${sizes.length === 1 ? "picture" : "pictures"} may be missing them.`);
+  if (sizes.length) out.push(`The page was still loading ${things(all.length, "thing", "things")} after ${SHOOT_MS / 1000} seconds (${all.slice(0, 3).join(", ")}), so the ${andList(sizes)} ${sizes.length === 1 ? "picture" : "pictures"} may be missing ${all.length === 1 ? "it" : "them"}.`);
   if (broken.length) out.push(`${things(broken.length, "image", "images")} on the page didn't load (${broken.slice(0, 3).join(", ")}): that's the page, not the screenshot.`);
   return out.join(" ");
 }
