@@ -1041,7 +1041,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
   const goalDeps = () => {
     let cardPaths = new Set(); try { cardPaths = new Set(onUser().map((c) => c.path).filter(Boolean)); } catch {}
     let ai = null; try { ai = resolveProvider() ? aiWrite : null; } catch {}
-    return { write: ai, running: (p) => !!goalRunning(p), start: (p) => runHandoff(p, { force: true }), autoStart, ops: (req, o) => actNow(req, o), notify: (t, b) => desktopNotify(t, b), settle: settleRecord, stop: stopWaiting,
+    return { write: ai, running: (p) => !!goalRunning(p), start: (p) => runHandoff(p, { force: true }), autoStart, parked: () => parkedPaths(), ops: (req, o) => actNow(req, o), notify: (t, b) => desktopNotify(t, b), settle: settleRecord, stop: stopWaiting,
       ledger: (() => { try { return loadLedger(); } catch { return { handoffs: [] }; } })(), waits: (() => { try { return awaitingState().waits; } catch { return []; } })(), map: (() => { try { return laneMap(); } catch { return {}; } })(), until: (what, now) => waitUntil(what, now), cardPaths,
       notTheirs: (card) => { try { return !!(loadCardText()[cardKeyOf({ q: card.q, options: card.options })] || {}).notTheirs; } catch { return false; } },
       unclear: (card) => { try { return !!(loadCardText()[cardKeyOf({ q: card.q, options: card.options })] || {}).unclear; } catch { return false; } } };

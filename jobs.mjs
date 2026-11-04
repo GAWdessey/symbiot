@@ -25,7 +25,14 @@ const passing = (j, now) => (String(j.key).startsWith("you:") || j.kind === "tas
 // the user asked for while it's still owed.
 const owed = (j) => j.kind === "goal" && !ENDED.has(j.state);
 function saveJobs(jobs, now = Date.now()) {
-  try { const keep = jobs.filter((j) => !passing(j, now)), goals = keep.filter(owed); writeJsonAtomic(FILE, { jobs: [...keep.filter((j) => !owed(j)).slice(-Math.max(50, MAX_KEEP - goals.length)), ...goals] }, { indent: 1, mode: 0o600 }); return true; } catch { return false; }
+  // and so is each row an open goal is made of: a run trimmed out of the record read as still going,
+  // so its goal never ended, and all 15 open goals sat unmoved for 5 to 10 days (4 Nov 2026)
+  try {
+    const keep = jobs.filter((j) => !passing(j, now)), goals = keep.filter(owed), held = new Set(goals.flatMap((g) => g.children || []));
+    const rest = keep.filter((j) => !owed(j)), heldRows = rest.filter((j) => held.has(j.key)), others = rest.filter((j) => !held.has(j.key));
+    const kept = new Set([...others.slice(-Math.max(50, MAX_KEEP - goals.length - heldRows.length)), ...heldRows]);
+    writeJsonAtomic(FILE, { jobs: [...rest.filter((j) => kept.has(j)), ...goals] }, { indent: 1, mode: 0o600 }); return true;
+  } catch { return false; }
 }
 // A new state, the old one kept in its history with when it began.
 function shift(j, state, now) { if (state === j.state) return; j.history = [...(j.history || []), { state: j.state, at: j.changed }].slice(-8); j.state = state; j.changed = now; }
