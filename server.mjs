@@ -47,7 +47,7 @@ import { SOURCES as INTUITION_SOURCES, noteChange as intuitionNote, digest as in
 import { triggersTick, registerTriggers, frictionTick, applyOverride, revertOverride, applyProposal, dismissProposal, setOverrides, setSelfChange, overridesState } from "./overrides.mjs";
 import { doneList } from "./asksdone.mjs";
 import { tetherTick } from "./tether.mjs";
-import { lanesTick, shipHanded, lanesState, partlyDone, handingOf, loadLedger, orcaRelink, shareAnswer, projectOf } from "./lanes.mjs";
+import { lanesTick, shipHanded, releaseQueued, lanesState, partlyDone, handingOf, loadLedger, orcaRelink, shareAnswer, projectOf } from "./lanes.mjs";
 import { archivedTasks } from "./sweep.mjs";
 import { sentTick } from "./sentmail.mjs";
 import { keepFacts, skipFacts, awaitTick, awaitingState, stopWaiting } from "./handback.mjs";
@@ -1020,6 +1020,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
   every("merge back", 20000, () => mergeEnded({ addTask })); // runs beside a lane's own that ended (also while Symbiot was down): merged back into the lane
   { let soon = null; onRunEnd(() => { if (soon) return; soon = setTimeout(() => { soon = null; for (const f of [startWaiting, () => mergeEnded({ addTask }), workTick, lanesTick]) try { f(); } catch {} }, 1500); soon.unref(); }); } // a run ended: what waited on it starts within seconds
   every("home + work", 10000, () => { homeTick(); workTick(); }); // a waiting task starts once its lane is free (config.autoStart: false leaves it to Go); Home, then the work scene that reads its cards: what the routes read
+  every("queued pull requests", 30000, () => releaseQueued()); // a branch waiting behind an open PR opens once that merges
   every("handed-over changes", 20000, () => shipHanded()); // changes made for a handed-over job go up by themselves
   every("handovers", 20000, () => lanesTick()); // agents hand work to other lanes, and hear back when it's done
   every("shared logs", 60000, () => tetherTick(tetherDeps()), { first: 30000 }); // each lane's shared log: what every session asked, did and left open (tether.mjs)

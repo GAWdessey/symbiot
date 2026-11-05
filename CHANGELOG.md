@@ -2,6 +2,13 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one), for anyone who installs the app: what changed in it, never whose work it was (no projects, people, accounts, services, run ids or task wording of the person who made it). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.94.11 — 2026-11-05
+
+- **A goal whose older runs were cleared from the record now finishes and is judged**, instead of reading as still going forever. At most two follow-up runs start per pass, and none in a paused lane.
+- **A private repo's Merge PR card names the GitHub login that can open it**, and a new "Merge it for me" button merges it once its checks pass.
+- `symbiot shoot`'s still-loading note says "missing it" when only one thing was late.
+- Small fixes and improvements.
+
 ## 0.94.10 — 2026-10-30
 
 - **Home makes no Merge PR card for an archived repo**, even where you're an admin on it, and never calls a PR that GitHub blocks "ready".

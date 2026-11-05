@@ -26,7 +26,7 @@ import { execFile } from "node:child_process";
 import { CONFIG_DIR, loadTasks, clipWords, loadConfig, readState, writeJsonAtomic, sameTask } from "./core.mjs";
 import { runRecord } from "./jobs.mjs";
 import { runHandoff, runningHandoff, waitingFor, runOpen, autoStart, settleRecord, agentQuestions, findOrcaCli, installAllowlist, writeTasks, workOf, loadRuns, allAnswers } from "./agents.mjs";
-import { addTask, removeTask, pushTasks, pendingReview, approveChanges, workingDiff, setHandedLookup } from "./tasks.mjs";
+import { addTask, removeTask, pushTasks, pendingReview, approveChanges, sendAgain, hasOpenSymbiotPr, workingDiff, setHandedLookup } from "./tasks.mjs";
 import { actNow, actBrief } from "./mind.mjs";
 import { laneMap, nearLane } from "./scan.mjs";
 import { parseRun, lastRunText, readRunLog, runStarted } from "./work.mjs";
@@ -871,4 +871,18 @@ async function shipHanded({ review = pendingReview, ship = approveChanges, diff 
   return done;
 }
 
-export { projectOf, handedFor, handedLookup, secretIn, shipHanded, HELD_HANDED, nearLane, laneTarget, staleOutcome, STALE_AFTER, ancestry, loops, shareAnswer, sharedFor, sharedTo, answerReaches, linkedPaths, topicsOf, ownHosts, COMMON_HOSTS, parentOf, SHARED, LEDGER, MAX_CHAIN, loadLedger, laneOf, lastRunStart, dispatch, outcome, report, handingOf, lanesTick, lanesState, stageOf, underWay, aboutIt, partlyDone, remoteKey, orcaMoves, orcaRelink, stuckHandovers, allowHandover, skipHandover, namedDirs, alike, doneSince };
+// One pass: a branch queued behind an open PR (unsent.why "queued") is sent again once the repo has none:
+// sendAgain brings it up to date with main, reruns the tests and opens its PR with auto-merge.
+async function releaseQueued({ review = pendingReview, open = hasOpenSymbiotPr, send = sendAgain } = {}) {
+  const done = [];
+  for (const r of review({ kept: true })) {
+    if (!r.path || !r.unsent || r.unsent.why !== "queued" || r.running) continue;
+    if (await open(r.path)) continue;
+    const res = await send(r.repo, { autoMerge: true });
+    done.push({ repo: r.repo, ...(res.pr ? { pr: res.pr } : { error: res.error || res.note || "not opened" }) });
+    break; // one at a time: the PR it opens is now the repo's open one
+  }
+  return done;
+}
+
+export { releaseQueued, projectOf, handedFor, handedLookup, secretIn, shipHanded, HELD_HANDED, nearLane, laneTarget, staleOutcome, STALE_AFTER, ancestry, loops, shareAnswer, sharedFor, sharedTo, answerReaches, linkedPaths, topicsOf, ownHosts, COMMON_HOSTS, parentOf, SHARED, LEDGER, MAX_CHAIN, loadLedger, laneOf, lastRunStart, dispatch, outcome, report, handingOf, lanesTick, lanesState, stageOf, underWay, aboutIt, partlyDone, remoteKey, orcaMoves, orcaRelink, stuckHandovers, allowHandover, skipHandover, namedDirs, alike, doneSince };

@@ -1,6 +1,8 @@
 # The test files that fail on Windows (nightly.yml, node test/run.mjs --known test/windows-known.txt).
 # Taken from the nightly of 27 Oct 2026 on c177ebf: 72 of 121 failed. A file off this list that
 # fails there fails the nightly; one on it that passes is named in the log, to take off.
+# 5 Nov 2026: off, 11 that passed the nightlies of 2-4 Nov; on, frames.mjs (Chrome in a Windows runner)
+# and ownerlogin.mjs (its gh stand-in is a sh script, which Windows can't run).
 adapt.mjs
 app.mjs
 asks.mjs
@@ -11,25 +13,22 @@ capture.mjs
 cardtalk.mjs
 checks.mjs
 choose.mjs
-chromegate.mjs
 chromeimport.mjs
 claudesetup.mjs
 clickable.mjs
 closed.mjs
 code-boxes.mjs
-codes.mjs
 control.mjs
-deploy.mjs
 design.mjs
 done.mjs
 drafts.mjs
 durable.mjs
 editors.mjs
 fixtures.mjs
+frames.mjs
 goals.mjs
 gocards.mjs
 guard.mjs
-ideas.mjs
 install.mjs
 knowledge.mjs
 lanes.mjs
@@ -44,11 +43,10 @@ noshell.mjs
 onboarding.mjs
 opswalls.mjs
 origin.mjs
-outward.mjs
 overrides.mjs
 ownchrome.mjs
+ownerlogin.mjs
 parallel.mjs
-parked.mjs
 paths.mjs
 phone.mjs
 phonegate.mjs
@@ -56,20 +54,15 @@ post.mjs
 radio.mjs
 reliability.mjs
 replace.mjs
-reports.mjs
 sales.mjs
 sched.mjs
 screenskept.mjs
 shadow.mjs
 signin.mjs
-smoke.mjs
 stall.mjs
 subscription.mjs
 sweep.mjs
-sync.mjs
 tabs.mjs
-taskmodel.mjs
 tray.mjs
 twins.mjs
-uisplit.mjs
 urgent.mjs
