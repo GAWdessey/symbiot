@@ -1182,6 +1182,7 @@ function unsentHeadline(why, { fix = null, note = "" } = {}) {
   if (why === "conflicts") return fix ? "It clashes with a change already on main. An agent is sorting that out now; there's nothing for you to do." : "It clashes with a change already on main. Send again sorts it out.";
   if (why === "tests") return `A test failed${file ? ` (${file})` : ""}, so it wasn't sent. Send again retries; if it fails again, its agent needs to fix it.`;
   if (why === "privacy") return "It wasn't sent: the repo is public and the change names what's yours (a client, a person or a server). Its agent needs to take those out first.";
+  if (why === "queued") return "It's on GitHub, waiting its turn: another pull request is still open, and this one opens when that merges.";
   if (why === "pr") return "It's on GitHub, but the pull request didn't open. Send again opens it.";
   return "It didn't upload to GitHub. Send again retries.";
 }
@@ -1189,7 +1190,7 @@ async function sendBranch(path, s) {
   const r = await pushAndOpen(path, s);
   if (!r.ok || s.opts.push === false || s.opts.pr === false || r.local) return r;
   if (r.pr) { noteUnsent(path, null); return r; }
-  const why = r.conflicts ? "conflicts" : r.testsFailed ? "tests" : r.privacy ? "privacy" : r.pushed ? "pr" : "push";
+  const why = r.queued ? "queued" : r.conflicts ? "conflicts" : r.testsFailed ? "tests" : r.privacy ? "privacy" : r.pushed ? "pr" : "push";
   let fix = s.fix || null, fresh = false; // fresh: added (or found open again) now, so the caller starts the run; one carried from an earlier try isn't restarted
   if (why === "conflicts" && s.opts.repo) {
     const t = addTask(rebaseTask(r.branch, s.base, { merges: branchMerges(path, "origin/" + s.base, r.branch) }), s.opts.repo);
@@ -1326,6 +1327,16 @@ async function privateCheck(path, tip, branch, opts = {}, cwd = path) {
   const mine = opts.mine || Object.values(networkInterfaces()).flat().filter((a) => a && a.family === "IPv4" && !a.internal).map((a) => a.address);
   return privateIn(addedLines(diff), deny, { mine });
 }
+// Another open PR in the repo from one of Symbiot's branches (symbiot/…) than `branch`: { number, url } or null.
+async function otherOpenPr(gh, branch) {
+  try {
+    const l = JSON.parse(String((await gh(["pr", "list", "--state", "open", "--json", "number,url,headRefName", "--limit", "100"])).stdout || "[]"));
+    const o = Array.isArray(l) ? l.find((x) => x && /^symbiot\//.test(x.headRefName || "") && x.headRefName !== branch) : null;
+    return o ? { number: o.number, url: o.url || "" } : null;
+  } catch { return null; }
+}
+// Whether the repo at path has an open Symbiot PR (gh), for the pass that releases queued branches.
+const hasOpenSymbiotPr = async (path, gh = ghRun(path)) => !!(await otherOpenPr(gh, ""));
 async function pushAndOpen(path, { base, subject, body, out, opts, newBranch, said = "", net = {} }) {
   let branch = out.branch;
   const noted = (note) => ({ ...out, note: (said ? said + " " : "") + note });
@@ -1377,6 +1388,10 @@ async function pushAndOpen(path, { base, subject, body, out, opts, newBranch, sa
   if (opts.pr === false) return out;
   if (!opts.gh && !hasCmd("gh")) return noted("Pushed. Install the GitHub CLI (gh) to open the PR automatically.");
   const gh = opts.gh || ghRun(path); // a test's stand-in answers at once; await takes both
+  // One open PR per repo: another of Symbiot's still open means this branch waits, pushed, until it merges
+  // (releaseQueued then brings it up to date with main and opens it), so a merge never leaves the next PR in conflict (5 Nov 2026).
+  const ahead = await otherOpenPr(gh, branch);
+  if (ahead) return { ...noted(`Pushed, but not opened as a PR yet: ${ahead.url || "#" + ahead.number} is still open, so this waits until it merges, then is brought up to date with ${base} and opened.`), queued: ahead.url || "#" + ahead.number };
   shipStep(path, "opening the PR");
   const pr = await gh(["pr", "create", "--head", branch, "--base", base, "--title", subject, "--body", body + "\n\nApproved in Symbiot."]);
   // one already open from this branch takes the commit; a merged or closed one doesn't
@@ -1657,4 +1672,4 @@ function pushTasks(filter) {
   return { empty: false, written, unresolved, handoff: handoffCmd() };
 }
 
-export { ownerEnv, noteLaneIds, closeUnchanged, applyMove, readMove, moveCheckout, laneOfRepo, laneNames, refileTask, unplacedTasks, placeTasks, unsentHeadline, setHandedLookup, setTaskModel, MODEL_PICKS, holdShip, SHIP_STALE, shipping, shippingPaths, shipJob, shipJobOf, SHIP_WAIT, workingChangesAsync, rebaseTask, sendAgain, forgetUnsent, unsentOf, readUnsent, unsentCard, repoTests, localRefused, forgetReview, gitFailed, taskPaths, addTask, toggleTask, setTaskDone, removeTask, cancelTask, restoreTask, FINDING_NOTE, completedInRepo, removalOf, applyRemovals, applyDrops, syncTasks, workingChanges, workingDiff, publishesOnMerge, unreleased, bumpOffer, learnNpm, releaseNeeded, releaseNotIn, withReleases, setVersion, changelogEntry, changelogSection, noteChangelog, releaseInput, shipWithBump, runSummary, saidFinished, pendingReview, commitSubject, shipChanges, autoMergeRepos, setAutoMerge, approveRepo, approveChanges, sendBack, TASK_ORDER, taskType, buildTasksMd, pushTasks, mergeWhenGreen, changelogItems, changelogLeaks, commitText, dropChanges };
+export { hasOpenSymbiotPr, otherOpenPr, ownerEnv, noteLaneIds, closeUnchanged, applyMove, readMove, moveCheckout, laneOfRepo, laneNames, refileTask, unplacedTasks, placeTasks, unsentHeadline, setHandedLookup, setTaskModel, MODEL_PICKS, holdShip, SHIP_STALE, shipping, shippingPaths, shipJob, shipJobOf, SHIP_WAIT, workingChangesAsync, rebaseTask, sendAgain, forgetUnsent, unsentOf, readUnsent, unsentCard, repoTests, localRefused, forgetReview, gitFailed, taskPaths, addTask, toggleTask, setTaskDone, removeTask, cancelTask, restoreTask, FINDING_NOTE, completedInRepo, removalOf, applyRemovals, applyDrops, syncTasks, workingChanges, workingDiff, publishesOnMerge, unreleased, bumpOffer, learnNpm, releaseNeeded, releaseNotIn, withReleases, setVersion, changelogEntry, changelogSection, noteChangelog, releaseInput, shipWithBump, runSummary, saidFinished, pendingReview, commitSubject, shipChanges, autoMergeRepos, setAutoMerge, approveRepo, approveChanges, sendBack, TASK_ORDER, taskType, buildTasksMd, pushTasks, mergeWhenGreen, changelogItems, changelogLeaks, commitText, dropChanges };
