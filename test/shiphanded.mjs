@@ -13,7 +13,7 @@ process.env.HOME = HOME; process.env.USERPROFILE = HOME;
 let pass = 0, fail = 0;
 const ok = (n, c, got) => { if (c) { pass++; console.log("  ✓ " + n); } else { fail++; console.log("  ✗ " + n + (got !== undefined ? "  got: " + JSON.stringify(got) : "")); } };
 
-const { secretIn, shipHanded, handedLookup, HELD_HANDED } = await import("../lanes.mjs");
+const { releaseQueued, secretIn, shipHanded, handedLookup, HELD_HANDED } = await import("../lanes.mjs");
 const now = Date.now(), P = "/p/quartz";
 const row = (o = {}) => ({ id: "h1", from: { lane: "quartz", path: P }, to: { lane: "ops", path: "/o/act-1" }, text: "New job: install a JDK so keytool works\nmore", at: now - 3600000, status: "started", ...o });
 const entry = (files, o = {}) => ({ repo: "quartz", path: P, untasked: true, tasks: [], files: files.map((f) => ({ st: "M", file: f })), ...o });
@@ -53,6 +53,23 @@ try {
   r = await shipHanded({ review: () => [entry(["a.txt"])], ship: bad, diff: () => "", running: never, ledger, now });
   r = await shipHanded({ review: () => [entry(["a.txt"])], ship: bad, diff: () => "", running: never, ledger, now: now + 1000 });
   ok("a failed ship is tried once, then waits (and shows on Home)", r.length === 0 && /tests failed/.test(handedLookup(P, { files: [{ st: "M", file: "a.txt" }] }, { ledger, now }).held));
+
+  console.log("ONE OPEN PR — a finished branch waits for the open one");
+  const { otherOpenPr } = await import("../tasks.mjs");
+  const list = (rows) => async () => ({ status: 0, stdout: JSON.stringify(rows) });
+  ok("another symbiot/ PR open: found", (await otherOpenPr(list([{ number: 7, url: "u7", headRefName: "symbiot/a" }]), "symbiot/b")).number === 7);
+  ok("only its own branch open: none", (await otherOpenPr(list([{ number: 7, headRefName: "symbiot/b" }]), "symbiot/b")) === null);
+  ok("someone's feature PR doesn't hold it", (await otherOpenPr(list([{ number: 8, headRefName: "feat/x" }]), "symbiot/b")) === null);
+  ok("gh unreachable: not held", (await otherOpenPr(async () => ({ status: 1, stdout: "" }), "symbiot/b")) === null);
+  const q = (why) => [{ repo: "symbiot", path: "/p/s", unsent: { why } }], sent = [];
+  const send = async (repo, o) => { sent.push([repo, o]); return { pr: "https://x/pr/9" }; };
+  r = await releaseQueued({ review: () => q("queued"), open: async () => true, send });
+  ok("still an open PR: stays queued", !sent.length && !r.length);
+  r = await releaseQueued({ review: () => q("queued"), open: async () => false, send });
+  ok("none open: sent with auto-merge", sent.length === 1 && sent[0][1].autoMerge === true && r[0].pr, r);
+  sent.length = 0;
+  r = await releaseQueued({ review: () => q("tests"), open: async () => false, send });
+  ok("other unsent reasons are left to the user", !sent.length);
 } finally { /* tmp HOME left to the OS */ }
 console.log((fail ? "✗" : "✓") + " shiphanded: " + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);
