@@ -199,7 +199,7 @@ try {
   ok("…nor a job with no screens: a command or what's under one (24 Oct 2026)", noScreen.every((t) => !D.designWorthy(t)), noScreen.filter((t) => D.designWorthy(t)));
   const built = ["Build the booking page for the salon: already done, uncommitted in worktree ~/projects/salon-book", "Redesign the settings page (already built on branch x)"];
   ok("…nor one that's built already", built.every((t) => !D.designWorthy(t)), built.filter((t) => D.designWorthy(t)));
-  const judging = ["Resume the design critic review of the finished Daaymn UI work, judge it against the real screens, and report the holes it finds.", "Restart the stalled Daaymn design-critic review of the finished UI work and have it report its verdict.", "New job: UI review (round 1) of the Flutter web demo, so the Play-listing screenshots tell one clear story"];
+  const judging = ["Resume the design critic review of the finished app UI work, judge it against the real screens, and report the holes it finds.", "Restart the stalled app design-critic review of the finished UI work and have it report its verdict.", "New job: UI review (round 1) of the Flutter web demo, so the Play-listing screenshots tell one clear story"];
   ok("…nor a job to judge what's built: that's the critic's (5 Nov 2026)", judging.every((t) => !D.designWorthy(t)), judging.filter((t) => D.designWorthy(t)));
   ok("…while a new design still is", D.designWorthy("Design a new onboarding flow for the phone app"));
   ok("…and a ticked or waiting one gets no designer", D.toDesign("- [x] Build the booking page for the salon\n- [~] Redesign the settings page (waits on: Garth)\n").length === 0);

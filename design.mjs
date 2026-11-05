@@ -261,8 +261,8 @@ const NO_SCREEN = /\b(cli|command[- ]line|terminal|network|time-?outs?|wait(?:s|
 // A job that says it's built already (the work sits uncommitted in a worktree, say): nothing to design.
 const BUILT = /\b(already (?:done|built|made|fixed|written|in place|shipped|merged|finished|implemented)|(?:done|built) already|uncommitted in)\b/i;
 // A job to judge what's built (the critic's review, restarted or resumed) is the critic's, not a
-// designer's: "Resume the design critic review of the finished Daaymn UI work, judge it against the
-// real screens…" (5 Nov 2026) got a designer, as "Restart the stalled Daaymn design-critic review…"
+// designer's: "Resume the design critic review of the finished app UI work, judge it against the
+// real screens…" (5 Nov 2026) got a designer, as "Restart the stalled app design-critic review…"
 // had on 30 Oct, and a designer on a critic's job left a "design first" goal unmoved for 9 days.
 const JUDGING = /\b(?:design[- ]critic|critic(?:'s)? (?:review|pass|verdict|round)|(?:ui|design) review|review (?:of )?the (?:finished|built)|judge (?:it|the (?:finished|built|real)))\b/i;
 function designWorthy(text = "") {
