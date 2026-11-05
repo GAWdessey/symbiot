@@ -540,16 +540,20 @@ const nap = (ms) => new Promise((r) => setTimeout(r, ms).unref());
 // When a page has finished loading, for every page Symbiot opens (the Symbiot Browser's tabs,
 // symbiot capture, symbiot shoot): one rule, so they can't drift apart. seen(m) takes each CDP
 // event of the page's session. idle(): after 0.4 s, quiet means no more than one request (a long
-// poll, say) open for 0.6 s; it gives up at 8 s (or `max` ms) and says whether it got quiet.
+// poll, say) open, and no data arriving on any, for 0.6 s; it gives up at 8 s (or `max` ms) and
+// says whether it got quiet. A lone request still downloading is not a poll: a Flutter web app's
+// 7 MB canvaskit.wasm from gstatic got the Daaymn demo shot on its splash screen, said to be
+// quiet, on every 1440 picture (5 Nov 2026).
 // A request that failed or answered 4xx/5xx is finished, not in flight; an image that did is
 // kept in broken, so a missing picture can be told from one shoot took too early.
 const IDLE = { first: 400, calm: 600, max: 8000 };
 const shortUrl = (u) => { try { const x = new URL(u); return x.host + x.pathname; } catch { return String(u || "").slice(0, 120); } };
 function netWatch() {
-  const inflight = new Map(), broken = new Map();
+  const inflight = new Map(), broken = new Map(); let fed = 0;
   const seen = (m) => {
     const p = (m && m.params) || {};
-    if (m.method === "Network.requestWillBeSent") { if (!/^data:|^blob:/i.test((p.request && p.request.url) || "")) inflight.set(p.requestId, { url: p.request.url, type: p.type }); }
+    if (m.method === "Network.dataReceived") { if (inflight.has(p.requestId)) fed = Date.now(); }
+    else if (m.method === "Network.requestWillBeSent") { if (!/^data:|^blob:/i.test((p.request && p.request.url) || "")) inflight.set(p.requestId, { url: p.request.url, type: p.type }); }
     else if (m.method === "Network.responseReceived") { if (p.type === "Image" && p.response && p.response.status >= 400) broken.set(p.requestId, p.response.url); }
     else if (m.method === "Network.loadingFinished") inflight.delete(p.requestId);
     else if (m.method === "Network.loadingFailed") { const r = inflight.get(p.requestId); inflight.delete(p.requestId); if (r && !p.canceled && (p.type || r.type) === "Image") broken.set(p.requestId, r.url); }
@@ -557,7 +561,7 @@ function netWatch() {
   const idle = async ({ max = IDLE.max } = {}) => {
     const end = Date.now() + max; let calm = 0;
     await sleep(Math.min(IDLE.first, max));
-    while (Date.now() < end && calm < IDLE.calm) { await sleep(100); calm = inflight.size <= 1 ? calm + 100 : 0; }
+    while (Date.now() < end && calm < IDLE.calm) { await sleep(100); calm = inflight.size <= 1 && Date.now() - fed >= 100 ? calm + 100 : 0; }
     return calm >= IDLE.calm;
   };
   return { seen, idle, late: () => [...new Set([...inflight.values()].map((r) => shortUrl(r.url)))], broken: () => [...new Set([...broken.values()].map(shortUrl))], clear: () => broken.clear() };

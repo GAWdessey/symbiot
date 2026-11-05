@@ -339,24 +339,41 @@ function startDesign(path, md, { now = Date.now() } = {}) {
 // loads sees the size it's shot at. A page that never goes quiet is still shot, with what was
 // still loading in `late`; images that failed are in `broken` (the page's, not the picture's).
 const SHOOT_MS = 8000;
-// Runs in the page, with the ms left: fonts ready and every image in the window loaded and
-// decoded, or the time's up; then a frame. Gives the images still not there.
-const SETTLE_JS = (ms) => `(async () => {
-  const end = Date.now() + ${Math.max(0, ms)}, left = () => new Promise((r) => setTimeout(r, Math.max(0, end - Date.now())));
+// A Flutter app not drawn yet gets this long in all: its engine (5 MB of canvaskit.wasm from
+// gstatic, fetched again by each fresh browser) took 1 to 112 s here, and the first frame came
+// 7 to 23 s after the page was opened (5 Nov 2026).
+const FLUTTER_MS = 30000;
+// A Flutter web app draws on a canvas once its engine has downloaded and started, with the
+// network quiet while it starts, behind a splash that's in the HTML: the first size shot of the
+// Daaymn demo was its splash screen every time (5 Nov 2026). Flutter says when its first frame is
+// drawn (the flutter-first-frame event); this, run before the page's own scripts, keeps that.
+const FIRST_FRAME_JS = `addEventListener("flutter-first-frame", () => { window.__shootDrawn = true; }, { once: true });`;
+const NOT_DRAWN = "the app's first screen";
+// Once it has drawn, a Flutter app asks for its pictures (a CDN's photos, by fetch, not <img>):
+// the network is waited on again, then a moment for them to be decoded and painted. Without it
+// the Daaymn demo's cards came out as grey placeholders with the photos still on their way.
+const PAINTED_JS = `new Promise((r) => setTimeout(() => requestAnimationFrame(() => requestAnimationFrame(r)), 250))`;
+// Runs in the page, with the ms left (flutterMs for a Flutter app): its first frame drawn, fonts
+// ready and every image in the window loaded and decoded, or the time's up; then a frame. Gives
+// the images still not there (and NOT_DRAWN for a Flutter app that hadn't drawn yet).
+const SETTLE_JS = (ms, flutterMs = ms) => `(async () => {
+  const flutter = !!window._flutter;
+  const end = Date.now() + (flutter ? ${Math.max(0, flutterMs)} : ${Math.max(0, ms)}), left = () => new Promise((r) => setTimeout(r, Math.max(0, end - Date.now())));
   const by = (p) => Promise.race([Promise.resolve(p).catch(() => {}), left()]);
+  if (flutter && !window.__shootDrawn) await by(new Promise((r) => addEventListener("flutter-first-frame", r, { once: true })));
   await by(document.fonts && document.fonts.ready);
   const seen = [...document.images].filter((i) => { const b = i.getBoundingClientRect(); return b.width && b.height && b.bottom > 0 && b.top < innerHeight && b.right > 0 && b.left < innerWidth; });
   await by(Promise.all(seen.map((i) => (i.complete ? Promise.resolve() : new Promise((r) => { i.addEventListener("load", r, { once: true }); i.addEventListener("error", r, { once: true }); }))
     .then(() => (i.naturalWidth ? i.decode() : null)).catch(() => {}))));
   await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
-  return seen.filter((i) => !i.complete).map((i) => i.currentSrc || i.src);
+  return [...(flutter && !window.__shootDrawn ? [${JSON.stringify(NOT_DRAWN)}] : []), ...seen.filter((i) => !i.complete).map((i) => i.currentSrc || i.src)];
 })()`;
 const things = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 const andList = (a) => (a.length > 1 ? `${a.slice(0, -1).join(", ")} and ${a.at(-1)}` : a.join(""));
 // The words for what shoot couldn't help: still loading at the limit first, then broken images.
-function shootNote(late, broken) {
+function shootNote(late, broken, secs = SHOOT_MS / 1000) {
   const sizes = Object.keys(late), all = [...new Set(Object.values(late).flat())], out = [];
-  if (sizes.length) out.push(`The page was still loading ${things(all.length, "thing", "things")} after ${SHOOT_MS / 1000} seconds (${all.slice(0, 3).join(", ")}), so the ${andList(sizes)} ${sizes.length === 1 ? "picture" : "pictures"} may be missing ${all.length === 1 ? "it" : "them"}.`);
+  if (sizes.length) out.push(`The page was still loading ${things(all.length, "thing", "things")} after ${secs} seconds (${all.slice(0, 3).join(", ")}), so the ${andList(sizes)} ${sizes.length === 1 ? "picture" : "pictures"} may be missing ${all.length === 1 ? "it" : "them"}.`);
   if (broken.length) out.push(`${things(broken.length, "image", "images")} on the page didn't load (${broken.slice(0, 3).join(", ")}): that's the page, not the screenshot.`);
   return out.join(" ");
 }
@@ -374,24 +391,39 @@ async function shoot(url, { out, sizes = "1440x900,390x844", full = false, bin, 
   let why = "";
   try {
     await withPage(async (page) => {
+      await page.send("Page.addScriptToEvaluateOnNewDocument", { source: FIRST_FRAME_JS });
+      const one = async (t) => {
+        await page.send("Emulation.setDeviceMetricsOverride", { width: t.w, height: t.h, deviceScaleFactor: 1, mobile: false });
+        const t0 = Date.now(), r = (await open(page, url, { chrome: false, budget: SHOOT_MS })) || {};
+        const { result } = (await page.send("Runtime.evaluate", { expression: SETTLE_JS(SHOOT_MS - (Date.now() - t0), FLUTTER_MS - (Date.now() - t0)), awaitPromise: true, returnByValue: true })) || {};
+        const still = [...(r.quiet === false && page.net ? page.net.late() : []), ...((result && Array.isArray(result.value) ? result.value : []).map(short))];
+        const drew = page.idle && ((await page.send("Runtime.evaluate", { expression: "!!window.__shootDrawn", returnByValue: true })) || {}).result?.value === true;
+        if (drew) {
+          if ((await page.idle({ max: Math.max(0, FLUTTER_MS - (Date.now() - t0)) })) === false && page.net) still.push(...page.net.late());
+          await page.send("Runtime.evaluate", { expression: PAINTED_JS, awaitPromise: true });
+        }
+        const { data } = await page.send("Page.captureScreenshot", { format: "png" });
+        return { still: [...new Set(still)].slice(0, 5), data };
+      };
+      const keep = (t, { still, data }) => {
+        if (still.length) late[t.size] = still; else delete late[t.size];
+        if (page.net) for (const b of page.net.broken()) broken.add(b);
+        writeFileSync(t.file, Buffer.from(data, "base64")); if (!shots.includes(t.file)) shots.push(t.file);
+      };
       for (const t of todo) {
-        try {
-          await page.send("Emulation.setDeviceMetricsOverride", { width: t.w, height: t.h, deviceScaleFactor: 1, mobile: false });
-          const t0 = Date.now(), r = (await open(page, url, { chrome: false, budget: SHOOT_MS })) || {};
-          const { result } = (await page.send("Runtime.evaluate", { expression: SETTLE_JS(SHOOT_MS - (Date.now() - t0)), awaitPromise: true, returnByValue: true })) || {};
-          const still = [...(r.quiet === false && page.net ? page.net.late() : []), ...((result && Array.isArray(result.value) ? result.value : []).map(short))];
-          if (still.length) late[t.size] = [...new Set(still)].slice(0, 5);
-          if (page.net) for (const b of page.net.broken()) broken.add(b);
-          const { data } = await page.send("Page.captureScreenshot", { format: "png" });
-          writeFileSync(t.file, Buffer.from(data, "base64")); shots.push(t.file);
-        } catch (e) { why = why || String((e && e.message) || e); failed.push(t.file); delete late[t.size]; }
+        try { keep(t, await one(t)); } catch (e) { why = why || String((e && e.message) || e); failed.push(t.file); delete late[t.size]; }
+      }
+      // a size whose Flutter app hadn't drawn is shot once more after the rest: its engine went on
+      // downloading meanwhile and is in this browser's cache by then. The first, kept if this fails.
+      for (const t of todo.filter((x) => (late[x.size] || []).includes(NOT_DRAWN))) {
+        try { const b = await one(t); if (!b.still.includes(NOT_DRAWN)) keep(t, b); } catch {}
       }
     }, { width: todo.length ? todo[0].w : 1440, height: todo.length ? todo[0].h : 900 });
   } catch (e) { why = String((e && e.message) || e); }
   for (const t of todo) if (!shots.includes(t.file) && !failed.includes(t.file)) failed.push(t.file);
   if (failed.length && !shots.length) return { error: "Chrome didn't take the screenshots here." + (why ? ` (${why})` : ""), failed };
-  const bad = [...broken].slice(0, 5), note = shootNote(late, bad);
+  const bad = [...broken].slice(0, 5), note = shootNote(late, bad, Object.values(late).flat().includes(NOT_DRAWN) ? FLUTTER_MS / 1000 : SHOOT_MS / 1000);
   return { shots, ...(failed.length ? { failed } : {}), ...(Object.keys(late).length ? { late } : {}), ...(bad.length ? { broken: bad } : {}), ...(note ? { note } : {}) };
 }
 
-export { isBrief, taskOf, sameJob, dropDesign, designWorthy, toDesign, designerBrief, settleDesign, specsFor, startDesign, designOf, DESIGNER_PROMPT, DESIGN, MIN_SPEC, slugOf, folderSlug, noteOpen, holdsMerge, mergedAt, reviewHolds, heldMergeCard, MERGE_ASK, OPEN_MS, isUiWork, designBrief, CHECKLIST, toReview, criticBrief, CRITIC_PROMPT, settleVerdict, reviewOf, saveReview, itemKey, shoot, shootNote, SHOOT_MS, REVIEW, VERDICT, MAX_ROUNDS, looksAt, wroteOnly, writtenBrief };
+export { isBrief, taskOf, sameJob, dropDesign, designWorthy, toDesign, designerBrief, settleDesign, specsFor, startDesign, designOf, DESIGNER_PROMPT, DESIGN, MIN_SPEC, slugOf, folderSlug, noteOpen, holdsMerge, mergedAt, reviewHolds, heldMergeCard, MERGE_ASK, OPEN_MS, isUiWork, designBrief, CHECKLIST, toReview, criticBrief, CRITIC_PROMPT, settleVerdict, reviewOf, saveReview, itemKey, shoot, shootNote, SHOOT_MS, SETTLE_JS, FIRST_FRAME_JS, NOT_DRAWN, FLUTTER_MS, PAINTED_JS, REVIEW, VERDICT, MAX_ROUNDS, looksAt, wroteOnly, writtenBrief };
