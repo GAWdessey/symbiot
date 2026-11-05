@@ -344,14 +344,14 @@ const SHOOT_MS = 8000;
 // 7 to 23 s after the page was opened (5 Nov 2026).
 const FLUTTER_MS = 30000;
 // A Flutter web app draws on a canvas once its engine has downloaded and started, with the
-// network quiet while it starts, behind a splash that's in the HTML: the first size shot of the
-// Daaymn demo was its splash screen every time (5 Nov 2026). Flutter says when its first frame is
+// network quiet while it starts, behind a splash that's in the HTML: the first size shot of a
+// dating app's web demo was its splash screen every time (5 Nov 2026). Flutter says when its first frame is
 // drawn (the flutter-first-frame event); this, run before the page's own scripts, keeps that.
 const FIRST_FRAME_JS = `addEventListener("flutter-first-frame", () => { window.__shootDrawn = true; }, { once: true });`;
 const NOT_DRAWN = "the app's first screen";
 // Once it has drawn, a Flutter app asks for its pictures (a CDN's photos, by fetch, not <img>):
 // the network is waited on again, then a moment for them to be decoded and painted. Without it
-// the Daaymn demo's cards came out as grey placeholders with the photos still on their way.
+// a dating app's demo cards came out as grey placeholders with the photos still on their way.
 const PAINTED_JS = `new Promise((r) => setTimeout(() => requestAnimationFrame(() => requestAnimationFrame(r)), 250))`;
 // Runs in the page, with the ms left (flutterMs for a Flutter app): its first frame drawn, fonts
 // ready and every image in the window loaded and decoded, or the time's up; then a frame. Gives

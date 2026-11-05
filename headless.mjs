@@ -542,7 +542,7 @@ const nap = (ms) => new Promise((r) => setTimeout(r, ms).unref());
 // event of the page's session. idle(): after 0.4 s, quiet means no more than one request (a long
 // poll, say) open, and no data arriving on any, for 0.6 s; it gives up at 8 s (or `max` ms) and
 // says whether it got quiet. A lone request still downloading is not a poll: a Flutter web app's
-// 7 MB canvaskit.wasm from gstatic got the Daaymn demo shot on its splash screen, said to be
+// 7 MB canvaskit.wasm from gstatic got a dating app's demo shot on its splash screen, said to be
 // quiet, on every 1440 picture (5 Nov 2026).
 // A request that failed or answered 4xx/5xx is finished, not in flight; an image that did is
 // kept in broken, so a missing picture can be told from one shoot took too early.

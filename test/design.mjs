@@ -153,7 +153,7 @@ try {
   const shootSrc = readFileSync(new URL("../design.mjs", import.meta.url), "utf8");
   ok("…no simulated clock left in shoot", !/virtual-time-budget/.test(shootSrc.slice(shootSrc.indexOf("---- symbiot shoot"))));
 
-  console.log("A FLUTTER APP IS SHOT ONCE IT HAS DRAWN — the Daaymn demo's first size was its splash screen every time (5 Nov 2026)");
+  console.log("A FLUTTER APP IS SHOT ONCE IT HAS DRAWN — a dating app's web demo's first size was its splash screen every time (5 Nov 2026)");
   const { runInNewContext } = await import("node:vm");
   // the page as SETTLE_JS sees it: window, its events, no images (Flutter draws on a canvas)
   const inPage = (flutter, drawAfter) => {
