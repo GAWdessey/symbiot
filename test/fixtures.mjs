@@ -75,7 +75,7 @@ try {
     for i in $(seq 10); do echo $i > x; git add x; git commit -qm c$i; done
     git worktree add -q ../f3-old HEAD~5
     git worktree add -q -b feat ../f3-new
-    ( cd ../f3-new && echo n > n && git add n && git commit -qm newer )`);
+    ( cd ../f3-new && echo n > n && git add n && GIT_COMMITTER_DATE="@$(( $(date +%s) + 60 )) +0000" git commit -qm newer )`); // a minute on: a fast runner put every commit in one second, a tie
   const repos3 = findAllRepos(parent);
   ok("worktrees collapse to 2 entries: the main checkout is never dropped for a fresher worktree", repos3.length === 2, repos3.map((r) => r.path));
   ok("the freshest worktree and the main checkout kept, the stale worktree gone", repos3.some((r) => /f3-new$/.test(r.path)) && repos3.some((r) => /\/f3$/.test(r.path)) && !repos3.some((r) => /f3-old$/.test(r.path)), repos3.map((r) => r.path));
