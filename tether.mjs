@@ -167,7 +167,7 @@ function requestWho(text) {
   return { session: sess ? `${sess.trim()} session` : "another session", device, title: clipWords(head, 200) };
 }
 // The task a request file becomes in its lane: what to read, and how to close it.
-const requestTask = (e, rel) => `A request from another session came in for this lane (${whoOf(e)}, ${when(e.at)}), pulled down to this computer at \`${rel}\`: "${clipWords(e.asked, 240)}". Read the file and do what it asks that this lane may do. Where the lane's rules say no (a machine the user turned down, an account it must not touch), don't: say so in the lane's shared log and in your last message, with what you did instead. Then close it in the log (\`"closes": ["${e.id}"]\` in .symbiot/${FILE}).`;
+const requestTask = (e, rel) => `A request from another session came in for this lane (${whoOf(e)}, ${when(e.at)}), pulled down to this computer at \`${rel.split("\\").join("/")}\`: "${clipWords(e.asked, 240)}". Read the file and do what it asks that this lane may do. Where the lane's rules say no (a machine the user turned down, an account it must not touch), don't: say so in the lane's shared log and in your last message, with what you did instead. Then close it in the log (\`"closes": ["${e.id}"]\` in .symbiot/${FILE}).`;
 
 // One pass, from the app every minute. deps (the app passes them; tests give their own):
 // - folders: [{ path, lane }], every folder a run works in, with the lane it is for
