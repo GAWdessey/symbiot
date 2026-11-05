@@ -554,7 +554,7 @@ async function cmdSync() {
 async function cmdShoot() {
   const url = argv.slice(1).find((x, i, all) => !x.startsWith("--") && !["--out", "--sizes"].includes(all[i - 1]));
   const out = resolve(flag("out", join(process.cwd(), ".symbiot", "shots"))), sizes = flag("sizes", "1440x900,390x844"), full = has("full");
-  if (!url || has("help")) { console.log("symbiot shoot <url> [--out dir] [--sizes 1440x900,390x844] [--full]  screenshots of a page at each size, once it has finished loading (up to 8 s); prints the PNG paths"); if (!url) process.exitCode = 1; return; }
+  if (!url || has("help")) { console.log("symbiot shoot <url> [--out dir] [--sizes 1440x900,390x844] [--full]  screenshots of a page at each size, once it has finished loading (up to 8 s; a Flutter app, until it has drawn, up to 30 s); prints the PNG paths"); if (!url) process.exitCode = 1; return; }
   let r = await shoot(url, { out, sizes, full, bin: chromeBinary() });
   if (r.error || r.failed) { const app = await viaApp("/api/screens/shoot", { url, out, sizes, full }); if (app && !app.error) r = app; }
   console.log(JSON.stringify(r, null, 2)); if (r.error) process.exitCode = 1;
