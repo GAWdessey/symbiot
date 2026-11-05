@@ -260,8 +260,13 @@ const WHOLE = /\b(redesign|rework|rebuild|overhaul|revamp|new (?:page|screen|app
 const NO_SCREEN = /\b(cli|command[- ]line|terminal|network|time-?outs?|wait(?:s|ing)? (?:for|until)|retr(?:y|ies)|symbiot (?:shoot|screens|browser|capture|secret|login|logout|push|post|watch|models|setup-local|overrides|whoami|uninstall))\b|(?:^|\s)--[a-z]/i;
 // A job that says it's built already (the work sits uncommitted in a worktree, say): nothing to design.
 const BUILT = /\b(already (?:done|built|made|fixed|written|in place|shipped|merged|finished|implemented)|(?:done|built) already|uncommitted in)\b/i;
+// A job to judge what's built (the critic's review, restarted or resumed) is the critic's, not a
+// designer's: "Resume the design critic review of the finished Daaymn UI work, judge it against the
+// real screens…" (5 Nov 2026) got a designer, as "Restart the stalled Daaymn design-critic review…"
+// had on 30 Oct, and a designer on a critic's job left a "design first" goal unmoved for 9 days.
+const JUDGING = /\b(?:design[- ]critic|critic(?:'s)? (?:review|pass|verdict|round)|(?:ui|design) review|review (?:of )?the (?:finished|built)|judge (?:it|the (?:finished|built|real)))\b/i;
 function designWorthy(text = "") {
-  const t = String(text || ""); if (BUILT.test(t)) return false; if (WHOLE.test(t)) return true;
+  const t = String(text || ""); if (BUILT.test(t) || JUDGING.test(t)) return false; if (WHOLE.test(t)) return true;
   return THING.test(t) && BIG.test(t) && !SMALL.test(t) && !NOT_LOOK.test(t) && !NO_SCREEN.test(t);
 }
 const designOf = (path) => readJson(join(path, ".symbiot", DESIGN), {}) || {};
