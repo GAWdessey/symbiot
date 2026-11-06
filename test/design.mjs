@@ -153,6 +153,61 @@ try {
   const shootSrc = readFileSync(new URL("../design.mjs", import.meta.url), "utf8");
   ok("…no simulated clock left in shoot", !/virtual-time-budget/.test(shootSrc.slice(shootSrc.indexOf("---- symbiot shoot"))));
 
+  console.log("A FLUTTER APP IS SHOT ONCE IT HAS DRAWN — a dating app's web demo's first size was its splash screen every time (5 Nov 2026)");
+  const { runInNewContext } = await import("node:vm");
+  // the page as SETTLE_JS sees it: window, its events, no images (Flutter draws on a canvas)
+  const inPage = (flutter, drawAfter) => {
+    const on = {}, g = { requestAnimationFrame: (f) => setTimeout(f, 1), innerHeight: 900, innerWidth: 1440, document: { fonts: { ready: Promise.resolve() }, images: [] },
+      addEventListener: (n, f) => { (on[n] = on[n] || []).push(f); }, setTimeout, Date, Promise };
+    g.window = g; if (flutter) g._flutter = {};
+    runInNewContext(D.FIRST_FRAME_JS, g);
+    if (drawAfter >= 0) setTimeout(() => { for (const f of on["flutter-first-frame"] || []) f(); }, drawAfter);
+    return g;
+  };
+  let t0 = Date.now(); const drawn = await runInNewContext(D.SETTLE_JS(50, 2000), inPage(true, 300));
+  ok("a Flutter app: waited for its first frame, past the 8 s rule's own limit, and nothing said late", drawn.length === 0 && Date.now() - t0 >= 280, [drawn, Date.now() - t0]);
+  t0 = Date.now(); const never = await runInNewContext(D.SETTLE_JS(50, 300), inPage(true, -1));
+  ok("…one that never draws is shot at its limit, said to be missing its first screen", JSON.stringify(never) === JSON.stringify([D.NOT_DRAWN]) && Date.now() - t0 < 1500, never);
+  t0 = Date.now(); const plain = await runInNewContext(D.SETTLE_JS(50, 2000), inPage(false, -1));
+  ok("…a page that isn't Flutter waits on nothing of it, and keeps the 8 s rule's limit", plain.length === 0 && Date.now() - t0 < 1000, [plain, Date.now() - t0]);
+  const fl = []; await D.shoot("http://localhost:3100/", { out, bin: "chrome", sizes: "1440x900", ...fake(fl) });
+  const kept = fl.findIndex((c) => c[0] === "Page.addScriptToEvaluateOnNewDocument" && c[1].source === D.FIRST_FRAME_JS), ev = fl.find((c) => c[0] === "Runtime.evaluate");
+  ok("…shoot keeps the first-frame event from before the page's own scripts, and gives a Flutter app up to 30 s", kept >= 0 && kept < fl.findIndex((c) => c[0] === "open") && D.FLUTTER_MS === 30000 && /_flutter/.test(ev[1].expression) && /flutter-first-frame/.test(ev[1].expression), fl.map((c) => c[0]));
+  const flutterLate = (log) => ({ ...fake(log), page: async (fn) => fn({ send: async (method) => (method === "Runtime.evaluate" ? { result: { value: [D.NOT_DRAWN] } } : method === "Page.captureScreenshot" ? { data: Buffer.from("png").toString("base64") } : {}) }), short: (u) => u });
+  const fla = await D.shoot("http://localhost:3100/", { out, bin: "chrome", sizes: "1440x900", ...flutterLate([]) });
+  ok("…and when it hadn't drawn, the note says so in words, with the 30 s it had", fla.note === "The page was still loading 1 thing after 30 seconds (the app's first screen), so the 1440x900 picture may be missing it.", fla);
+
+  // a Flutter app whose first size isn't drawn at its limit, then is (its engine cached by then)
+  const retry = (log, { drawsOn = 2 } = {}) => {
+    let settles = 0;
+    return { ...fake(log), short: (u) => u, page: async (fn) => fn({ net: { late: () => ["cdn.example.com/photo.jpg"], broken: () => [] }, idle: async (o) => { log.push(["idle", o]); return true; },
+      send: async (method, params) => { log.push([method, params]);
+        if (method === "Runtime.evaluate" && /flutter-first-frame/.test(params.expression)) return { result: { value: ++settles >= drawsOn ? [] : [D.NOT_DRAWN] } };
+        if (method === "Runtime.evaluate" && params.expression === "!!window.__shootDrawn") return { result: { value: settles >= drawsOn } };
+        if (method === "Page.captureScreenshot") return { data: Buffer.from("png" + settles).toString("base64") };
+        return {}; } }) };
+  };
+  const rl = []; const rs = await D.shoot("http://localhost:3100/", { out: join(HOME, "retry"), bin: "chrome", ...retry(rl) });
+  ok("…a size not drawn at its limit is shot once more after the rest, and the drawn picture kept, nothing said late", rs.shots.length === 2 && !rs.late && !rs.note && rl.filter((c) => c[0] === "open").length === 3 && readFileSync(rs.shots[0], "utf8") === "png3", [rs, rl.filter((c) => c[0] === "open").length]);
+  ok("…once drawn, the network is waited on again within the 30 s (the photos a Flutter app asks for after), then a paint", rl.some((c) => c[0] === "idle" && c[1].max > 8000 && c[1].max <= 30000) && rl.some((c) => c[0] === "Runtime.evaluate" && c[1].expression === D.PAINTED_JS));
+  const nl = []; const ns = await D.shoot("http://localhost:3100/", { out: join(HOME, "retry2"), bin: "chrome", sizes: "1440x900", ...retry(nl, { drawsOn: 99 }) });
+  ok("…still not drawn the second time: the first picture kept, said to be missing its first screen", ns.shots.length === 1 && JSON.stringify(ns.late) === JSON.stringify({ "1440x900": [D.NOT_DRAWN] }) && readFileSync(ns.shots[0], "utf8") === "png1" && nl.filter((c) => c[0] === "open").length === 2, ns);
+
+  console.log("A LONE DOWNLOAD IS NOT A QUIET PAGE — one long request still receiving data isn't a poll (5 Nov 2026)");
+  const H = await import("../headless.mjs");
+  const dl = H.netWatch(); dl.seen({ method: "Network.requestWillBeSent", params: { requestId: "w", request: { url: "https://www.gstatic.com/flutter-canvaskit/x/canvaskit.wasm" }, type: "Fetch" } });
+  const feed = setInterval(() => dl.seen({ method: "Network.dataReceived", params: { requestId: "w", dataLength: 65536 } }), 50);
+  setTimeout(() => { clearInterval(feed); dl.seen({ method: "Network.loadingFinished", params: { requestId: "w" } }); }, 1500);
+  t0 = Date.now(); const dlQuiet = await dl.idle({ max: 4000 });
+  ok("one request still downloading holds the picture until it's finished", dlQuiet === true && Date.now() - t0 >= 1500 + H.IDLE.calm - 150, Date.now() - t0);
+  const poll = H.netWatch(); poll.seen({ method: "Network.requestWillBeSent", params: { requestId: "p", request: { url: "https://api.example.com/poll" }, type: "XHR" } });
+  t0 = Date.now(); const pollQuiet = await poll.idle({ max: 4000 });
+  ok("…one silent request (a long poll) still counts as quiet, as before", pollQuiet === true && Date.now() - t0 < 1500, Date.now() - t0);
+  const stuck = H.netWatch(); stuck.seen({ method: "Network.requestWillBeSent", params: { requestId: "s", request: { url: "https://cdn.example.com/big.mp4" }, type: "Media" } });
+  const feed2 = setInterval(() => stuck.seen({ method: "Network.dataReceived", params: { requestId: "s" } }), 50);
+  const stuckQuiet = await stuck.idle({ max: 1200 }); clearInterval(feed2);
+  ok("…and one still downloading at the limit isn't called quiet, so it's named as still loading", stuckQuiet === false && JSON.stringify(stuck.late()) === '["cdn.example.com/big.mp4"]', stuck.late());
+
   console.log("THE JOB FIRST — the standard asks for the flows the best product of its kind has, not only tidiness");
   ok("the builder's brief and the critic's both start from the job and the flows people expect", /The job first/.test(D.CHECKLIST[0]) && /removing, undoing/.test(D.CHECKLIST[0]) && D.designBrief().join("\n").includes("The job first") && D.criticBrief([{ item: "x", rounds: 0 }]).includes("The job first"));
 
@@ -199,6 +254,9 @@ try {
   ok("…nor a job with no screens: a command or what's under one (24 Oct 2026)", noScreen.every((t) => !D.designWorthy(t)), noScreen.filter((t) => D.designWorthy(t)));
   const built = ["Build the booking page for the salon: already done, uncommitted in worktree ~/projects/salon-book", "Redesign the settings page (already built on branch x)"];
   ok("…nor one that's built already", built.every((t) => !D.designWorthy(t)), built.filter((t) => D.designWorthy(t)));
+  const judging = ["Resume the design critic review of the finished app UI work, judge it against the real screens, and report the holes it finds.", "Restart the stalled app design-critic review of the finished UI work and have it report its verdict.", "New job: UI review (round 1) of the Flutter web demo, so the Play-listing screenshots tell one clear story"];
+  ok("…nor a job to judge what's built: that's the critic's (5 Nov 2026)", judging.every((t) => !D.designWorthy(t)), judging.filter((t) => D.designWorthy(t)));
+  ok("…while a new design still is", D.designWorthy("Design a new onboarding flow for the phone app"));
   ok("…and a ticked or waiting one gets no designer", D.toDesign("- [x] Build the booking page for the salon\n- [~] Redesign the settings page (waits on: Garth)\n").length === 0);
   const dl = join(HOME, "work", "atlas"); mkdirSync(join(dl, ".symbiot"), { recursive: true });
   const md = "## Tasks\n- [ ] Build the booking page for the salon\n- [ ] Fix the spacing on the footer\n- [x] Redesign the old report page\n";
