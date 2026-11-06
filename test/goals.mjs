@@ -134,6 +134,17 @@ try {
     writeFileSync(join(pq, ".symbiot", "TASKS.md"), "- [~] Tidy the mailbox rules\n");
     ok("…one with an item still open is not", G.rollUp({ ...G.goalById(gq.key) }, { ...base(), jobs: J.loadJobs() }).state === "running");
 
+    // a paused run with a later one there that ended waiting: the later one carried it on (6 Nov 2026:
+    // run:35f7ec08, paused 30 Oct, held five symbiot goals "running" with no agent on them for days)
+    const pz = join(CFG, "drafts", "act-a7ea0004");
+    mkdirSync(join(pz, ".symbiot"), { recursive: true }); writeFileSync(join(pz, ".symbiot", "TASKS.md"), "- [~] Back up the notes (waits on ops)\n");
+    const gz = G.openGoal("Back up the notes", { child: "run:sz1", path: pz, now: a0 });
+    J.saveJobs([...J.loadJobs(), { ...rec("sz1", a0 + 1000, { state: "paused" }), path: pz }]);
+    ok("a paused run that's the folder's newest, item still open: still going", G.rollUp({ ...G.goalById(gz.key) }, { ...base(), jobs: J.loadJobs() }).state === "running");
+    J.saveJobs([...J.loadJobs(), { ...rec("sz2", a0 + 2000, { state: "waiting", waitingOn: "lane", what: "ops installing the timer" }), path: pz }]);
+    const rz = G.rollUp({ ...G.goalById(gz.key), children: ["run:sz1", "run:sz2"] }, { ...base(), jobs: J.loadJobs() });
+    ok("…with a later run there that ended waiting on a lane: the paused one is taken over, and the goal waits on that lane", rz.kids.find((c) => c.key === "run:sz1").state === "ended" && rz.state === "waiting" && rz.waitingOn === "lane", rz);
+
     // from 0.94.1 a run's end marks them itself
     const pr = join(CFG, "drafts", "act-a7ea0003");
     run("sw1", pr, { at: a0 + 1000, state: "waiting", waitingOn: "user", what: "your yes to redeploy" }); run("sw0", pr, { at: a0 + 500, state: "paused" });

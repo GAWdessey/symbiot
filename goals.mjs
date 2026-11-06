@@ -165,7 +165,10 @@ const laterEnded = (j, ctx) => ctx.jobs.find((x) => x.outcome && x.key !== j.key
 function superseded(j, ctx) {
   if (!j.path || (j.state !== "waiting" && j.state !== "paused")) return null;
   const later = laterFinished(j, ctx); if (later) return { state: "ended", ok: true, path: j.path, at: later.changed, what: "a later run in the same folder finished it", superseded: later.key };
-  if (j.state === "waiting") { const next = laterEnded(j, ctx); if (next) return { state: "ended", ok: true, path: j.path, at: next.changed, what: "a later run in the same folder took it over", superseded: next.key }; }
+  // a paused run too: it stopped with work left, and the next run there carried it on. Read as "still
+  // going", one paused on 29-30 Oct held five symbiot goals "running" for days with no agent on them,
+  // through later runs that ended there, so nothing restarted their real blocker (6 Nov 2026)
+  { const next = laterEnded(j, ctx); if (next) return { state: "ended", ok: true, path: j.path, at: next.changed, what: "a later run in the same folder took it over", superseded: next.key }; }
   // the question it waits on is answered (asksdone.mjs: in any wording), or settled for good by a decision
   if (j.state === "waiting" && j.waitingOn === "user" && (ctx.answered || answeredNow)(j.what, j)) return { state: "ended", ok: true, path: j.path, at: j.changed, what: "the user has answered what it waited on" };
   // only a wait its [~] item made (task, bare): one on a question or a need isn't in TASKS.md
