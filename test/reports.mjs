@@ -542,6 +542,15 @@ console.log("REPORTS — the same draft from three runs is one report, its earli
   ok("…and settles the older ones too", dana[0].earlier.every((e) => R.decidedOn(e, sf) === "approved") && R.decidedOn(dana[0], sf) === "approved");
   ok("…the older runs are told a newer version replaced theirs, so they don't use it", [runs[0], runs[1]].every((f) => /### Superseded: \.symbiot\/FOLLOWUP-TO-DANA-DRAFT\.md\nThe user approved a newer version/.test(readFileSync(join(f, ".symbiot", "ANSWERS.md"), "utf8"))));
   ok("…nothing from it waits for an OK any more", !R.withNeeds(L(), { seenFile: sf, tasks: [] }).some((r) => r.lane === "ops" && r.needs === "draft"));
+  const nd = R.readReport(dana[0].id, { list: l, mark: false, seenFile: sf });
+  ok("…opened, the newest says it was approved and when, so the page can say \"Approved <day>\" (9 Nov 2026)", nd.decided === "approved" && typeof nd.decidedAt === "number" && Date.now() - nd.decidedAt < 60000, [nd.decided, nd.decidedAt]);
+  // an earlier version's row read "Draft this as a report for the user to read…": Symbiot's own instruction, not what it was for
+  const sr = join(CFG, "drafts", "act-0a5c0de1"); put(sr, "PLAN.md", "# A plan\n\nText.\n");
+  writeFileSync(join(sr, ".symbiot", "TASKS.md"), "# Tasks\n\n> Draft this as a report for the user to read, under Reports (a .md in .symbiot/ starting with a # title), and don't send or share it anywhere: Draft a follow-up to Dana on onboarding\n");
+  const src = R.listReports({ folders: [sr], running: none, seen: { seen: {} } })[0];
+  ok("a run's source is the request, without Symbiot's drafting instruction before it", src && src.source === "Draft a follow-up to Dana on onboarding", src && src.source);
+  const ui = readFileSync(new URL("../ui/js/dashboard.mjs", import.meta.url), "utf8");
+  ok("…the page: a decided draft shows the decision with the other choice as a secondary button, and earlier versions by their own title", /Approve instead/.test(ui) && /Reject instead/.test(ui) && /esc\(d\.decided\)\+" with this one"/.test(ui) && /esc\(e\.title\|\|e\.name\)/.test(ui));
 }
 console.log("REPORTS — a draft rewritten under another title and a respelled file name is still one report (9 Nov 2026)");
 {
