@@ -24,7 +24,7 @@ const lane = join(HOME, "work", "avatars"), sym = join(lane, ".symbiot"); mkdirS
 const last = () => { try { return readFileSync(join(sym, "ANSWERS.md"), "utf8").split("### ").pop(); } catch { return ""; } };
 try {
   console.log("1) A STEP THAT ASKS FOR A KEY");
-  ok("pasting or making a key is one", v.asksForSecret(STEP) && v.asksForSecret("Generate new avatar and WinLove keys in the Example console, since the swap waits on them"));
+  ok("pasting or making a key is one", v.asksForSecret(STEP) && v.asksForSecret("Generate new avatar and payment keys in the Example console, since the swap waits on them"));
   ok("…checking a page or restarting a server isn't", !v.asksForSecret("Restart the avatar server after the deploy") && !v.asksForSecret("Check the Example dashboard shows the new plan"));
 
   console.log("2) DONE WITH NOTHING PASTED");
