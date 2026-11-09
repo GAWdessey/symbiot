@@ -240,9 +240,9 @@ console.log("REPORTS — a handed-off or dismissed next step leaves 'Read, to ac
   // the same plan saved again under a new name (an agent did it nine times, 25 Oct 2026) is a new report with the same ideas
   const long = "Extension constructions for the long tail: grow the container by j and fill the L-shaped border with a grid";
   const dc = join(CFG, "drafts", "act-copy001"), dd = join(CFG, "drafts", "act-copy002"), sc = join(CFG, "seen-copy.json");
-  put(dc, "PLAN-aaa111.md", `# Plan\n\n## Next steps\n\n- ${long}\n- short one\n`);
+  put(dc, "PLAN-aaa111.md", `# Plan\n\n## Next steps\n\n- ${long}\n- short one\n`, 60000); // the older: the rewrite below is the newest version
   put(dd, "PLAN-bbb222.md", `# Plan\n\nRewritten after the review.\n\n## Next steps\n\n- ${long}\n- short one\n`); // says more: another report, not a copy
-  const lc = R.listReports({ map: { symbiot: repo }, folders: [dc, dd], running: () => false }), a = lc.find((x) => /aaa111/.test(x.file)), b = lc.find((x) => /bbb222/.test(x.file));
+  const lc = R.listReports({ map: { symbiot: repo }, folders: [dc, dd], running: () => false }), flat = lc.flatMap((x) => [x, ...(x.earlier || [])]), a = flat.find((x) => /aaa111/.test(x.file)), b = flat.find((x) => /bbb222/.test(x.file)); // one report in two runs: one folds under the other
   reportIdeasAdd(a.id, [long, "short one"], { list: () => lc, add: () => ({ id: "t" }), mark: (r, i, st) => R.markIdeas(r, i, st, sc) });
   const nb = R.withNeeds(lc, { seenFile: sc }).find((x) => x.id === b.id);
   ok("a long idea handed in one copy stays handed in the next copy of the report", !R.readReport(b.id, { list: lc, mark: false, seenFile: sc }).ideas.includes(long), nb);
@@ -517,21 +517,45 @@ console.log("A REPORT IN ~/.config/symbiot/reports — a run with no lane left i
   ok("the briefs say to check Reports, and GitHub for a merge, before saying so", HANDBACK.some((x) => /`symbiot reports`/.test(x) && /gh pr view/.test(x)));
   ok("…and GitHub's mergeable state before saying a PR merges by itself (PR #336, 29 Oct 2026)", HANDBACK.some((x) => /--json mergeable,mergeStateStatus/.test(x) && /resolve the conflicts/.test(x)));
 }
-console.log("REPORTS — the same draft from several runs of Symbiot's own is one row, one Approve (Dana, 9 Nov 2026)");
+console.log("REPORTS — the same draft from three runs is one report, its earlier versions folded under it (9 Nov 2026)");
+{
+  const { reportDraftAnswer } = await import("../home.mjs");
+  const sf = join(CFG, "seen-versions.json"), DAY = 86400000, NAME = "FOLLOWUP-TO-DANA-DRAFT.md", TITLE = "# Draft follow-up to Dana on \"Re: Re: onboarding\"\n\n";
+  const runs = ["act-0e812e4a", "act-0052d2c3", "act-06d904c9"].map((f) => join(CFG, "drafts", f));
+  put(runs[0], NAME, TITLE + "First go.\n", 10 * DAY);
+  put(runs[1], NAME, TITLE + "Replaces the 30 Oct one.\n", 5 * DAY);
+  put(runs[2], NAME, TITLE + "Replaces the 4 Nov one.\n", 4 * DAY);
+  put(runs[2], "LANE-STATUS.md", "# Where every lane stands\n\nAll fine.\n", 4 * DAY);
+  const other = join(HOME, "code", "otherlane"); put(other, NAME, TITLE + "Another lane's own.\n", 3 * DAY);
+  const L = () => R.listReports({ map: { otherlane: other }, folders: [...runs, other], running: none, seen: { seen: {} } });
+  const l = L(), dana = l.filter((r) => r.name === NAME && r.lane === "ops");
+  ok("one row for it, the newest, with the two older ones folded under it newest first", dana.length === 1 && dana[0].folder === runs[2] && dana[0].earlier.map((e) => e.folder).join() === [runs[1], runs[0]].join(), dana.map((r) => [r.folder, (r.earlier || []).map((e) => e.folder)]));
+  ok("…another report in the same run, and the same name in another lane, stay rows of their own", l.some((r) => r.name === "LANE-STATUS.md") && l.some((r) => r.name === NAME && r.lane === "otherlane" && !r.earlier), l.map((r) => [r.lane, r.name]));
+  const needs = R.withNeeds(l, { seenFile: sf, tasks: [] }).filter((r) => r.lane === "ops" && r.needs === "draft");
+  ok("only one Approve waits: the newest", needs.length === 1 && needs[0].id === dana[0].id, needs.map((r) => r.folder));
+  const old = dana[0].earlier[1], rd = R.readReport(old.id, { list: l, mark: false, seenFile: sf });
+  ok("an earlier version still opens, read-only, pointing to the newest", /First go/.test(rd.text) && rd.draft === false && rd.supersededBy && rd.supersededBy.id === dana[0].id, rd);
+  ok("…the newest lists its earlier versions to open", R.readReport(dana[0].id, { list: l, mark: false, seenFile: sf }).earlier.length === 2);
+  ok("Approve on an earlier version is turned back to the newest", /newer version/.test(reportDraftAnswer(old.id, true, { list: () => l, decide: () => { throw new Error("decided"); } }).error || ""));
+  const ran = [], ap = reportDraftAnswer(dana[0].id, true, { list: () => l, decide: (x, st) => R.decide(x, st, sf), running: () => false, run: (p) => (ran.push(p), { id: "j" }) });
+  ok("one Approve on the newest: its run goes ahead, the older runs aren't started", ap.ok && ran.join() === runs[2], [ap, ran]);
+  ok("…and settles the older ones too", dana[0].earlier.every((e) => R.decidedOn(e, sf) === "approved") && R.decidedOn(dana[0], sf) === "approved");
+  ok("…the older runs are told a newer version replaced theirs, so they don't use it", [runs[0], runs[1]].every((f) => /### Superseded: \.symbiot\/FOLLOWUP-TO-DANA-DRAFT\.md\nThe user approved a newer version/.test(readFileSync(join(f, ".symbiot", "ANSWERS.md"), "utf8"))));
+  ok("…nothing from it waits for an OK any more", !R.withNeeds(L(), { seenFile: sf, tasks: [] }).some((r) => r.lane === "ops" && r.needs === "draft"));
+}
+console.log("REPORTS — a draft rewritten under another title and a respelled file name is still one report (9 Nov 2026)");
 {
   const runs = ["act-0000aa01", "act-0000aa02", "act-0000aa03"].map((x) => join(CFG, "drafts", x));
   put(runs[0], "DANA-PILOT-FOLLOWUP-DRAFT.md", '# Draft follow-up to Dana on "Re: Re: SPRING PILOT ONBOARDING"\n\nHi Dana, one.\n', 5 * 86400000);
   put(runs[1], "DANA-PILOT-FOLLOWUP-DRAFT.md", '# Draft follow-up to Dana on "Re: Re: SPRING PILOT ONBOARDING"\n\nHi Dana, two.\n', 3 * 86400000);
   put(runs[2], "dana-pilot-followup-draft.md", "# Draft follow-up to Dana on SPRING PILOT ONBOARDING (not sent)\n\nHi Dana, three.\n", 60000);
-  // two runs' design reviews share a role's title but are about different work: both stay
-  put(runs[0], "UI-CRITIC.md", "# Design critic: review the finished UI work\n\nThe Week page.\n", 4 * 86400000);
-  put(runs[1], "UI-CRITIC.md", "# Design critic: review the finished UI work\n\nThe Map page.\n", 2 * 86400000);
+  put(runs[1], "REGISTRAR-REPLY-DRAFT.md", "# Draft reply to the registrar about the transfer fee\n\nHello.\n", 2 * 86400000);
   const seenFile = join(CFG, "reports-dana.json");
   const l = R.listReports({ map, folders: runs, running: none, seen: { seen: {} } }), c = l.filter((r) => /dana/i.test(r.name));
-  ok("one row, the newest (9 Nov), the older ones its copies", c.length === 1 && c[0].file === join(runs[2], ".symbiot", "dana-pilot-followup-draft.md") && c[0].copies.length === 3, c);
+  ok("one row, the newest (9 Nov), the two older ones folded under it", c.length === 1 && c[0].file === join(runs[2], ".symbiot", "dana-pilot-followup-draft.md") && (c[0].earlier || []).length === 2, c);
   const w = R.withNeeds(l, { seenFile, tasks: [] }).filter((r) => /dana/i.test(r.name));
   ok("…with one Approve", w.length === 1 && w[0].needs === "draft", w);
-  ok("…reviews from different runs that share a title stay apart", l.filter((r) => r.name === "UI-CRITIC.md").length === 2);
+  ok("…another draft about other work stays a row of its own", l.some((r) => r.name === "REGISTRAR-REPLY-DRAFT.md" && !r.earlier));
   ok("…and it's an open job, so Symbiot doesn't start it again", R.openJobs({ list: l, seenFile, tasks: [] }).some((j) => /Dana/.test(j.title)));
   R.decide(c[0], "approved", seenFile);
   ok("…approved, it's no longer open", !R.openJobs({ list: l, seenFile, tasks: [] }).some((j) => /Dana/.test(j.title)));

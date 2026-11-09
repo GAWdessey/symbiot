@@ -114,25 +114,34 @@ function listReports({ map, folders, loose, running = runningHandoff, seen } = {
       r.new = !isRead(r, d); out.push(r);
     }
   }
-  return sameJobOnce(out).sort((a, b) => b.mtime - a.mtime).slice(0, MAX_LIST);
+  return foldVersions(out).slice(0, MAX_LIST);
 }
-// One job's report, however many runs wrote it: Symbiot drafted the same follow-up to Dana in five runs of its own
-// (30 Oct to 9 Nov 2026), each its own row on Reports, unread, with its own Approve. Across the runs of its own (act-…
-// folders, and REPORTS_DIR), draft reports (the ones with an Approve) with the same file name (case and dashes aside: DANA-PILOT-FOLLOWUP-DRAFT.md
-// and dana-pilot-followup-draft.md) and the same job in their titles (sameJob) are one row: the newest, the older
-// ones its copies. Nothing is deleted; lanes' own reports, and reviews that share a role's title (UI-CRITIC.md, one per
-// run, each about different work), are left as they are.
+// One report, however many runs wrote it: reports in the same lane that share a title (a file with no heading is titled
+// by its name) are one report, rewritten. A shared file name alone isn't enough: AUDIT.md "Symbiot audit" and AUDIT.md
+// "Footer follow-up" from two runs are two reports. Only the newest is listed, with one Approve; the older ones fold under it as
+// `earlier` (newest first), still openable. Three ops runs each wrote the same follow-up draft (one file name) in their own
+// act-… folder (30 Oct, 4 and 5 Nov 2026), the later two saying they replace the first, and Reports showed all three,
+// each asking for an OK (9 Nov 2026). Deciding on the newest settles the older ones too (decide). Newest first.
+// A draft is folded by its job too: Symbiot drafted the same follow-up five times in runs of its own (30 Oct to 9 Nov
+// 2026), under two titles ('… on "Re: Re: SPRING PILOT ONBOARDING"' and '… on SPRING PILOT ONBOARDING (not sent)') and two
+// spellings of one file name (DANA-PILOT-FOLLOWUP-DRAFT.md, dana-pilot-followup-draft.md). In one lane, drafts with the
+// same file name (case and dashes aside) and the same job in their titles (sameJob) are one report as well.
+const versionKey = (r) => `${r.lane}\0${String(r.title || "").replace(/\s+/g, " ").trim().toLowerCase()}`;
 const nameKey = (name) => plainName(String(name || "")).toLowerCase().replace(/\.md$/, "").replace(/[^a-z0-9]+/g, "");
-const ownRun = (r) => r.lane === OPS || /^act-[0-9a-f]+$/.test(basename(String(r.folder || "")));
-function sameJobOnce(list) {
-  const out = [], kept = [];
+function foldVersions(list) {
+  const keep = [], at = new Map(), drafts = [];
   for (const r of [...list].sort((a, b) => b.mtime - a.mtime)) {
-    const k = ownRun(r) && isDraftReport(r.title, r.name) && nameKey(r.name), into = k && kept.find((x) => x.key === k && (x.r.title === r.title || sameJob(x.r.title, r.title)));
-    if (!into) { const row = { ...r }; out.push(row); if (k) kept.push({ key: k, r: row }); continue; }
-    const mine = r.copies || [{ id: r.id, name: r.name, file: r.file, mtime: r.mtime, sig: r.sig }];
-    into.r.copies = [...(into.r.copies || [{ id: into.r.id, name: into.r.name, file: into.r.file, mtime: into.r.mtime, sig: into.r.sig }]), ...mine];
+    const k = versionKey(r), draft = isDraftReport(r.title, r.name), nk = draft ? nameKey(r.name) : "";
+    const head = at.get(k) || (nk && (drafts.find((x) => x.lane === r.lane && x.nk === nk && sameJob(x.head.title, r.title)) || {}).head);
+    if (head) (head.earlier = head.earlier || []).push(r); else { keep.push(r); at.set(k, r); if (nk) drafts.push({ lane: r.lane, nk, head: r }); }
   }
-  return out;
+  return keep;
+}
+// A report by its id, the newest or an earlier version folded under one: { r, head } (head: the newest, for an earlier one).
+function findReport(list, id) {
+  id = String(id || "");
+  for (const x of list) { if (x.id === id) return { r: x }; const e = (x.earlier || []).find((y) => y.id === id); if (e) return { r: e, head: x }; }
+  return {};
 }
 // The same job, worded differently: most of the shorter one's subject words (3 or more, the generic ones aside) are in
 // the other. "Draft a follow-up to dana@example.com on 'Re: Re: SPRING PILOT ONBOARDING' that picks up from the
@@ -155,13 +164,16 @@ function openJobs({ list, seenFile = SEEN_FILE, tasks } = {}) {
 
 // One report, by its id: its text, as HTML too. Opening it marks it read.
 function readReport(id, { list, mark = true, seenFile = SEEN_FILE } = {}) {
-  const r = (list || listReports()).find((x) => x.id === String(id || ""));
+  const { r, head } = findReport(list || listReports(), id);
   if (!r) return { error: "No report by that id: it may have been moved or deleted." };
   let text = ""; try { text = readFileSync(r.file, "utf8"); } catch (e) { return { error: `Couldn't read ${r.file}: ${e.message}` }; }
   const cut = text.length > MAX_READ; if (cut) text = text.slice(0, MAX_READ);
   if (mark) { const d = loadSeen(seenFile); markRead(d, r); saveSeen(d, seenFile); }
+  const later = head ? { supersededBy: { id: head.id, title: head.title, name: head.name, run: head.run, mtime: head.mtime } } : {};
+  const earlier = (r.earlier || []).map((e) => ({ id: e.id, title: e.title, name: e.name, file: e.file, run: e.run, source: e.source, mtime: e.mtime, size: e.size }));
+  if (head) return { ...r, new: false, ...later, text, html: mdHtml(text, { id: r.id, base: dirname(r.file), roots: imageRoots(r) }) + (cut ? "<p class='muted'>(cut at 512 KB: open the file for the rest)</p>" : ""), draft: false, ideas: [] }; // an earlier version: read only, its newest is what asks
   const draft = isDraftReport(r.title, r.name), cards = draftCardsIn(text, { lane: r.folder === MARKETING_DIR });
-  return { ...r, new: false, ...(cards.length ? { cards } : {}), text, html: mdHtml(text, { id: r.id, base: dirname(r.file), roots: imageRoots(r) }) + (cut ? "<p class='muted'>(cut at 512 KB: open the file for the rest)</p>" : ""), draft, ...(draft ? { decided: decidedOn(r, seenFile) } : { ideas: openIdeas(r, text, seenFile), handled: handledIdeas(r, seenFile) }) };
+  return { ...r, new: false, earlier, ...(cards.length ? { cards } : {}), text, html: mdHtml(text, { id: r.id, base: dirname(r.file), roots: imageRoots(r) }) + (cut ? "<p class='muted'>(cut at 512 KB: open the file for the rest)</p>" : ""), draft, ...(draft ? { decided: decidedOn(r, seenFile) } : { ideas: openIdeas(r, text, seenFile), handled: handledIdeas(r, seenFile) }) };
 }
 // The list with what each report leaves for the user: `needs` is "draft" (undecided, waits
 // on an Approve or Reject), "ideas" (it ends in next steps), or "" (nothing to act on).
@@ -201,7 +213,7 @@ function phoneReport(pc, id, { fetched = null, mark = true, seenFile = SEEN_FILE
 const phoneReportNeedsText = (pc, id) => { const raw = pc && pc.copy && Array.isArray(pc.copy.reports) && pc.copy.reports.find((x) => "pc:" + x.id === String(id || "")); return !!raw && typeof raw.text !== "string"; };
 // Mark them all read (the list's "Mark all read").
 function markAllRead({ list, seenFile = SEEN_FILE } = {}) {
-  const d = loadSeen(seenFile); for (const r of list || listReports()) markRead(d, r);
+  const d = loadSeen(seenFile); for (const r of list || listReports()) for (const x of [r, ...(r.earlier || [])]) markRead(d, x);
   return saveSeen(d, seenFile) ? { ok: true } : { error: "Couldn't write " + seenFile };
 }
 
@@ -524,7 +536,12 @@ const isDraftReport = (title, name) => /\bdrafts?\b|\bpreviews?\b/i.test(`${titl
 // A copy of it saying the same (recordsFor) keeps the answer: Garth approved an account removal preview on three copies
 // and a fourth still asked (28 Oct 2026).
 function decidedOn(r, file = SEEN_FILE) { const x = recordsFor(loadSeen(file).decided, r).sort((a, b) => (b.at || 0) - (a.at || 0))[0]; return x ? x.status : ""; }
-function decide(r, status, file = SEEN_FILE) { const d = loadSeen(file); d.decided[r.id] = { status, mtime: r.mtime, ...(r.sig ? { sig: r.sig } : {}), at: Date.now() }; return saveSeen(d, file); }
+// On the newest version, the older ones folded under it (foldVersions) are settled with it: one decision clears them all.
+function decide(r, status, file = SEEN_FILE) {
+  const d = loadSeen(file), at = Date.now();
+  for (const x of [r, ...(r.earlier || [])]) d.decided[x.id] = { status, mtime: x.mtime, ...(x.sig ? { sig: x.sig } : {}), at, ...(x !== r ? { by: r.id } : {}) };
+  return saveSeen(d, file);
+}
 // Its job is finished: a task made from it (naming its file or its title) is done. No Approve on it then.
 function jobDone(r, tasks) {
   const base = plainName(r.name || "").replace(/\.md$/i, ""); if (!base || !Array.isArray(tasks)) return false;
@@ -591,4 +608,4 @@ const claimLines = (claims) => claims.map((c) => (c.on ? `${c.name} is on Report
 // How many reports are new, and the newest one's title (Home's droplet).
 function reportsNews(opts) { const l = listReports(opts).filter((r) => r.new); return { count: l.length, latest: l[0] ? l[0].title : "" }; }
 
-export { sameJob, openJobs, reportClaims, claimLines, REPORTS_DIR, draftCardsIn, supersededIdeas, sweepSuperseded, supersedeContext, SEEN_FILE, NOT_REPORTS, titleOf, listReports, readReport, phoneReports, phoneReport, reportImage, imagePath, markAllRead, reportsNews, mdHtml, reportIdeas, isDraftReport, decidedOn, decide, withNeeds, phoneReportNeedsText, IDEAS_MAX, handledIdeas, openIdeas, markIdeas, collapseCopies, pastDated, plainName };
+export { sameJob, openJobs, findReport, foldVersions, reportClaims, claimLines, REPORTS_DIR, draftCardsIn, supersededIdeas, sweepSuperseded, supersedeContext, SEEN_FILE, NOT_REPORTS, titleOf, listReports, readReport, phoneReports, phoneReport, reportImage, imagePath, markAllRead, reportsNews, mdHtml, reportIdeas, isDraftReport, decidedOn, decide, withNeeds, phoneReportNeedsText, IDEAS_MAX, handledIdeas, openIdeas, markIdeas, collapseCopies, pastDated, plainName };
