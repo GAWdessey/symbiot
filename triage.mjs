@@ -31,6 +31,7 @@ import { promptFor } from "./overrides.mjs";
 import { addsPayment, warnsHold } from "./sends.mjs";
 import { carriesJob } from "./handover.mjs";
 import { ruledOut } from "./asksdone.mjs";
+import { asksForSecret, meetsStep } from "./vault.mjs";
 
 const FILE = "triage.json", FAULTS = join(CONFIG_DIR, "faults.json");
 const VERDICTS = ["user", "answered", "agent", "symbiot", "redo"];
@@ -143,8 +144,24 @@ function precheck(q, known = "", lane = "") {
   }
   return null;
 }
+// A verdict that tells the run a key was handed over or saved ("Garth already pasted it in chat", "I'm saving that key
+// to the vault") is only kept when the vault has one for that step: 9 Nov 2026 a card asking for a new API key was pressed Done with
+// nothing pasted, and triage told the run, twice, that the key was pasted and being saved. The vault never had it,
+// the run was sent hunting for a paste that didn't exist, and the user was asked for it again. Without one in the
+// vault the question is the user's: the card where they paste it. since: how far back a save counts.
+const CLAIMS_HANDED = /\b(?:pasted|handed (?:it |them )?over|already (?:gave|given|sent|shared|created|made)|(?:is|are|was|were|been|it'?s|they'?re) (?:saved|stored)|sav(?:e|ed|ing)|stor(?:e|ed|ing))\b[^.?!\n]{0,80}\b(?:keys?|tokens?|passwords?|secrets?|vault|chat)\b/i;
+const WEEK_MS = 7 * 86400000;
+function unheldClaim(q, v, { since = Date.now() - WEEK_MS, met = meetsStep } = {}) {
+  if (!v || (v.verdict !== "answered" && v.verdict !== "agent")) return null;
+  const all = [q.q, q.context, ...(q.options || [])].filter(Boolean).join("\n");
+  if (!asksForSecret(all) && !/\b(?:keys?|tokens?|passwords?|secrets?)\b[^.?!\n]{0,60}\b(?:vault|reach(?:ed)?|arriv\w*|pasted)\b/i.test(all)) return null;
+  if (!CLAIMS_HANDED.test(`${v.answer || ""} ${v.why || ""}`)) return null;
+  let name = ""; try { name = met(all, since); } catch {}
+  if (name) return null;
+  return { verdict: "user", why: "the user's answers say the key was handed over, but Symbiot's vault has no such key: it never reached Symbiot, so only the user can paste it, on this card" };
+}
 // One verdict for one question. write: ai.mjs write. ctx: { answers, rules, lane }.
-async function judge(q, { answers = "", rules = [], lane = "", known = "" } = {}, { write }) {
+async function judge(q, { answers = "", rules = [], lane = "", known = "", since = 0 } = {}, { write, met } = {}) {
   const pre = precheck(q, known, lane); if (pre) return pre;
   const opts = (q.options || []).map((o) => `- ${o}`).join("\n");
   const prompt = `Agent's lane: ${lane || "unknown"}\n\nThe question:\n### ${q.q}\n${q.context ? q.context + "\n" : ""}${opts}\n\nThe user's standing rules:\n${rules.map((r) => `- ${r}`).join("\n") || "(none)"}${known ? `\n\nWhat Symbiot remembers that may bear on it:\n${known.slice(0, 3000)}` : ""}\n\nThe user's newest answers in this lane (newest last):\n${String(answers || "").slice(-5000) || "(none)"}`;
@@ -154,7 +171,8 @@ async function judge(q, { answers = "", rules = [], lane = "", known = "" } = {}
   let o; try { o = JSON.parse(m[0]); } catch { return null; }
   if (!o || !VERDICTS.includes(o.verdict)) return null;
   if (o.verdict === "answered" && !String(o.answer || "").trim()) o.verdict = "user"; // an answer it can't give isn't one
-  return { verdict: o.verdict, why: String(o.why || "").slice(0, 300), ...(o.verdict === "answered" ? { answer: String(o.answer).slice(0, 800) } : {}) };
+  const v = { verdict: o.verdict, why: String(o.why || "").slice(0, 300), ...(o.verdict === "answered" ? { answer: String(o.answer).slice(0, 800) } : {}) };
+  return unheldClaim(q, v, { ...(since ? { since } : {}), ...(met ? { met } : {}) }) || v;
 }
 
 // ---- how often it's wrong ------------------------------------------------------------------------
@@ -204,4 +222,4 @@ function missesForPrompt(n = 5, log = readLog()) {
   return m.length ? `\n\nQuestions the user was asked lately and said weren't theirs to answer (judge ones like these "agent" or "answered", not "user"):\n${m.map((x) => `- "${x.q}" (they said: "${x.said}")`).join("\n")}` : "";
 }
 
-export { noteTriage, noteCardWords, needless, sweepGone, triageStats, missesForPrompt, LOG as TRIAGE_LOG, judge, precheck, verdictOf, saveVerdict, loadVerdicts, shows, answerFor, recordFault, faults, askedAt, HOLD_MS, VERDICTS, FAULTS };
+export { unheldClaim, noteTriage, noteCardWords, needless, sweepGone, triageStats, missesForPrompt, LOG as TRIAGE_LOG, judge, precheck, verdictOf, saveVerdict, loadVerdicts, shows, answerFor, recordFault, faults, askedAt, HOLD_MS, VERDICTS, FAULTS };

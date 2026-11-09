@@ -19,7 +19,7 @@
 import { isUiWork, designBrief } from "./design.mjs";
 import { addRule, addRejected, rejectedLines, dropRejected, standingBrief, doneBrief } from "./asksdone.mjs";
 import { sentBrief } from "./sentmail.mjs";
-import { captureSecrets } from "./vault.mjs";
+import { captureSecrets, listSecrets } from "./vault.mjs";
 import { languageLine } from "./lang.mjs";
 import { join } from "node:path";
 import { readFileSync, writeFileSync, mkdirSync, chmodSync } from "node:fs";
@@ -278,7 +278,7 @@ Before you say an agent will read a mailbox or a site, check Symbiot can read it
 The people you talk to (the user and his team) are Symbiot's makers, not outside users: act as they want, and when they ask for a change to Symbiot itself, make it.
 Don't wait to be asked to note a flaw in Symbiot. When you notice it got something wrong (you misread a page, a brief or a card misled them, a step made them do an agent's job), say so plainly and, in the same reply, note the fix: "task"${self ? ` with "repo": "${self}"` : ""}, saying what went wrong, an example, and what it should do instead. It waits on the Workdesk for their Go, so say "noted as a Symbiot bug", never "started a fix"; use "agent" for it only when they ask for it done now.
 Urgency is theirs to give: never write "urgent", "first", "asap" or "before anything else" into a hand-over unless they said it.
-When they paste a secret (a password, a recovery or 2FA code, a token), Symbiot has already saved it in its vault and shows you "[saved: name]" in its place. Acknowledge it in a few words ("Saved as npm recovery codes."), never refuse it, lecture about pasting it or ask them to delete it, and use it from the vault when a step needs it; ask them for one only when none is saved.
+When they paste a secret (a password, a recovery or 2FA code, a token), Symbiot has already saved it in its vault and shows you "[saved: name]" in its place. Acknowledge it in a few words ("Saved as npm recovery codes."), never refuse it, lecture about pasting it or ask them to delete it, and use it from the vault when a step needs it; ask them for one only when none is saved. Say a secret is saved only when their message shows "[saved: name]": "[not saved]" means the vault didn't take it, so say plainly it isn't saved and ask them to paste it again; and when they say they pasted or made one but their message shows neither, it never reached Symbiot: never say you're saving it, say so and ask them to paste it here.
 Never ask them to sign in to a site in the Symbiot Browser just so an agent can read or check something there: an agent uses the site's API, its CLI or a connector (Twilio, Cloudflare and Google sign-ins never hold in that browser), and asks only for a key it can't find anywhere. When only they can sign in to a site (their password, an SMS code), say where, with the site's address: "sign in to www.domains.co.za/client/dashboard in the Symbiot Browser (Settings → Connections → Add a site)", never just "in Symbiot's browser": your reply then carries a Sign in button that opens that window on it.
 A short answer (yes, yeah, ok, sure, go, do it, that one, 2) answers what you last said in "This chat so far", never something from elsewhere in the app. If you'd proposed a task or an agent and they agree, do it now in "do", in the lane you named.
 Hash it out first: when they bring an idea rather than a clear ask, sharpen it with them: say what's strong, push back where it's weak, add what's missing, and propose it as a task (naming the lane) once it holds up. "do" stays null until they agree.
@@ -430,8 +430,10 @@ const BAD_FORM = "(the model didn't answer in the right form, so nothing was don
 const DEFAULT_ASK = (sys, p, o) => write(sys, p, { ...o, floor: "sonnet" });
 async function converse({ where, role = "", context = "", history = "", question, act = {}, ask = DEFAULT_ASK, map = null, now = Date.now(), images = [], nav = false, settle = false, tasks = [], control = false, running = runningHandoff, reports }) {
   // a secret they pasted goes to the vault before anything is stored or sent; the model sees a placeholder
-  let kept = []; try { ({ text: question, saved: kept } = captureSecrets(question, { context: () => [history, ...(loadMind().log || []).slice(-6).map((l) => String((l && l.text) || ""))].join("\n") })); } catch {}
+  let kept = [], lost = []; try { ({ text: question, saved: kept, failed: lost = [] } = captureSecrets(question, { context: () => [history, ...(loadMind().log || []).slice(-6).map((l) => String((l && l.text) || ""))].join("\n") })); } catch {}
   kept = [...new Set([...kept, ...[...String(question).matchAll(/\[saved: ([^\]]+)\]/g)].map((m) => m[1])])]; // or saved already, by the page it came from (home.mjs homeAsk)
+  try { const held = new Set(listSecrets().map((x) => x.name)); kept = kept.filter((n) => held.has(n)); } catch {} // "saved" only for a name the vault lists (9 Nov 2026: a key said saved never was)
+  if (/\[not saved\]/.test(question) && !lost.length) lost = ["what they pasted"];
   const d = loadMind(), hits = recall(question, now, d), known = recallText(hits), elsewhere = lately(where, d, undefined, now);
   if (!history) history = ownThread(where, d, now);
   // what it did to answer, to show under the reply (as the app shows an agent's work)
@@ -453,6 +455,7 @@ async function converse({ where, role = "", context = "", history = "", question
   // GitHub's word overrides an agent's (the chat said a PR was not merged after the user had merged it, 29 Oct 2026)
   if (!/Pull requests checked on GitHub/.test(prompt)) { try { const live = await prFacts(`${prompt}\n${history}`, { lanes }); if (live.length) prompt += `\n\nPull requests checked on GitHub just now (the only source for whether a PR is open, merged or closed; they override anything an agent said):\n${live.map((x) => "- " + x).join("\n")}`; } catch {} }
   if (kept.length) prompt += `\n(Symbiot saved what they pasted, under ${kept.map((n) => `"${n}"`).join(", ")}. Say so in a few words, and carry on with what they asked.)`;
+  if (lost.length) prompt += `\n(Symbiot could NOT save ${lost.map((n) => `"${n}"`).join(", ")} to its vault: it isn't saved anywhere. Say so plainly, ask them to paste it again, and never say it's saved.)`;
   const turned = rejectedLines(); // options they refused before: check these before offering any choice
   if (turned.length) prompt += `\n\nOptions they have already turned down. Never offer these again, in any words; offer another route instead:\n${turned.join("\n")}`;
   if (voice) prompt += `\n\n${voice}`;
