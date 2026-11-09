@@ -22,10 +22,10 @@ import { readFileSync, writeFileSync, mkdirSync, statSync, existsSync } from "no
 import { watchBoard, draftReply, draftCards, draftAnswer } from "./watch.mjs";
 import { pendingReview, pushTasks, addTask, taskType, releaseNotIn, unplacedTasks } from "./tasks.mjs";
 import { estimate, estimateWords } from "./estimate.mjs";
-import { handoffsSig, newAnswers, launchFault, ensureRunnable, agentQuestions, answerQuestions, heldAsk, grantCard, cardIsPermission, onCardGone, setHandoffCmd, agentsList, agentsNow, forgetAgents, runHandoff, runningHandoff, handoffCmd, loadRuns, connectorsInfo, parkedPaths, agentMissing, settleNeeds, closeAsk, sameSubject, pickAgent, detectHandoffs, linkReach, unchangedStep, whereOf, claudePause, parkLane, waitingTask, namedBlocker, autoStart, settleRecord } from "./agents.mjs";
+import { handoffsSig, newAnswers, launchFault, ensureRunnable, agentQuestions, answerQuestions, heldAsk, grantCard, cardIsPermission, onCardGone, setHandoffCmd, agentsList, agentsNow, forgetAgents, runHandoff, runningHandoff, handoffCmd, loadRuns, connectorsInfo, parkedPaths, agentMissing, settleNeeds, closeAsk, sameSubject, pickAgent, detectHandoffs, linkReach, unchangedStep, namedFiles, whereOf, claudePause, parkLane, waitingTask, namedBlocker, autoStart, settleRecord } from "./agents.mjs";
 import { stallCards, loadStall, saveStall } from "./stall.mjs";
 import { isDone, recordDone, recordCard, cardDone, decidedBy, endTalk, doneList, asksBack, askBackNote, wantsReport, closesAsk, heldBy, reportsSince, talkOf, addTalk, talkText, YES, asksQ, saysDone, wantsToRead } from "./asksdone.mjs";
-import { captureSecrets } from "./vault.mjs";
+import { captureSecrets, asksForSecret, meetsStep } from "./vault.mjs";
 import { linksState, signInAsked } from "./links.mjs";
 import { knowledgeState } from "./knowledge.mjs";
 import { CONFIG_DIR, loadTasks, saveTasks, loadConfig, saveConfig, sameTask, isFinding, writeJsonAtomic } from "./core.mjs";
@@ -41,7 +41,7 @@ import { moneyNote, splitNeeds, applyText, loadCardText, blankAsk, blankText } f
 import { converse, actIn, actNow, taskIn, loadMind, dayMark } from "./mind.mjs";
 import { repoPathMap, laneMap, reposState, scanRoots } from "./scan.mjs";
 import { resolveProvider, PROVIDERS, claudeState } from "./ai.mjs";
-import { reportsNews, listReports, readReport, decide, markIdeas, sweepSuperseded, phoneReports } from "./reports.mjs";
+import { reportsNews, listReports, readReport, findReport, decide, markIdeas, sweepSuperseded, phoneReports } from "./reports.mjs";
 import { awaitingState, inboxSight } from "./handback.mjs";
 import { newClashes } from "./checks.mjs";
 import { postsState } from "./post.mjs";
@@ -730,7 +730,12 @@ const SAID_SO = /\b(?:already|i(?:'?ve| have)? (?:answered|replied|said|told|did
 const stepCard = (ref, deps = {}) => { try { const a = (deps.agents || agentsList)().find((x) => x.id === ref); return !!(a && a.needs && a.needs.kind !== "approve"); } catch { return false; } };
 function homeAnswer(id, { pick, text = "" } = {}, deps = {}) {
   id = String(id || ""); text = String(text || "").trim().slice(0, 2000);
-  try { text = captureSecrets(text).text; } catch {} // a secret typed on a card goes to the vault; ANSWERS.md and the record get "[saved: …]"
+  // a secret typed on a card goes to the vault; ANSWERS.md and the record get "[saved: …]". On a card asking for a key,
+  // the card names it, and a key typed on its own is one (vault.mjs findSecrets asked).
+  let card; const cardOf = () => { if (card === undefined) { card = null; if (id.startsWith("needs:")) try { const a = (deps.agents || agentsList)().find((x) => x.id === id.replace(/^\w+:/, "")); card = (a && a.needs) || null; } catch {} } return card; };
+  const stepWords = () => { const c = cardOf(); return c ? `${c.what || ""} ${c.check || ""}` : ""; };
+  let cap = { saved: [], failed: [] };
+  if (text) try { cap = captureSecrets(text, { context: stepWords, asked: !!(cardOf() && cardOf().kind !== "approve" && asksForSecret(stepWords())) }); text = cap.text; } catch {}
   // Typed words are a Go only when they say yes, a Skip only when they say no. Anything else ("ive
   // already answered", a question) is said to the card's agent, not a Go: "ive already answered" on
   // a Go ahead / Skip card approved sending a note the user had just said not to send (22 Oct 2026).
@@ -824,10 +829,20 @@ function homeAnswer(id, { pick, text = "" } = {}, deps = {}) {
     // Done it, on a step that needs a release ("once 0.65.2 is installed, sign in…"): only once it's installed here (tasks.mjs releaseNotIn)
     const rel = n.kind === "approve" || allowed ? null : (deps.releaseNotIn || releaseNotIn)(a.path, `${n.what} ${n.check || ""}`);
     if (rel && !text) return { error: `This step needs ${rel.name} ${rel.needs}, and ${rel.installed} is installed here, so it isn't done yet. Update, do it again, then press Done it.` };
+    // Done it, on a step asking for a key: only once a key for it is really in the vault, typed on this card (saved and
+    // read back) or saved since its agent asked. 9 Nov 2026: "create a new API key … and paste it in chat" was
+    // pressed Done with nothing pasted, its run was told "Done: the user did it", and Symbiot then told it the key was
+    // being saved to the vault, which never had it.
+    // (one that has the key go into a file it names, `.env`, is checked by that file, above)
+    const keyStep = n.kind !== "approve" && !allowed && !n.say && asksForSecret(`${n.what} ${n.check || ""}`) && !(deps.namedFiles || namedFiles)(`${n.what} ${n.check || ""}`, a.path).length;
+    if (keyStep && cap.failed && cap.failed.length) return { error: "Symbiot couldn't save that key to its vault, so nothing went to its agent. Paste it here again and press Done." };
+    const vaulted = keyStep ? (cap.saved.length ? cap.saved : [(deps.meetsStep || meetsStep)(`${n.what} ${n.check || ""}`, a.endedAt || a.startedAt || 0)].filter(Boolean)) : [];
+    if (keyStep && !vaulted.length && (!text || saysDone(text))) return { error: "No key came with that, so it isn't done yet: Symbiot's vault has nothing new for this step. Paste the key itself in the box here and press Done: Symbiot saves it to the vault, checks it's there, and tells its agent where to find it." };
     const said = allowed ? `Allowed ${allowed.join(", ")}: Symbiot wrote it into this folder's allow list. Carry on.`
       : n.say ? `${n.say}${text ? ` The user adds: ${text}` : ""}` // a sign-in the browser can't hold: its agent takes the API route (browserfails.mjs)
       : n.kind === "approve" ? `Go ahead: ${text || "do it as you had it, once you've checked what you flagged"}.${n.sent ? ` (${n.sent.by ? `${n.sent.by === "its own run" ? "An earlier run of yours" : `Another agent (${n.sent.by})`} already sent "${n.sent.subject}"${n.sent.to ? ` to ${n.sent.to}` : ""}` : `Symbiot found "${n.sent.subject}" in Sent`} after your run said it was unsent: read Sent first, and never send the same email twice.)` : ""}`
       : still.length ? `The user says it's done (${text}), but ${last}, before you asked. Check it yourself before relying on it, then carry on.`
+      : vaulted.length ? `Done: the user handed it over, and Symbiot saved it to its vault as ${vaulted.map((v) => `"${v}"`).join(" and ")} (checked: it's there). Read it with \`symbiot secret get "${vaulted[0]}"\` (a sandboxed run hands that to ops), check it works, then carry on. Never write its value into a file, a report or a log.`
       : text && !saysDone(text) ? `The user answered in their own words, and didn't say this step is done: "${text}". Take that as their answer to it: do what it asks, or sort out what it reports, before anything else, and don't treat the step as done. If it still needs them after that, ask once, saying what you did.`
       : `Done: the user did it${text ? ` (${text})` : ""}. Check it worked, then carry on.`;
     noteAnswer(a.path, n.what, said);
@@ -1037,7 +1052,7 @@ async function homeAsk(question, { ask, now = Date.now(), state, images = [], ac
 // ---- acting on a report, where you read it (reports.mjs reportIdeas) -------------------
 // A report ends with ideas drawn from it, and a box to ask about it: you shouldn't have
 // to copy its "Top 3 next" into Home's chat to act on it (2026-10-08).
-const reportById = (id, deps = {}) => (deps.list || listReports)().find((r) => r.id === String(id || ""));
+const reportById = (id, deps = {}) => findReport((deps.list || listReports)(), id).r; // an earlier version folded under its newest too
 // The ideas you ticked, onto the Workdesk in the report's lane (an ops run's: the ops
 // lane), each saying which report it came from. { ok, added, lane, said } or { error }.
 function reportIdeasAdd(id, ideas, deps = {}) {
@@ -1202,10 +1217,13 @@ async function reportAsk(id, question, { ask, deps = {} } = {}) {
 // Approve or Reject on a draft report: its agent is told in ANSWERS.md, and an approved
 // one goes ahead (its agent starts, or takes it once the run there finishes).
 function reportDraftAnswer(id, approve, deps = {}) {
-  const r = reportById(id, deps); if (!r) return { error: "That report isn't there any more." };
+  const { r, head } = findReport((deps.list || listReports)(), id); if (!r) return { error: "That report isn't there any more." };
+  if (head) return { error: `A newer version of it is on Reports ("${head.title}", ${head.name}): decide on that one.` };
   const rel = `.symbiot/${r.name}`;
   (deps.decide || decide)(r, approve ? "approved" : "rejected");
   cached = null;
+  // the runs that wrote its earlier versions are told this one replaced theirs, so none of them goes on with an old draft
+  for (const e of r.earlier || []) noteAnswer(e.folder, `Superseded: .symbiot/${e.name}`, `The user ${approve ? "approved" : "rejected"} a newer version of the draft "${r.title}" (${r.folder === e.folder ? "" : r.folder + "/"}${rel}). Don't use or send this one.`);
   if (!approve) { noteAnswer(r.folder, `Rejected: ${rel}`, `The user rejected the draft "${r.title}". Don't use or send it. If they said why, it's below.`); return { ok: true, said: "Rejected. Its agent won't use it." }; }
   noteAnswer(r.folder, `Approved: ${rel}`, `The user approved the draft "${r.title}" as it reads in ${rel}. Go ahead with it, unchanged, and say what you did in your last message.`);
   if ((deps.running || runningHandoff)(r.folder)) return { ok: true, said: "Approved. Its agent goes ahead once the run there now finishes." };

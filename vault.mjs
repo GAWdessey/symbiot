@@ -196,6 +196,8 @@ const PATTERNS = [
   ["token", /\b(?:Bearer|Basic|Token)\s+([A-Za-z0-9._~+/-]{16,}={0,2})/g, "cmd"],
   ["token", /(?:\bX-[A-Za-z-]*(?:Key|Token)|\bapi[-_]?key|\baccess[-_]?token|\bauth[-_]?token)["']?\s*[:=]\s*["']?([A-Za-z0-9._~+/-]{16,}={0,2})/gi, "cmd"],
   ["token", /(?:--(?:token|api-?key|auth-?token|access-?token)[= ]|\b[A-Z][A-Z0-9_]*(?:TOKEN|SECRET|API_KEY|APIKEY)=)["']?([A-Za-z0-9._~+/-]{16,}={0,2})/g, "cmd"],
+  // "the new api key is q7Rk…", "token: …": a key of any length a key has, with the words that say so right before it
+  ["token", /\b(?:api[ _-]?keys?|keys?|access[ _-]?tokens?|auth[ _-]?tokens?|tokens?|secret(?:[ _-]?key)?)\s*(?:is|:|=)\s*["'`]?([A-Za-z0-9._~+/-]{16,}={0,2})(?=["'`]?(?:[\s.,;!?)]|$))/gi],
   ["codes", /\b[0-9a-f]{32,}\b/gi, "cue"],
   ["password", /\b(?:password|passwd|pwd|pass|passcode|pin)\s*(?:is|=|:)\s*(\S{4,})/gi],
   ["token", /\b[A-Za-z0-9+/_-]{40,}={0,2}(?=\s|$)/g, "cue"],
@@ -285,7 +287,7 @@ function serviceOf(context) {
   const last = hits.length ? hits[hits.length - 1][1] : "", spaced = hits.find((h) => h[1].includes(" ") && h[1].replace(/\s+/g, "") === last);
   return spaced ? spaced[1] : last; // "lemonsqueezy" (its address) as the chat wrote it: "lemon squeezy"
 }
-const BARE = new Set(["token", "codes"]);
+const BARE = new Set(["token", "codes", "key", "api key", "new api key", "new key"]);
 // Whose a token is, from its own prefix or the address the command sends it to ("api.cloudflare.com" -> "cloudflare").
 const PREFIX_SVC = [[/^cf[au]t_/, "cloudflare"], [/^npm_/, "npm"], [/^(?:gh[pousr]_|github_pat_)/, "github"], [/^[sr]k_(?:live|test)_/, "stripe"], [/^AIza/, "google"], [/^glpat-/, "gitlab"], [/^xox/, "slack"], [/^AKIA/, "aws"]];
 function hostOf(text) {
@@ -299,13 +301,18 @@ function hostOf(text) {
 const COMMAND = /\bcurl\b|\bwget\b|\bhttps?:\/\/|\bAuthorization\b|\bBearer\b|(?:^|\s)-H\s/i;
 // Replace every secret in text with [secret hidden]; give what was found, grouped by name.
 // context: the chat before it, for a name when the text itself gives none (serviceOf).
-function findSecrets(text, mark = () => "[secret hidden]", { context = "", loose = true } = {}) {
+// asked: the text answers a step that asked for a key ("paste the new key here"), so the step is its cue:
+// a key on its own, of any length a key has, is the secret (9 Nov 2026: a key typed on such a card had no
+// word before it, and a shape with no prefix of its own needs one).
+const ALONE = /^\s*([A-Za-z0-9._~+/=-]{12,})\s*$/g;
+function findSecrets(text, mark = () => "[secret hidden]", { context = "", loose = true, asked = false } = {}) {
   text = String(text || ""); const hits = [];
-  for (const [kind, re, need] of PATTERNS) for (const m of text.matchAll(re)) {
+  for (const [kind, re, need] of asked ? [...PATTERNS, ["token", ALONE, "alone"]] : PATTERNS) for (const m of text.matchAll(re)) {
     const value = m[1] || m[0];
     if (kind !== "password" && !/^(npm_|gh[pousr]_|github_pat_|sk-|xox|AKIA)/.test(value) && (new Set(value).size < 8 || !/\d/.test(value) || !/[a-z]/i.test(value))) continue; // aaaa… or a run of words isn't a secret
     const at = m.index + m[0].lastIndexOf(value);
-    if (need === "cue" && (!cued(text, at) || inUrl(text, at))) continue;
+    if (need === "cue" && ((!asked && !cued(text, at)) || inUrl(text, at))) continue;
+    if (need === "alone" && /^(?:https?:|www\.)|\.(?:com|io|co|net|org|app|dev|ai|za)$/i.test(value)) continue; // an address isn't a key
     if (hits.some((h) => at < h.end && at + value.length > h.at)) continue;
     hits.push({ kind, value, at, end: at + value.length, cmd: need === "cmd" });
   }
@@ -335,12 +342,20 @@ function findSecrets(text, mark = () => "[secret hidden]", { context = "", loose
 // A chat message in: its secrets saved, and the text safe to store or send, with a placeholder
 // "[saved: name]" where they were. A message with no secret comes back as it was.
 // context may be a function: it's only worked out when there's a secret to name.
-function captureSecrets(text, { context = "" } = {}) {
-  if (!findSecrets(text).found.length) return { text: String(text || ""), saved: [] };
+// "[saved: name]" only for a value read back from the vault after the save; one that wasn't is "[not saved]",
+// and its name is in failed, so whoever took it in can say it didn't save (9 Nov 2026: Symbiot said a pasted
+// API key was being saved, and the vault never had it). asked: it answers a step asking for a key (findSecrets).
+function captureSecrets(text, { context = "", asked = false } = {}) {
+  if (!findSecrets(text, undefined, { asked }).found.length) return { text: String(text || ""), saved: [], failed: [] };
   if (typeof context === "function") { try { context = String(context() || ""); } catch { context = ""; } }
-  const failed = new Set(), as = new Map(), { found } = findSecrets(text, undefined, { context });
-  const saved = []; for (const f of found) { const r = keep(f.name, f.values); if (r) { as.set(f.name, r); saved.push(r); } else failed.add(f.name); }
-  return { text: findSecrets(text, (n) => (failed.has(n) ? "[not saved]" : `[saved: ${as.get(n) || n}]`), { context }).text, saved: [...new Set(saved)] };
+  const failed = new Set(), as = new Map(), { found } = findSecrets(text, undefined, { context, asked });
+  const saved = []; for (const f of found) { let r = ""; try { r = keep(f.name, f.values); } catch {} if (r) { as.set(f.name, r); saved.push(r); } else failed.add(f.name); }
+  return { text: findSecrets(text, (n) => (failed.has(n) ? "[not saved]" : `[saved: ${as.get(n) || n}]`), { context, asked }).text, saved: [...new Set(saved)], failed: [...failed] };
+}
+// Every value is in the vault under name, read back from where it was stored (the keyring, or the file).
+function holds(name, values) {
+  KR_CACHE.delete(name); const e = load(name);
+  return !!(e && Array.isArray(e.values) && [].concat(values).every((v) => e.values.some((x) => x.v === String(v))));
 }
 // The name a value is already saved under, "" when none: a token handed over twice keeps the
 // name it was given first (an agent or ops may have named it with care), not a second entry.
@@ -362,7 +377,7 @@ function keep(name, values) {
   const pw = /\bpass(?:word|code)\b/i.test(name), mine = ownerWords(name);
   const same = (h) => !pw || mine.every((w) => ownerWords(h).includes(w));
   if (held[0] && held.every((h) => h === held[0]) && same(held[0])) return held[0];
-  return saveSecret(name, values).ok ? name : "";
+  return saveSecret(name, values).ok && holds(name, values) ? name : "";
 }
 // A run in Symbiot's sandbox can't read the vault (vault.json is sealed from it): "no secrets
 // saved" there was a wrong answer, and an agent took it as "the key was never handed over".
@@ -501,6 +516,9 @@ function meetsStep(step, since) {
 // and the user took it that he'd have to make a new one (20 Oct 2026).
 const ASKS_SECRET = /\b(?:re-?)?(?:paste|save|put|add|store|enter|give|send|share|hand)\b[^.?\n]{0,80}\b(?:token|key|password|secret|credential)s?\b|\b(?:token|key|password|secret)s?\b[^.?\n]{0,60}\b(?:into|in|to)\s+(?:the\s+|symbiot['’]?s\s+)?vault\b/i;
 const WANTS_NEW = /\b(?:new|fresh|another|second|rotat\w*|regenerat\w*|re-?issu\w*|revoked|expired|different)\b|\b(?:create|make|generate)\b[^.?\n]{0,40}\b(?:token|key)s?\b/i;
+// A step that asks the user to hand over a key, token or password (paste one, or make one for the agent).
+const MAKES_SECRET = /\b(?:create|make|generate|issue|roll|rotate|get)\b[^.?\n]{0,60}\b(?:api keys?|keys?|tokens?)\b/i;
+const asksForSecret = (text) => ASKS_SECRET.test(String(text || "")) || MAKES_SECRET.test(String(text || ""));
 function heldFor(text) {
   text = String(text || ""); if (!ASKS_SECRET.test(text) || WANTS_NEW.test(text)) return "";
   const low = text.toLowerCase(), pw = /\bpass(?:word|code)?s?\b/.test(low), key = /\b(?:api|keys?|tokens?)\b/.test(low);
@@ -512,4 +530,4 @@ function heldFor(text) {
   return "";
 }
 
-export { fillSite, onSite, bindSite, setSite, toKeyring, heldFor, heldName, vaultSealed, repairFalseSaves, meetsStep, serviceOf, saveSecret, saveCode, CODE_TTL, listSecrets, getSecret, peekSecret, markUsed, deleteSecret, renameSecret, findSecrets, captureSecrets, scrubStored, SCRUB_V };
+export { asksForSecret, holds, fillSite, onSite, bindSite, setSite, toKeyring, heldFor, heldName, vaultSealed, repairFalseSaves, meetsStep, serviceOf, saveSecret, saveCode, CODE_TTL, listSecrets, getSecret, peekSecret, markUsed, deleteSecret, renameSecret, findSecrets, captureSecrets, scrubStored, SCRUB_V };
