@@ -64,6 +64,31 @@ try {
   ok("…and not judged again", calls === 4, calls);
   ok("a fault isn't recorded twice", !T.recordFault({ path: lane, q: Q.restart, why: "again" }) && T.faults().length === 1);
 
+  console.log("TRIAGE — Symbiot's own answers don't restart a run again and again (the Simli key run, 6 and 9 Nov 2026)");
+  {
+    const run = join(CFG, "drafts", "act-0f0f0b01"); mkdirSync(join(run, ".symbiot"), { recursive: true });
+    const q1 = "Simli key swap: new key and go-ahead", q2 = "Simli key swap: why I need a new key from you", q3 = "Should I restart the WinLove container once the new Simli key is in?";
+    T.saveVerdict(run, q1, { verdict: "redo", why: "no why", asked: Date.now() - 4000 }, Date.now() - 3000);
+    writeFileSync(join(run, ".symbiot", "QUESTIONS.md"), `## Questions\n\n### ${q3}\nThe swap is ready on a branch.\n- 🤖 Agent: restart it after the swap\n- Skip\n`);
+    let asked = 0; const w = async () => { asked++; return { text: '{"verdict":"agent","why":"the user already pasted it in chat"}' }; };
+    ok("one of Symbiot's answers before: the next question is still judged", A.bouncedInARow(run) === 1);
+    T.saveVerdict(run, q2, { verdict: "redo", why: "no why", asked: Date.now() - 2500 }, Date.now() - 2000);
+    ok("…two in a row are counted", A.bouncedInARow(run) === A.BOUNCE_MAX);
+    await A.triageSweep({ write: w, runs: () => [{ path: run }], rules: () => [] });
+    const v3 = T.verdictOf(run, q3);
+    ok("…and the third goes to the user, not back to the run to start it again", asked === 0 && v3 && v3.verdict === "user" && /sent this run's last 2 questions back/.test(v3.why), v3);
+    ok("…a card shown to the user ends the run of them", A.bouncedInARow(run) === 0);
+    // a finished run, every task ticked: a card note saying its work was started in another run isn't news for it
+    const inv = join(CFG, "drafts", "act-0f0f0b02"); mkdirSync(join(inv, ".symbiot"), { recursive: true });
+    writeFileSync(join(inv, ".symbiot", "TASKS.md"), "## Tasks\n- [x] List every place the Simli key is used on the server (done 2026-11-06)\n");
+    writeFileSync(join(inv, ".symbiot", "ANSWERS.md"), "# Answers from the user\n");
+    writeFileSync(join(inv, ".symbiot", "answers-seen.json"), JSON.stringify({ at: Date.now() - 60000, answers: A.answersDigest ? A.answersDigest(inv) : "" }));
+    writeFileSync(join(inv, ".symbiot", "ANSWERS.md"), "# Answers from the user\n\n### Is the key in use?\nAnswered on the card: \"are we using simli for anything active right now?\". Symbiot started the work on it (sts-platform's agent): I've started an agent to check the running containers.\n_answered 2026-11-09_\n");
+    ok("…a card note that its work was started in another run doesn't start a finished run again", !A.newAnswers(inv) && /^Not started: every task/.test(A.nothingToDo(inv)), [A.newAnswers(inv), A.nothingToDo(inv)]);
+    writeFileSync(join(inv, ".symbiot", "ANSWERS.md"), "# Answers from the user\n\n### Is the key in use?\nYes: the WinLove avatar uses it.\n_answered 2026-11-09_\n");
+    ok("…the user's own answer still does", A.newAnswers(inv) && A.nothingToDo(inv) === "");
+  }
+
   console.log("TRIAGE — an ops folder's question held while it's judged still reaches Home after (questionFolders)");
   {
     // 21 Oct 2026: the phone check's scratch question was found while it was held, "nothing open" was kept as long as the
