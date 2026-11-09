@@ -41,7 +41,7 @@ import { moneyNote, splitNeeds, applyText, loadCardText, blankAsk, blankText } f
 import { converse, actIn, actNow, taskIn, loadMind, dayMark } from "./mind.mjs";
 import { repoPathMap, laneMap, reposState, scanRoots } from "./scan.mjs";
 import { resolveProvider, PROVIDERS, claudeState } from "./ai.mjs";
-import { reportsNews, listReports, readReport, decide, markIdeas, sweepSuperseded, phoneReports } from "./reports.mjs";
+import { reportsNews, listReports, readReport, findReport, decide, markIdeas, sweepSuperseded, phoneReports } from "./reports.mjs";
 import { awaitingState, inboxSight } from "./handback.mjs";
 import { newClashes } from "./checks.mjs";
 import { postsState } from "./post.mjs";
@@ -1037,7 +1037,7 @@ async function homeAsk(question, { ask, now = Date.now(), state, images = [], ac
 // ---- acting on a report, where you read it (reports.mjs reportIdeas) -------------------
 // A report ends with ideas drawn from it, and a box to ask about it: you shouldn't have
 // to copy its "Top 3 next" into Home's chat to act on it (2026-10-08).
-const reportById = (id, deps = {}) => (deps.list || listReports)().find((r) => r.id === String(id || ""));
+const reportById = (id, deps = {}) => findReport((deps.list || listReports)(), id).r; // an earlier version folded under its newest too
 // The ideas you ticked, onto the Workdesk in the report's lane (an ops run's: the ops
 // lane), each saying which report it came from. { ok, added, lane, said } or { error }.
 function reportIdeasAdd(id, ideas, deps = {}) {
@@ -1202,10 +1202,13 @@ async function reportAsk(id, question, { ask, deps = {} } = {}) {
 // Approve or Reject on a draft report: its agent is told in ANSWERS.md, and an approved
 // one goes ahead (its agent starts, or takes it once the run there finishes).
 function reportDraftAnswer(id, approve, deps = {}) {
-  const r = reportById(id, deps); if (!r) return { error: "That report isn't there any more." };
+  const { r, head } = findReport((deps.list || listReports)(), id); if (!r) return { error: "That report isn't there any more." };
+  if (head) return { error: `A newer version of it is on Reports ("${head.title}", ${head.name}): decide on that one.` };
   const rel = `.symbiot/${r.name}`;
   (deps.decide || decide)(r, approve ? "approved" : "rejected");
   cached = null;
+  // the runs that wrote its earlier versions are told this one replaced theirs, so none of them goes on with an old draft
+  for (const e of r.earlier || []) noteAnswer(e.folder, `Superseded: .symbiot/${e.name}`, `The user ${approve ? "approved" : "rejected"} a newer version of the draft "${r.title}" (${r.folder === e.folder ? "" : r.folder + "/"}${rel}). Don't use or send this one.`);
   if (!approve) { noteAnswer(r.folder, `Rejected: ${rel}`, `The user rejected the draft "${r.title}". Don't use or send it. If they said why, it's below.`); return { ok: true, said: "Rejected. Its agent won't use it." }; }
   noteAnswer(r.folder, `Approved: ${rel}`, `The user approved the draft "${r.title}" as it reads in ${rel}. Go ahead with it, unchanged, and say what you did in your last message.`);
   if ((deps.running || runningHandoff)(r.folder)) return { ok: true, said: "Approved. Its agent goes ahead once the run there now finishes." };
