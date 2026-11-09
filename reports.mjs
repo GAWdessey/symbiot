@@ -77,7 +77,9 @@ function sourceOf(folder) {
   if (!/^act-[0-9a-f]+$/.test(basename(folder))) return "";
   let t = ""; try { t = readFileSync(join(folder, ".symbiot", "TASKS.md"), "utf8").slice(0, 3000); } catch { return ""; }
   const q = t.match(/^>\s*(.+)$/m); if (!q) return "";
-  const s = q[1].replace(/\s+/g, " ").trim();
+  // without the instruction Symbiot puts before a request it drafts on its own (intuition.mjs): the request is what it was for.
+  // Every earlier version of a draft showed "Draft this as a report for the user to read…" and nothing else (9 Nov 2026).
+  const s = q[1].replace(/^Draft this as a report for the user to read\b[^:]*:\s*/i, "").replace(/\s+/g, " ").trim();
   return s.length > 80 ? s.slice(0, 77).replace(/\s+\S*$/, "") + "…" : s;
 }
 
@@ -173,7 +175,7 @@ function readReport(id, { list, mark = true, seenFile = SEEN_FILE } = {}) {
   const earlier = (r.earlier || []).map((e) => ({ id: e.id, title: e.title, name: e.name, file: e.file, run: e.run, source: e.source, mtime: e.mtime, size: e.size }));
   if (head) return { ...r, new: false, ...later, text, html: mdHtml(text, { id: r.id, base: dirname(r.file), roots: imageRoots(r) }) + (cut ? "<p class='muted'>(cut at 512 KB: open the file for the rest)</p>" : ""), draft: false, ideas: [] }; // an earlier version: read only, its newest is what asks
   const draft = isDraftReport(r.title, r.name), cards = draftCardsIn(text, { lane: r.folder === MARKETING_DIR });
-  return { ...r, new: false, earlier, ...(cards.length ? { cards } : {}), text, html: mdHtml(text, { id: r.id, base: dirname(r.file), roots: imageRoots(r) }) + (cut ? "<p class='muted'>(cut at 512 KB: open the file for the rest)</p>" : ""), draft, ...(draft ? { decided: decidedOn(r, seenFile) } : { ideas: openIdeas(r, text, seenFile), handled: handledIdeas(r, seenFile) }) };
+  return { ...r, new: false, earlier, ...(cards.length ? { cards } : {}), text, html: mdHtml(text, { id: r.id, base: dirname(r.file), roots: imageRoots(r) }) + (cut ? "<p class='muted'>(cut at 512 KB: open the file for the rest)</p>" : ""), draft, ...(draft ? (() => { const x = decisionOn(r, seenFile); return { decided: x ? x.status : "", ...(x && x.at ? { decidedAt: x.at } : {}) }; })() : { ideas: openIdeas(r, text, seenFile), handled: handledIdeas(r, seenFile) }) };
 }
 // The list with what each report leaves for the user: `needs` is "draft" (undecided, waits
 // on an Approve or Reject), "ideas" (it ends in next steps), or "" (nothing to act on).
@@ -535,7 +537,8 @@ const isDraftReport = (title, name) => /\bdrafts?\b|\bpreviews?\b/i.test(`${titl
 // What the user decided on a draft report, kept by its mtime (a changed draft asks again).
 // A copy of it saying the same (recordsFor) keeps the answer: Garth approved an account removal preview on three copies
 // and a fourth still asked (28 Oct 2026).
-function decidedOn(r, file = SEEN_FILE) { const x = recordsFor(loadSeen(file).decided, r).sort((a, b) => (b.at || 0) - (a.at || 0))[0]; return x ? x.status : ""; }
+function decisionOn(r, file = SEEN_FILE) { return recordsFor(loadSeen(file).decided, r).sort((a, b) => (b.at || 0) - (a.at || 0))[0] || null; }
+function decidedOn(r, file = SEEN_FILE) { const x = decisionOn(r, file); return x ? x.status : ""; }
 // On the newest version, the older ones folded under it (foldVersions) are settled with it: one decision clears them all.
 function decide(r, status, file = SEEN_FILE) {
   const d = loadSeen(file), at = Date.now();
