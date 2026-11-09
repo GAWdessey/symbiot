@@ -249,6 +249,27 @@ try {
   const n = G.tidyGoals();
   ok("closed as not a goal, off every list, kept in the record", n >= 1 && !J.goalRows().some((x) => x.key === junk.key) && J.goalRows().some((x) => x.key === real.key) && J.loadJobs().find((x) => x.key === junk.key).notGoal === true, n);
   ok("…once each", G.tidyGoals() === 0);
+  console.log("GOALS — the screenshots the user attached go with every run a goal starts (run:3aa7d8d7, 8 Nov 2026)");
+  {
+    for (const x of J.goalRows().filter((x) => x.state !== "done")) { const y = G.goalById(x.key); y.state = "done"; J.putGoal(y); }
+    const up = join(CFG, "uploads"); mkdirSync(up, { recursive: true });
+    const shot = join(up, "1794197338434-aaaaaa.png"); writeFileSync(shot, "png");
+    const words = "Take a look at this screenshot.\n(The user attached 1 screenshot: you can see it.)";
+    const gS = G.openGoal(words, { child: "run:shot1", lane: "bookly", path: join(HOME, "work", "shots"), shots: [shot, "not-a-path"], now: Date.now() - 6 * DAY });
+    ok("the goal keeps the files, not just the words", JSON.stringify(G.goalById(gS.key).shots) === JSON.stringify([shot]), G.goalById(gS.key).shots);
+    ok("…and an open goal's files are kept when old uploads are cleared", G.goalShots().has(shot));
+    // one from before shots were kept: its task was handed the file, the goal only the words
+    const old = join(up, "1793275467658-bbbbbb.png");
+    const gO = G.openGoal(words, { child: "task:shotT", lane: "bookly", path: join(HOME, "work", "shots2"), now: Date.now() - 6 * DAY });
+    const tasks = [{ id: "shotT", repo: "bookly", text: `Look at it. Screenshots the user attached (open them with your Read tool): ${old}`, done: true }];
+    ok("…an older goal finds them in its task's text", JSON.stringify(G.shotsOf(G.goalById(gO.key), { tasks })) === JSON.stringify([old]));
+    const asks = [];
+    await G.goalsTick({ ...base({ tasks }), jobs: J.loadJobs(), write: ai({ met: false, done: [], verified: "", left: "nothing describes it" }), ops: (req) => { asks.push(req); return { job: "shotleft" + asks.length }; } });
+    const aS = asks.find((r) => r.includes(shot)) || "", aO = asks.find((r) => !r.includes(shot)) || "";
+    ok("its \"What's left\" run is handed the file to Read, never told it can see it", asks.length === 2 && /open them with your Read tool\): \S+aaaaaa\.png/.test(aS) && !/you can see it/.test(aS), asks);
+    ok("…and when the file is gone from this computer, it's told so, to ask for it again rather than look for it", /no longer on this computer/.test(aO) && /QUESTIONS\.md to attach it again/.test(aO) && !aO.includes(old) && !/you can see it/.test(aO), aO);
+    ok("…the same for a run started by \"Try again\"", (() => { const tried = []; G.goalAnswer(gS.key, [{ q: "x", a: "Try again" }], { ...base(), jobs: J.loadJobs(), ops: (req) => (tried.push(req), { job: "shotTry" }) }); return tried.length === 1 && tried[0].includes(shot) && !/you can see it/.test(tried[0]); })());
+  }
 } catch (e) { ok("ran", false, String((e && e.stack) || e)); }
 finally { rmSync(HOME, { recursive: true, force: true }); }
 console.log(`\n${fail ? "✗" : "✓"} goals: ${pass} passed, ${fail} failed`);

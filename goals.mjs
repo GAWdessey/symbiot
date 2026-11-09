@@ -47,19 +47,24 @@ const folderOf = (g) => join(GOALS_DIR, "act-" + g.key.slice(5));
 // ---- making a goal, and its children ---------------------------------------------
 // The user's words, what it was handed to (a run, a task) and where. done-when is filled in after
 // (doneWhenFor), so asking never waits on it.
-function openGoal(words, { child = "", lane = "", path = "", now = Date.now() } = {}) {
+// The screenshots the user attached stay with the goal (shots: their files), so every run it starts gets
+// them. Until 0.94.12 a goal kept only the words "(The user attached 1 screenshot: you can see it.)": its
+// "What's left" run (run:3aa7d8d7, 8 Nov 2026) got no file and ended without doing the task.
+const cleanShots = (list) => [...new Set((Array.isArray(list) ? list : []).map((p) => String(p || "").trim()).filter((p) => p.startsWith("/")))].slice(0, 4);
+function openGoal(words, { child = "", lane = "", path = "", shots = [], now = Date.now() } = {}) {
   words = String(words || "").trim(); if (!words) return null;
-  const g = { key: "goal:" + randomBytes(4).toString("hex"), kind: "goal", lane: clip(lane, 60), text: clip(words, 140), asked: words.slice(0, 1500), doneWhen: "", children: [], paths: [], state: "running", waitingOn: "", what: "", at: now, changed: now, moved: now, history: [] };
+  const g = { key: "goal:" + randomBytes(4).toString("hex"), kind: "goal", lane: clip(lane, 60), text: clip(words, 140), asked: words.slice(0, 1500), doneWhen: "", children: [], paths: [], shots: cleanShots(shots), state: "running", waitingOn: "", what: "", at: now, changed: now, moved: now, history: [] };
   if (child) g.children.push(child);
   if (path) g.paths.push(path);
   putGoal(g, { now }); return g;
 }
 const goalById = (id, { jobs = loadJobs() } = {}) => jobs.find((j) => j.key === (String(id).startsWith("goal:") ? id : "goal:" + id)) || null;
 const goalOf = (childKey, { jobs = loadJobs() } = {}) => goalRows({ jobs }).find((g) => (g.children || []).includes(childKey)) || null;
-function linkChild(id, key, { path = "", now = Date.now() } = {}) {
+function linkChild(id, key, { path = "", shots = [], now = Date.now() } = {}) {
   const g = goalById(id); if (!g || !key) return null;
   if (!g.children.includes(key)) g.children.push(key);
   if (path && !g.paths.includes(path)) g.paths.push(path);
+  if (cleanShots(shots).length) g.shots = cleanShots([...(g.shots || []), ...shots]);
   g.changed = now; putGoal(g, { now }); return g;
 }
 // ---- what is a goal --------------------------------------------------------------
@@ -108,12 +113,36 @@ function goalToJoin(words, { lane = "", path = "", jobs = loadJobs(), now = Date
 // chat has already acted on that reply, so it opens no goal of its own ("surprize me", 29 Oct 2026)
 const SHORT_REPLY = /^\W*(?:\S+\s+){0,7}\S*\W*$/; // eight words or fewer
 const answersQuestion = (history, words) => { const last = String(history || "").trim().split("\n").reverse().find((l) => /^(?:\S+ )?(?:User|You): /.test(l)); return !!last && /^(?:\S+ )?You: /.test(last) && /\?\W*$/.test(last) && SHORT_REPLY.test(String(words || "").trim()); };
-async function goalFor(words, { child = "", lane = "", path = "", now = Date.now(), write, answering = false } = {}) {
+async function goalFor(words, { child = "", lane = "", path = "", shots = [], now = Date.now(), write, answering = false } = {}) {
   const kind = await goalKind(words, { write });
   if (kind === "none" || (kind === "new" && answering)) return null;
-  if (kind === "new") return openGoal(words, { child, lane, path, now }); // new work in a lane with a goal open is a goal of its own
+  if (kind === "new") return openGoal(words, { child, lane, path, shots, now }); // new work in a lane with a goal open is a goal of its own
   const join = goalToJoin(words, { lane, path, now });
-  return join ? (child ? linkChild(join.key, child, { path, now }) : join) : null;
+  return join ? (child ? linkChild(join.key, child, { path, shots, now }) : join) : null;
+}
+// ---- the screenshots a goal carries ----------------------------------------------------
+// Its own, else the files its tasks were handed (home.mjs adds "Screenshots the user attached (open
+// them with your Read tool): …" to a task's text), so a goal opened before shots were kept has them too.
+const SHOT_LINE = /Screenshots the user attached \(open them with your Read tool\): ([^\n]+)/g;
+function shotsOf(g, { tasks = [] } = {}) {
+  if (g && (g.shots || []).length) return cleanShots(g.shots);
+  const ids = new Set((g && g.children || []).filter((c) => String(c).startsWith("task:")).map((c) => String(c).slice(5)));
+  const found = [];
+  for (const t of tasks) if (t && ids.has(t.id)) for (const m of String(t.text || "").matchAll(SHOT_LINE)) found.push(...m[1].split(/,\s*/));
+  return cleanShots(found);
+}
+const SAID_ATTACHED = /\s*\(The user attached[^)]*\)/gi;
+// What a run started for the goal is told about them: the files to Read, or, when they were cleared
+// off this computer, that they're gone, so it asks for them again instead of looking for them.
+function shotBrief(g, { tasks = [], exists = existsSync } = {}) {
+  const all = shotsOf(g, { tasks }), here = all.filter((p) => { try { return exists(p); } catch { return false; } });
+  if (here.length) return `\n\nScreenshots the user attached (open them with your Read tool): ${here.join(", ")}`;
+  if (all.length || /\(The user attached/i.test(String((g && g.asked) || ""))) return "\n\nThe screenshot the user attached is no longer on this computer (attachments are kept a week). Don't guess what it showed: if the work needs it, ask the user in QUESTIONS.md to attach it again.";
+  return "";
+}
+// The files an open goal still needs, kept when old uploads are cleared (server.mjs saveShots).
+function goalShots({ jobs = loadJobs() } = {}) {
+  return new Set(goalRows({ jobs }).filter((g) => !ENDED.has(g.state) && !g.dropped).flatMap((g) => cleanShots(g.shots)));
 }
 // The rows opened before this rule from a question, a reply or a remark: closed as not a goal, kept
 // in the record's history and off every surface (jobs.mjs goalRows). Once each.
@@ -133,6 +162,10 @@ function tidyGoals({ jobs = loadJobs(), now = Date.now() } = {}) {
 const NOT_DONE_WHEN = /^(?:sorry|i'm sorry|unfortunately)\b|\b(?:i(?: can(?:'|no)t| cannot|'m unable to| am unable to| don't have| do not have)|no (?:image|screenshot|picture|file|attachment)s? (?:came|was|were|is|are)|(?:please|could you|can you) (?:re-?)?(?:attach|share|send|upload|provide|paste)|re-?attach)\b|\?\s*$/i;
 const doneLine = (s) => { s = clip(s, 200); return s && !NOT_DONE_WHEN.test(s) ? s : ""; };
 const doneOf = (g) => doneLine(g.doneWhen) || g.asked; // one set before this rule is read past, not used
+// What a run started for it is asked, and what done means: the user's words with the screenshots' files
+// (shotBrief) in place of "you can see it", which no run could.
+const askedFor = (g, ctx = {}, deps = {}) => String(g.asked || "").replace(SAID_ATTACHED, "").trim() + shotBrief(g, { tasks: ctx.tasks || [], exists: deps.exists });
+const doneFor = (g) => String(doneOf(g) || "").replace(SAID_ATTACHED, "").trim();
 
 // One line of what "done" means for it, from the user's words; the words themselves without an AI.
 async function doneWhenFor(g, { write } = {}) {
@@ -367,7 +400,7 @@ async function goalsTick(deps = {}, { now = Date.now() } = {}) {
       else if ((g.leftTries || 0) < LEFT_TRIES && deps.ops) {
         lefts++;
         g.leftTries = (g.leftTries || 0) + 1;
-        const e = deps.ops(`What's left on this, and do it: ${g.asked}\n\nDone when: ${doneOf(g)}\n\nWhat was found missing: ${(v && v.left) || "nothing judged it done"}. Check the earlier runs' reports first and don't redo what they finished. If something only the user can do is all that's left, ask it in QUESTIONS.md.`, { title: `What's left on: ${clip(g.text, 60)}` });
+        const e = deps.ops(`What's left on this, and do it: ${askedFor(g, ctx, deps)}\n\nDone when: ${doneFor(g)}\n\nWhat was found missing: ${(v && v.left) || "nothing judged it done"}. Check the earlier runs' reports first and don't redo what they finished. If something only the user can do is all that's left, ask it in QUESTIONS.md.`, { title: `What's left on: ${clip(g.text, 60)}` });
         if (e && (e.job || e.dir)) { if (e.job) g.children.push("run:" + e.job); if (e.dir) g.paths.push(e.dir); did.push({ goal: g.key, whatsLeft: e.job || e.dir }); }
       } else { close(g, "not", v ? { ...v, kids: r.kids } : { left: "every part of it ended, and nothing shows it's done", kids: r.kids }, ctx, deps, now); did.push({ goal: g.key, closed: "not" }); }
     }
@@ -477,7 +510,7 @@ function goalAnswer(path, answers = [], deps = {}, { now = Date.now() } = {}) {
     if (g.state === "done") { g.state = "running"; g.closed = null; }
     const busy = (() => { try { return rollUp(g, ctx).kids.some((c) => c.state === "active" && c.path && ctx.running(c.path)); } catch { return false; } })();
     if (busy) { putGoal(g, { now }); return { ok: true, saved: 1, said: "An agent is on it already: it carries on from there." }; }
-    const e = deps.ops ? deps.ops(`Look into this and finish it: ${g.asked}\n\nDone when: ${doneOf(g)}\n\nRead the earlier runs' reports first (its breakdown is in Reports) and don't redo what they finished. If something only the user can do is all that's left, ask it in QUESTIONS.md.`, { title: `Finish: ${clip(g.text, 60)}` }) : null;
+    const e = deps.ops ? deps.ops(`Look into this and finish it: ${askedFor(g, ctx, deps)}\n\nDone when: ${doneFor(g)}\n\nRead the earlier runs' reports first (its breakdown is in Reports) and don't redo what they finished. If something only the user can do is all that's left, ask it in QUESTIONS.md.`, { title: `Finish: ${clip(g.text, 60)}` }) : null;
     if (e && e.job) g.children.push("run:" + e.job); if (e && e.dir) g.paths.push(e.dir);
     said = e && (e.job || e.dir) ? "An agent is on it now." : `It didn't start: ${(e && e.error) || "no agent"}`;
   } else { g.card = null; g.moved = now; g.note = clip(a, 200); }
@@ -485,4 +518,4 @@ function goalAnswer(path, answers = [], deps = {}, { now = Date.now() } = {}) {
   return { ok: true, saved: 1, said };
 }
 
-export { doneLine, goalKind, goalFor, answersQuestion, goalToJoin, tidyGoals, plainlyNotWork, openGoal, linkChild, goalById, goalOf, doneWhenFor, childState, adopt, rollUp, judgeDone, writeBreakdown, goalsTick, goalCards, goalAnswer, folderOf, STALL_AFTER, NUDGE_AFTER, SURFACE_AFTER, WAIT_OLD };
+export { doneLine, goalKind, goalFor, shotsOf, shotBrief, goalShots, answersQuestion, goalToJoin, tidyGoals, plainlyNotWork, openGoal, linkChild, goalById, goalOf, doneWhenFor, childState, adopt, rollUp, judgeDone, writeBreakdown, goalsTick, goalCards, goalAnswer, folderOf, STALL_AFTER, NUDGE_AFTER, SURFACE_AFTER, WAIT_OLD };
