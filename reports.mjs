@@ -119,7 +119,7 @@ function listReports({ map, folders, loose, running = runningHandoff, seen } = {
 // One report, however many runs wrote it: reports in the same lane that share a title (a file with no heading is titled
 // by its name) are one report, rewritten. A shared file name alone isn't enough: AUDIT.md "Symbiot audit" and AUDIT.md
 // "Footer follow-up" from two runs are two reports. Only the newest is listed, with one Approve; the older ones fold under it as
-// `earlier` (newest first), still openable. Three ops runs each wrote CARLA-WIN-LOVE-FOLLOWUP-DRAFT.md in their own
+// `earlier` (newest first), still openable. Three ops runs each wrote the same follow-up draft (one file name) in their own
 // act-… folder (30 Oct, 4 and 5 Nov 2026), the later two saying they replace the first, and Reports showed all three,
 // each asking for an OK (9 Nov 2026). Deciding on the newest settles the older ones too (decide). Newest first.
 const versionKey = (r) => `${r.lane}\0${String(r.title || "").replace(/\s+/g, " ").trim().toLowerCase()}`;
