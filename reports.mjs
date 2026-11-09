@@ -122,12 +122,18 @@ function listReports({ map, folders, loose, running = runningHandoff, seen } = {
 // `earlier` (newest first), still openable. Three ops runs each wrote the same follow-up draft (one file name) in their own
 // act-… folder (30 Oct, 4 and 5 Nov 2026), the later two saying they replace the first, and Reports showed all three,
 // each asking for an OK (9 Nov 2026). Deciding on the newest settles the older ones too (decide). Newest first.
+// A draft is folded by its job too: Symbiot drafted the same follow-up five times in runs of its own (30 Oct to 9 Nov
+// 2026), under two titles ('… on "Re: Re: SPRING PILOT ONBOARDING"' and '… on SPRING PILOT ONBOARDING (not sent)') and two
+// spellings of one file name (DANA-PILOT-FOLLOWUP-DRAFT.md, dana-pilot-followup-draft.md). In one lane, drafts with the
+// same file name (case and dashes aside) and the same job in their titles (sameJob) are one report as well.
 const versionKey = (r) => `${r.lane}\0${String(r.title || "").replace(/\s+/g, " ").trim().toLowerCase()}`;
+const nameKey = (name) => plainName(String(name || "")).toLowerCase().replace(/\.md$/, "").replace(/[^a-z0-9]+/g, "");
 function foldVersions(list) {
-  const keep = [], at = new Map();
+  const keep = [], at = new Map(), drafts = [];
   for (const r of [...list].sort((a, b) => b.mtime - a.mtime)) {
-    const k = versionKey(r), head = at.get(k);
-    if (head) (head.earlier = head.earlier || []).push(r); else { keep.push(r); at.set(k, r); }
+    const k = versionKey(r), draft = isDraftReport(r.title, r.name), nk = draft ? nameKey(r.name) : "";
+    const head = at.get(k) || (nk && (drafts.find((x) => x.lane === r.lane && x.nk === nk && sameJob(x.head.title, r.title)) || {}).head);
+    if (head) (head.earlier = head.earlier || []).push(r); else { keep.push(r); at.set(k, r); if (nk) drafts.push({ lane: r.lane, nk, head: r }); }
   }
   return keep;
 }
@@ -136,6 +142,24 @@ function findReport(list, id) {
   id = String(id || "");
   for (const x of list) { if (x.id === id) return { r: x }; const e = (x.earlier || []).find((y) => y.id === id); if (e) return { r: e, head: x }; }
   return {};
+}
+// The same job, worded differently: most of the shorter one's subject words (3 or more, the generic ones aside) are in
+// the other. "Draft a follow-up to dana@example.com on 'Re: Re: SPRING PILOT ONBOARDING' that picks up from the
+// last message" is the job of the report 'Draft follow-up to Dana on "Re: Re: SPRING PILOT ONBOARDING"'.
+const GENERIC = new Set("draft drafts short quick report write written review ready user garth sent send nothing anything anywhere share".split(" "));
+const jobWords = (s) => new Set([...subjectWords(String(s || "").replace(/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g, (m) => m.split("@")[0]))].filter((w) => !GENERIC.has(w)));
+function sameJob(a, b) {
+  const x = jobWords(a), y = jobWords(b), [s, l] = x.size <= y.size ? [x, y] : [y, x];
+  if (s.size < 3) return false;
+  let n = 0; for (const w of s) if (l.has(w)) n++;
+  return n >= 3 && n / s.size >= 0.75;
+}
+// The jobs whose report still waits on the user: a draft not yet approved or turned down, or a report not yet read.
+// Symbiot starts none of these again on its own (intuition.mjs choose). [{ title, file, lane }]
+function openJobs({ list, seenFile = SEEN_FILE, tasks } = {}) {
+  list = list || listReports();
+  let ts = tasks; if (!ts) { try { ts = loadTasks(); } catch { ts = []; } }
+  return list.filter((r) => isDraftReport(r.title, r.name) ? !decidedOn(r, seenFile) && !jobDone(r, ts) : r.new).map((r) => ({ title: r.title, file: r.file, lane: r.lane }));
 }
 
 // One report, by its id: its text, as HTML too. Opening it marks it read.
@@ -584,4 +608,4 @@ const claimLines = (claims) => claims.map((c) => (c.on ? `${c.name} is on Report
 // How many reports are new, and the newest one's title (Home's droplet).
 function reportsNews(opts) { const l = listReports(opts).filter((r) => r.new); return { count: l.length, latest: l[0] ? l[0].title : "" }; }
 
-export { findReport, foldVersions, reportClaims, claimLines, REPORTS_DIR, draftCardsIn, supersededIdeas, sweepSuperseded, supersedeContext, SEEN_FILE, NOT_REPORTS, titleOf, listReports, readReport, phoneReports, phoneReport, reportImage, imagePath, markAllRead, reportsNews, mdHtml, reportIdeas, isDraftReport, decidedOn, decide, withNeeds, phoneReportNeedsText, IDEAS_MAX, handledIdeas, openIdeas, markIdeas, collapseCopies, pastDated, plainName };
+export { sameJob, openJobs, findReport, foldVersions, reportClaims, claimLines, REPORTS_DIR, draftCardsIn, supersededIdeas, sweepSuperseded, supersedeContext, SEEN_FILE, NOT_REPORTS, titleOf, listReports, readReport, phoneReports, phoneReport, reportImage, imagePath, markAllRead, reportsNews, mdHtml, reportIdeas, isDraftReport, decidedOn, decide, withNeeds, phoneReportNeedsText, IDEAS_MAX, handledIdeas, openIdeas, markIdeas, collapseCopies, pastDated, plainName };

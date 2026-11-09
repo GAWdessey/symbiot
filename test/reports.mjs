@@ -543,5 +543,23 @@ console.log("REPORTS — the same draft from three runs is one report, its earli
   ok("…the older runs are told a newer version replaced theirs, so they don't use it", [runs[0], runs[1]].every((f) => /### Superseded: \.symbiot\/FOLLOWUP-TO-DANA-DRAFT\.md\nThe user approved a newer version/.test(readFileSync(join(f, ".symbiot", "ANSWERS.md"), "utf8"))));
   ok("…nothing from it waits for an OK any more", !R.withNeeds(L(), { seenFile: sf, tasks: [] }).some((r) => r.lane === "ops" && r.needs === "draft"));
 }
+console.log("REPORTS — a draft rewritten under another title and a respelled file name is still one report (9 Nov 2026)");
+{
+  const runs = ["act-0000aa01", "act-0000aa02", "act-0000aa03"].map((x) => join(CFG, "drafts", x));
+  put(runs[0], "DANA-PILOT-FOLLOWUP-DRAFT.md", '# Draft follow-up to Dana on "Re: Re: SPRING PILOT ONBOARDING"\n\nHi Dana, one.\n', 5 * 86400000);
+  put(runs[1], "DANA-PILOT-FOLLOWUP-DRAFT.md", '# Draft follow-up to Dana on "Re: Re: SPRING PILOT ONBOARDING"\n\nHi Dana, two.\n', 3 * 86400000);
+  put(runs[2], "dana-pilot-followup-draft.md", "# Draft follow-up to Dana on SPRING PILOT ONBOARDING (not sent)\n\nHi Dana, three.\n", 60000);
+  put(runs[1], "REGISTRAR-REPLY-DRAFT.md", "# Draft reply to the registrar about the transfer fee\n\nHello.\n", 2 * 86400000);
+  const seenFile = join(CFG, "reports-dana.json");
+  const l = R.listReports({ map, folders: runs, running: none, seen: { seen: {} } }), c = l.filter((r) => /dana/i.test(r.name));
+  ok("one row, the newest (9 Nov), the two older ones folded under it", c.length === 1 && c[0].file === join(runs[2], ".symbiot", "dana-pilot-followup-draft.md") && (c[0].earlier || []).length === 2, c);
+  const w = R.withNeeds(l, { seenFile, tasks: [] }).filter((r) => /dana/i.test(r.name));
+  ok("…with one Approve", w.length === 1 && w[0].needs === "draft", w);
+  ok("…another draft about other work stays a row of its own", l.some((r) => r.name === "REGISTRAR-REPLY-DRAFT.md" && !r.earlier));
+  ok("…and it's an open job, so Symbiot doesn't start it again", R.openJobs({ list: l, seenFile, tasks: [] }).some((j) => /Dana/.test(j.title)));
+  R.decide(c[0], "approved", seenFile);
+  ok("…approved, it's no longer open", !R.openJobs({ list: l, seenFile, tasks: [] }).some((j) => /Dana/.test(j.title)));
+  ok("the same job, worded differently, is the same job; a different one isn't", R.sameJob("Draft a short follow-up to Dana on 'Re: Re: SPRING PILOT ONBOARDING', ready for you to review.", 'Draft follow-up to Dana on "Re: Re: SPRING PILOT ONBOARDING"') && !R.sameJob("Draft a follow-up to the registrar about the transfer", 'Draft follow-up to Dana on "Re: Re: SPRING PILOT ONBOARDING"'));
+}
 console.log(`\n${fail ? "✗" : "✓"} reports: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
