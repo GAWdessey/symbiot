@@ -40,7 +40,7 @@ import { setLinkAct, setLinksActAll, linksState, linkSite, checkLink, unlinkSite
 import { lineState, checkLine, forgetBlocked } from "./lineblocks.mjs";
 import { testWeeks, testInstalls, postsState, draftPosts, approvePost, editPost, skipPost, voiceFromLinkedIn, addMedia, removeMedia, mediaFile, mediaDir, pictureOfPage, clipOfPage, openUrl } from "./post.mjs";
 import { mindState, forget, actNow, actIn, loadMind } from "./mind.mjs";
-import { goalsTick, goalAnswer, goalFor } from "./goals.mjs";
+import { goalsTick, goalAnswer, goalFor, goalShots } from "./goals.mjs";
 import { onUser, loadJobs } from "./jobs.mjs";
 import { standingList } from "./asksdone.mjs";
 import { SOURCES as INTUITION_SOURCES, noteChange as intuitionNote, digest as intuitionDigest, intuitionTick, nudge as intuitionNudge, intuitionState, acceptFocus, revoke as revokeIntuition, writeFocus, doMove, markMove, moveContext } from "./intuition.mjs";
@@ -218,7 +218,9 @@ async function registryChangelog(version, registry = REGISTRY) {
 const UPLOADS = join(CONFIG_DIR, "uploads");
 function saveShots(list) {
   const out = [];
-  try { for (const f of readdirSync(UPLOADS)) { const fp = join(UPLOADS, f); if (Date.now() - statSync(fp).mtimeMs > 7 * 86400000) unlinkSync(fp); } } catch {} // kept a week
+  // kept a week, or while an open goal still has it to hand its runs (goals.mjs shotBrief)
+  let keep = new Set(); try { keep = goalShots(); } catch {}
+  try { for (const f of readdirSync(UPLOADS)) { const fp = join(UPLOADS, f); if (!keep.has(fp) && Date.now() - statSync(fp).mtimeMs > 7 * 86400000) unlinkSync(fp); } } catch {}
   for (const it of (Array.isArray(list) ? list : []).slice(0, 4)) {
     const m = /^data:image\/(png|jpeg|jpg|webp|gif);base64,([A-Za-z0-9+/=]+)$/.exec(String((it && it.data) || ""));
     if (!m) continue;
