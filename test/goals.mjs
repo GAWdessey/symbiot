@@ -146,7 +146,7 @@ try {
     ok("…with a later run there that ended waiting on a lane: the paused one is taken over, and the goal waits on that lane", rz.kids.find((c) => c.key === "run:sz1").state === "ended" && rz.state === "waiting" && rz.waitingOn === "lane", rz);
 
     // a paused run, the newest in its folder, that handed what was left to another lane (9 Nov 2026:
-    // run:9e9a54fc handed one product's post to marketing and held "a post for all products" running)
+    // run:9e9a54fc handed the last product's post to marketing and held "a post for all products" running)
     const ph = join(CFG, "drafts", "act-a7ea0005");
     mkdirSync(join(ph, ".symbiot"), { recursive: true }); writeFileSync(join(ph, ".symbiot", "TASKS.md"), "- [~] A post for every product\n");
     const gh = G.openGoal("A post for every product", { child: "run:sh1", path: ph, now: a0 });
