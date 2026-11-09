@@ -495,7 +495,7 @@ async function converse({ where, role = "", context = "", history = "", question
   // what they asked for becomes a goal, owned until it's done and closed with a breakdown (goals.mjs):
   // the run or task it went to is its first part, and what follows in those folders joins it
   // only a request for work opens one; a follow-up joins the goal it's about, a question or a reply opens none (goals.mjs goalFor)
-  if (did && !did.error) { try { const g = await goalFor(question, { child: did.job ? "run:" + did.job : did.task || did.id ? "task:" + (did.task || did.id) : "", lane: did.lane || (did.kind === "agent" ? "ops" : ""), path: did.dir || (did.lane && lanes[did.lane]) || "", now, write: ask === DEFAULT_ASK ? write : null, answering: answersQuestion(history, question) }); if (g) did.goal = g.key; } catch {} }
+  if (did && !did.error) { try { const g = await goalFor(question, { child: did.job ? "run:" + did.job : did.task || did.id ? "task:" + (did.task || did.id) : "", lane: did.lane || (did.kind === "agent" ? "ops" : ""), path: did.dir || (did.lane && lanes[did.lane]) || "", shots: images.map((i) => i && i.path).filter(Boolean), now, write: ask === DEFAULT_ASK ? write : null, answering: answersQuestion(history, question) }); if (g) did.goal = g.key; } catch {} }
   // what Home did to agents and tasks (control.mjs): said from what happened, the failures first and plainly
   let steered = [];
   if (control && act.control && Array.isArray(j.control) && j.control.length && !asksStatus(question)) {

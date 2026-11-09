@@ -186,6 +186,14 @@ try {
     ok("…and the reply says where it went and why", /Handed to your agent, not symbiot's: symbiot runs in a sandbox and can't reach prod-box/.test(ln.reply), ln.reply);
   }
 
+  {
+    // the screenshot's file goes with the goal the chat opens, so the goal's later runs get it too (run:3aa7d8d7, 8 Nov 2026)
+    const shot = join(HOME, "shot-goal.png");
+    await converse({ where: "Home", question: "Fix the login page layout shown in this screenshot", map, images: [{ mime: "image/png", data: "eA==", path: shot }], act: { agent: () => ({ ok: true, lane: "symbiot", job: "jShot", dir: symDir }) }, ask: said({ reply: "On it.", do: { agent: "Fix the login page layout", repo: "symbiot" }, remember: [] }) });
+    const gl = (await import("../goals.mjs")).goalOf("run:jShot");
+    ok("a goal opened with a screenshot keeps its file", gl && JSON.stringify(gl.shots) === JSON.stringify([shot]), gl);
+  }
+
   console.log("IT OPENS PAGES — \"navigate me to reports\" goes there (2026-10-09)");
   const navR = rulesFor(["symbiot"], "symbiot", true), plainR = rulesFor(["symbiot"], "symbiot");
   ok("Home's chat is told it can open any page, and never to say it can't", /"go": null or/.test(navR) && /never say you can't switch pages/.test(navR) && /reports \(Reports:/.test(navR), navR.slice(-900));
