@@ -132,6 +132,11 @@ try {
   const chosen = I.choose(many, { st: { passes: [], weights: {}, noise: {}, tiers: {} }, recent: [], cfg: { intuitionBudget: 3 }, now, mode: "act" });
   ok("a daily budget of starts (config.intuitionBudget)", chosen.moves.length === 3 && chosen.rejected.filter((x) => /budget/.test(x.why)).length >= 2);
 
+  // 6 to 9 Nov 2026: the same follow-up to Carla drafted again each day, worded differently, its report still unapproved
+  const carlaOpen = [{ title: 'Draft follow-up to Carla on "Re: Re: WIN LOVE ONBOARDING"', file: "/x/CARLA-WIN-LOVE-FOLLOWUP-DRAFT.md", lane: "ops" }];
+  const again = I.choose([{ kind: "prepare", what: "Draft a follow-up to carla@smartcalltech.co.za on 'Re: Re: WIN LOVE ONBOARDING' that picks up from the last message in the thread.", why: "w", confidence: 0.9 }, { kind: "prepare", what: "Draft a reply to the registrar about the domain transfer fee", why: "w", confidence: 0.9 }], { st: { passes: [], weights: {}, noise: {}, tiers: {} }, recent: [], cfg: {}, now, mode: "act", open: carlaOpen });
+  ok("a job whose report still waits on the user isn't started again, however it's worded; other work still is", again.moves.length === 1 && /registrar/.test(again.moves[0].what) && /waits on the user already: "Draft follow-up to Carla/.test(again.rejected[0].why), again);
+
   console.log("INTUITION — the digest twice a day: a report and one Update");
   const dg = { digest: [{ at: now - H, line: "On my own: checked the merge" }, { at: now - 30 * 60000, line: "Worth knowing: a deadline tomorrow" }], digestAt: 0, passes: [] };
   const evening = new Date(2026, 9, 22, 17, 5).getTime(), dir = join(HOME, "digests");

@@ -32,6 +32,7 @@ import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { CONFIG_DIR, readState, writeJsonAtomic, sameTask } from "./core.mjs";
 import { promptFor, triageExtra } from "./overrides.mjs";
 import { sentAt } from "./handback.mjs";
+import { sameJob } from "./reports.mjs";
 
 const FILE = () => join(CONFIG_DIR, "intuition.json"), FOCUS = () => join(CONFIG_DIR, "focus.md");
 const DIGEST_DIR = () => join(CONFIG_DIR, "drafts", "act-intuition", ".symbiot"); // a run folder Reports reads
@@ -172,16 +173,18 @@ async function intuitionPass(deps = {}, { now = Date.now(), force = false, event
     ask = d.text;
   }
   const recent = st.passes.filter((p) => now - p.at < DAY).flatMap((p) => p.moves || []);
+  // jobs whose report still waits on the user (reports.mjs openJobs): never started again (the Carla draft, five times)
+  const open = (val(deps.openJobs, []) || []).filter((j) => j && j.title);
   const shunned = Object.entries(st.weights).filter(([, w]) => w <= SHUN).map(([k]) => k);
   // A lane the user paused gets no moves: on 28 Oct 2026 the user paused a lane, and passes kept filing
   // tasks there, each "Blocked: parked" for good, which read as Symbiot dropping that lane's work.
   const map = val(deps.map, {}) || {}, parkedSet = new Set(val(deps.parked, []) || []);
   const paused = Object.keys(map).filter((n) => parkedSet.has(map[n]));
-  const prompt = `Their focus (focus.md, theirs to edit):\n${focus.trim() || "(empty: they haven't written one)"}\n\n${ask}\n\nAlready done on its own in the last day (don't repeat):\n${recent.length ? recent.map((m) => `- ${m.kind}: ${m.what}`).join("\n") : "- nothing"}\n\nTurned down by the user before (kind|lane):\n${shunned.length ? shunned.map((k) => `- ${k}`).join("\n") : "- nothing"}` +
+  const prompt = `Their focus (focus.md, theirs to edit):\n${focus.trim() || "(empty: they haven't written one)"}\n\n${ask}\n\nAlready done on its own in the last day (don't repeat):\n${recent.length ? recent.map((m) => `- ${m.kind}: ${m.what}`).join("\n") : "- nothing"}\n\nWaiting on the user already, its report on Reports unapproved or unread (don't start any of these again):\n${open.length ? open.slice(0, 40).map((j) => `- ${j.title}`).join("\n") : "- nothing"}\n\nTurned down by the user before (kind|lane):\n${shunned.length ? shunned.map((k) => `- ${k}`).join("\n") : "- nothing"}` +
     (paused.length ? `\n\nLanes the user paused (no moves in them until they unpark one): ${paused.join(", ")}` : "");
   const raw = await askMoves(deps.write, system + (() => { try { return promptFor("intuition"); } catch { return ""; } })(), prompt);
   const offPaused = [], kept = (Array.isArray(raw) ? raw : []).filter((m) => !asksOfUser(m)).filter((m) => !(m && m.kind !== "notice" && m.kind !== "focus" && paused.includes(String(m.lane || "")) && offPaused.push(m)));
-  const { moves, rejected } = choose(kept, { st, recent, cfg, now, mode });
+  const { moves, rejected } = choose(kept, { st, recent, cfg, now, mode, open });
   for (const m of offPaused) rejected.push({ move: { kind: String(m.kind || ""), what: clip(m.what, 300), lane: clip(m.lane, 60) }, why: "its lane is paused" });
   for (const mv of moves) carry(mv, { deps, map, st, cfg, mode, now });
   if (events) { st.evAt = now; if (!st.nudged) st.nudged = now; } // something happened: the whole picture again soon
@@ -213,7 +216,7 @@ async function askMoves(write, system, prompt) {
 const HOUSEKEEPING = /\b(?:close|clear|dismiss|remove|resolve|tidy|mark)\b[^\n]{0,60}?\b(?:review |approve |home |workdesk |its |the |a )?(?:card|cards|job record|run record)\b|\bmark (?:the )?(?:run|job|card) [0-9a-f]{6,}\b/i;
 // The moves it may make: known kind, sure enough, not repeated, not turned down, within the day's
 // budget of starts. Each gets its tier and its channel. rejected: [{ move, why }].
-function choose(raw, { st, recent, cfg = {}, now, mode = "act" }) {
+function choose(raw, { st, recent, cfg = {}, now, mode = "act", open = [] }) {
   const budget = Number(cfg.intuitionBudget) > 0 ? Number(cfg.intuitionBudget) : BUDGET;
   let started = st.passes.filter((p) => now - p.at < DAY).flatMap((p) => p.moves || []).filter((x) => x.started || x.asked).length;
   const moves = [], rejected = [];
@@ -225,6 +228,8 @@ function choose(raw, { st, recent, cfg = {}, now, mode = "act" }) {
     if (mv.kind !== "focus" && HOUSEKEEPING.test(mv.what)) { no("Symbiot's own cards settle on their own"); continue; }
     if (moves.length >= MAX_MOVES) { no("five is enough for one pass"); continue; }
     if ((st.weights[`${mv.kind}|${mv.lane}`] || 0) <= SHUN) { no("turned down before"); continue; }
+    const waiting = mv.kind !== "notice" && mv.kind !== "focus" && open.find((j) => sameTask(j.title, mv.what) || sameJob(j.title, mv.what));
+    if (waiting) { no(`its report waits on the user already: "${waiting.title}"`); continue; }
     if (recent.some((r) => r.kind === mv.kind && (r.lane || "") === mv.lane && sameTask(r.what, mv.what)) || moves.some((r) => r.kind === mv.kind && sameTask(r.what, mv.what))) { no("already done"); continue; }
     const t = mv.kind === "notice" || mv.kind === "focus" ? { tier: 0, kind: mv.kind } : mv.kind === "prepare" ? { tier: 0, kind: "draft" } : tierOf(mv.what);
     mv.tier = t.tier; mv.action = t.kind;
