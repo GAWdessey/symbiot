@@ -169,6 +169,11 @@ function superseded(j, ctx) {
   // going", one paused on 29-30 Oct held five symbiot goals "running" for days with no agent on them,
   // through later runs that ended there, so nothing restarted their real blocker (6 Nov 2026)
   { const next = laterEnded(j, ctx); if (next) return { state: "ended", ok: true, path: j.path, at: next.changed, what: "a later run in the same folder took it over", superseded: next.key }; }
+  // a paused run that handed what was left to another lane: that handover is the work now (its goal
+  // has it as a child), not the run. Read as "still going", ops run 9e9a54fc, which handed the last
+  // product's post to marketing on 5 Nov, held the "post for all products" goal running with no agent
+  // on it, through marketing's report that its run stopped without doing it (9 Nov 2026)
+  if (j.state === "paused") { const h = ((ctx.ledger && ctx.ledger.handoffs) || []).find((x) => x.from && x.from.path === j.path && (x.at || 0) >= (j.at || 0)); if (h) return { state: "ended", ok: true, path: j.path, at: h.at, what: `it handed what was left to ${(h.to && h.to.lane) || "another lane"}`, handedTo: h.id }; }
   // the question it waits on is answered (asksdone.mjs: in any wording), or settled for good by a decision
   if (j.state === "waiting" && j.waitingOn === "user" && (ctx.answered || answeredNow)(j.what, j)) return { state: "ended", ok: true, path: j.path, at: j.changed, what: "the user has answered what it waited on" };
   // only a wait its [~] item made (task, bare): one on a question or a need isn't in TASKS.md
