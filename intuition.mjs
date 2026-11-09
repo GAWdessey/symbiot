@@ -173,7 +173,7 @@ async function intuitionPass(deps = {}, { now = Date.now(), force = false, event
     ask = d.text;
   }
   const recent = st.passes.filter((p) => now - p.at < DAY).flatMap((p) => p.moves || []);
-  // jobs whose report still waits on the user (reports.mjs openJobs): never started again (the Carla draft, five times)
+  // jobs whose report still waits on the user (reports.mjs openJobs): never started again (the Dana draft, five times)
   const open = (val(deps.openJobs, []) || []).filter((j) => j && j.title);
   const shunned = Object.entries(st.weights).filter(([, w]) => w <= SHUN).map(([k]) => k);
   // A lane the user paused gets no moves: on 28 Oct 2026 the user paused a lane, and passes kept filing

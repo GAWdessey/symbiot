@@ -67,7 +67,7 @@ try {
   console.log("TRIAGE — Symbiot's own answers don't restart a run again and again (the Simli key run, 6 and 9 Nov 2026)");
   {
     const run = join(CFG, "drafts", "act-0f0f0b01"); mkdirSync(join(run, ".symbiot"), { recursive: true });
-    const q1 = "Simli key swap: new key and go-ahead", q2 = "Simli key swap: why I need a new key from you", q3 = "Should I restart the WinLove container once the new Simli key is in?";
+    const q1 = "Simli key swap: new key and go-ahead", q2 = "Simli key swap: why I need a new key from you", q3 = "Should I restart the the app container once the new Simli key is in?";
     T.saveVerdict(run, q1, { verdict: "redo", why: "no why", asked: Date.now() - 4000 }, Date.now() - 3000);
     writeFileSync(join(run, ".symbiot", "QUESTIONS.md"), `## Questions\n\n### ${q3}\nThe swap is ready on a branch.\n- 🤖 Agent: restart it after the swap\n- Skip\n`);
     let asked = 0; const w = async () => { asked++; return { text: '{"verdict":"agent","why":"the user already pasted it in chat"}' }; };
@@ -83,9 +83,9 @@ try {
     writeFileSync(join(inv, ".symbiot", "TASKS.md"), "## Tasks\n- [x] List every place the Simli key is used on the server (done 2026-11-06)\n");
     writeFileSync(join(inv, ".symbiot", "ANSWERS.md"), "# Answers from the user\n");
     writeFileSync(join(inv, ".symbiot", "answers-seen.json"), JSON.stringify({ at: Date.now() - 60000, answers: A.answersDigest ? A.answersDigest(inv) : "" }));
-    writeFileSync(join(inv, ".symbiot", "ANSWERS.md"), "# Answers from the user\n\n### Is the key in use?\nAnswered on the card: \"are we using simli for anything active right now?\". Symbiot started the work on it (sts-platform's agent): I've started an agent to check the running containers.\n_answered 2026-11-09_\n");
+    writeFileSync(join(inv, ".symbiot", "ANSWERS.md"), "# Answers from the user\n\n### Is the key in use?\nAnswered on the card: \"are we using simli for anything active right now?\". Symbiot started the work on it (a server lane's agent): I've started an agent to check the running containers.\n_answered 2026-11-09_\n");
     ok("…a card note that its work was started in another run doesn't start a finished run again", !A.newAnswers(inv) && /^Not started: every task/.test(A.nothingToDo(inv)), [A.newAnswers(inv), A.nothingToDo(inv)]);
-    writeFileSync(join(inv, ".symbiot", "ANSWERS.md"), "# Answers from the user\n\n### Is the key in use?\nYes: the WinLove avatar uses it.\n_answered 2026-11-09_\n");
+    writeFileSync(join(inv, ".symbiot", "ANSWERS.md"), "# Answers from the user\n\n### Is the key in use?\nYes: the avatar uses it.\n_answered 2026-11-09_\n");
     ok("…the user's own answer still does", A.newAnswers(inv) && A.nothingToDo(inv) === "");
   }
 

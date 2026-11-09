@@ -517,25 +517,25 @@ console.log("A REPORT IN ~/.config/symbiot/reports — a run with no lane left i
   ok("the briefs say to check Reports, and GitHub for a merge, before saying so", HANDBACK.some((x) => /`symbiot reports`/.test(x) && /gh pr view/.test(x)));
   ok("…and GitHub's mergeable state before saying a PR merges by itself (PR #336, 29 Oct 2026)", HANDBACK.some((x) => /--json mergeable,mergeStateStatus/.test(x) && /resolve the conflicts/.test(x)));
 }
-console.log("REPORTS — the same draft from several runs of Symbiot's own is one row, one Approve (Carla, 9 Nov 2026)");
+console.log("REPORTS — the same draft from several runs of Symbiot's own is one row, one Approve (Dana, 9 Nov 2026)");
 {
   const runs = ["act-0000aa01", "act-0000aa02", "act-0000aa03"].map((x) => join(CFG, "drafts", x));
-  put(runs[0], "CARLA-WIN-LOVE-FOLLOWUP-DRAFT.md", '# Draft follow-up to Carla on "Re: Re: WIN LOVE ONBOARDING"\n\nHi Carla, one.\n', 5 * 86400000);
-  put(runs[1], "CARLA-WIN-LOVE-FOLLOWUP-DRAFT.md", '# Draft follow-up to Carla on "Re: Re: WIN LOVE ONBOARDING"\n\nHi Carla, two.\n', 3 * 86400000);
-  put(runs[2], "carla-winlove-followup-draft.md", "# Draft follow-up to Carla on WIN LOVE ONBOARDING (not sent)\n\nHi Carla, three.\n", 60000);
+  put(runs[0], "DANA-PILOT-FOLLOWUP-DRAFT.md", '# Draft follow-up to Dana on "Re: Re: SPRING PILOT ONBOARDING"\n\nHi Dana, one.\n', 5 * 86400000);
+  put(runs[1], "DANA-PILOT-FOLLOWUP-DRAFT.md", '# Draft follow-up to Dana on "Re: Re: SPRING PILOT ONBOARDING"\n\nHi Dana, two.\n', 3 * 86400000);
+  put(runs[2], "dana-pilot-followup-draft.md", "# Draft follow-up to Dana on SPRING PILOT ONBOARDING (not sent)\n\nHi Dana, three.\n", 60000);
   // two runs' design reviews share a role's title but are about different work: both stay
   put(runs[0], "UI-CRITIC.md", "# Design critic: review the finished UI work\n\nThe Week page.\n", 4 * 86400000);
   put(runs[1], "UI-CRITIC.md", "# Design critic: review the finished UI work\n\nThe Map page.\n", 2 * 86400000);
-  const seenFile = join(CFG, "reports-carla.json");
-  const l = R.listReports({ map, folders: runs, running: none, seen: { seen: {} } }), c = l.filter((r) => /carla/i.test(r.name));
-  ok("one row, the newest (9 Nov), the older ones its copies", c.length === 1 && c[0].file === join(runs[2], ".symbiot", "carla-winlove-followup-draft.md") && c[0].copies.length === 3, c);
-  const w = R.withNeeds(l, { seenFile, tasks: [] }).filter((r) => /carla/i.test(r.name));
+  const seenFile = join(CFG, "reports-dana.json");
+  const l = R.listReports({ map, folders: runs, running: none, seen: { seen: {} } }), c = l.filter((r) => /dana/i.test(r.name));
+  ok("one row, the newest (9 Nov), the older ones its copies", c.length === 1 && c[0].file === join(runs[2], ".symbiot", "dana-pilot-followup-draft.md") && c[0].copies.length === 3, c);
+  const w = R.withNeeds(l, { seenFile, tasks: [] }).filter((r) => /dana/i.test(r.name));
   ok("…with one Approve", w.length === 1 && w[0].needs === "draft", w);
   ok("…reviews from different runs that share a title stay apart", l.filter((r) => r.name === "UI-CRITIC.md").length === 2);
-  ok("…and it's an open job, so Symbiot doesn't start it again", R.openJobs({ list: l, seenFile, tasks: [] }).some((j) => /Carla/.test(j.title)));
+  ok("…and it's an open job, so Symbiot doesn't start it again", R.openJobs({ list: l, seenFile, tasks: [] }).some((j) => /Dana/.test(j.title)));
   R.decide(c[0], "approved", seenFile);
-  ok("…approved, it's no longer open", !R.openJobs({ list: l, seenFile, tasks: [] }).some((j) => /Carla/.test(j.title)));
-  ok("the same job, worded differently, is the same job; a different one isn't", R.sameJob("Draft a short follow-up to Carla at smartcalltech on 'Re: Re: WIN LOVE ONBOARDING', ready for you to review.", 'Draft follow-up to Carla on "Re: Re: WIN LOVE ONBOARDING"') && !R.sameJob("Draft a follow-up to the registrar about the transfer", 'Draft follow-up to Carla on "Re: Re: WIN LOVE ONBOARDING"'));
+  ok("…approved, it's no longer open", !R.openJobs({ list: l, seenFile, tasks: [] }).some((j) => /Dana/.test(j.title)));
+  ok("the same job, worded differently, is the same job; a different one isn't", R.sameJob("Draft a short follow-up to Dana on 'Re: Re: SPRING PILOT ONBOARDING', ready for you to review.", 'Draft follow-up to Dana on "Re: Re: SPRING PILOT ONBOARDING"') && !R.sameJob("Draft a follow-up to the registrar about the transfer", 'Draft follow-up to Dana on "Re: Re: SPRING PILOT ONBOARDING"'));
 }
 console.log(`\n${fail ? "✗" : "✓"} reports: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

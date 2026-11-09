@@ -116,10 +116,10 @@ function listReports({ map, folders, loose, running = runningHandoff, seen } = {
   }
   return sameJobOnce(out).sort((a, b) => b.mtime - a.mtime).slice(0, MAX_LIST);
 }
-// One job's report, however many runs wrote it: Symbiot drafted the same follow-up to Carla in five runs of its own
+// One job's report, however many runs wrote it: Symbiot drafted the same follow-up to Dana in five runs of its own
 // (30 Oct to 9 Nov 2026), each its own row on Reports, unread, with its own Approve. Across the runs of its own (act-…
-// folders, and REPORTS_DIR), draft reports (the ones with an Approve) with the same file name (case and dashes aside: CARLA-WIN-LOVE-FOLLOWUP-DRAFT.md
-// and carla-winlove-followup-draft.md) and the same job in their titles (sameJob) are one row: the newest, the older
+// folders, and REPORTS_DIR), draft reports (the ones with an Approve) with the same file name (case and dashes aside: DANA-PILOT-FOLLOWUP-DRAFT.md
+// and dana-pilot-followup-draft.md) and the same job in their titles (sameJob) are one row: the newest, the older
 // ones its copies. Nothing is deleted; lanes' own reports, and reviews that share a role's title (UI-CRITIC.md, one per
 // run, each about different work), are left as they are.
 const nameKey = (name) => plainName(String(name || "")).toLowerCase().replace(/\.md$/, "").replace(/[^a-z0-9]+/g, "");
@@ -135,8 +135,8 @@ function sameJobOnce(list) {
   return out;
 }
 // The same job, worded differently: most of the shorter one's subject words (3 or more, the generic ones aside) are in
-// the other. "Draft a follow-up to carla@smartcalltech.co.za on 'Re: Re: WIN LOVE ONBOARDING' that picks up from the
-// last message" is the job of the report 'Draft follow-up to Carla on "Re: Re: WIN LOVE ONBOARDING"'.
+// the other. "Draft a follow-up to dana@example.com on 'Re: Re: SPRING PILOT ONBOARDING' that picks up from the
+// last message" is the job of the report 'Draft follow-up to Dana on "Re: Re: SPRING PILOT ONBOARDING"'.
 const GENERIC = new Set("draft drafts short quick report write written review ready user garth sent send nothing anything anywhere share".split(" "));
 const jobWords = (s) => new Set([...subjectWords(String(s || "").replace(/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g, (m) => m.split("@")[0]))].filter((w) => !GENERIC.has(w)));
 function sameJob(a, b) {

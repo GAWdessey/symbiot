@@ -1525,7 +1525,7 @@ const BLOCKED = "blocked.json";
 const digest = (s) => createHash("sha1").update(String(s)).digest("hex").slice(0, 16);
 const openTasks = (path) => readSymbiot(path, "TASKS.md").split("\n").filter((l) => /^\s*-\s*\[ \]/.test(l)).map((l) => taskWords(l.replace(/^\s*-\s*\[ \]\s*/, ""))).filter(Boolean);
 // A card closed because Symbiot started its work in another run ("Answered on the card: … Symbiot started the work on it
-// (sts-platform's agent): …", home.mjs closeCard) is that run's news, not this one's: it started the Simli inventory run,
+// (a server lane's agent): …", home.mjs closeCard) is that run's news, not this one's: it started the Simli inventory run,
 // every task ticked, again on 9 Nov 2026, to find nothing to do.
 const SYMBIOT_NOTE = /^_(?:answered by symbiot \(handover\)|symbiot \(handover\)|shared by Symbiot [^\n]*\(background\))|^Answered on the card: [^\n]*?\. Symbiot started the work on it\b/m;
 const userAnswers = (md) => String(md || "").split(/\n(?=### )/).filter((sec) => /^### /.test(sec) && !SYMBIOT_NOTE.test(sec)).join("\n"); // its title line differs by who made the file
