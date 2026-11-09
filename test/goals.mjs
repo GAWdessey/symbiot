@@ -145,6 +145,19 @@ try {
     const rz = G.rollUp({ ...G.goalById(gz.key), children: ["run:sz1", "run:sz2"] }, { ...base(), jobs: J.loadJobs() });
     ok("…with a later run there that ended waiting on a lane: the paused one is taken over, and the goal waits on that lane", rz.kids.find((c) => c.key === "run:sz1").state === "ended" && rz.state === "waiting" && rz.waitingOn === "lane", rz);
 
+    // a paused run, the newest in its folder, that handed what was left to another lane (9 Nov 2026:
+    // run:9e9a54fc handed the last product's post to marketing and held "a post for all products" running)
+    const ph = join(CFG, "drafts", "act-a7ea0005");
+    mkdirSync(join(ph, ".symbiot"), { recursive: true }); writeFileSync(join(ph, ".symbiot", "TASKS.md"), "- [~] A post for every product\n");
+    const gh = G.openGoal("A post for every product", { child: "run:sh1", path: ph, now: a0 });
+    J.saveJobs([...J.loadJobs(), { ...rec("sh1", a0 + 1000, { state: "paused" }), path: ph }]);
+    const hand = { id: "h7ea05", from: { lane: "ops", path: ph }, to: { lane: "marketing", path: join(CFG, "mk") }, text: "draft the last post", at: a0 + 30e3, status: "sent" };
+    const rh = G.rollUp({ ...G.goalById(gh.key), children: ["run:sh1", "handoff:h7ea05"] }, { ...base(), ledger: { handoffs: [hand] }, jobs: J.loadJobs() });
+    ok("a paused run that handed what was left to a lane: not at work, the goal waits on that lane", rh.kids.find((c) => c.key === "run:sh1").state === "ended" && rh.state === "waiting" && rh.waitingOn === "lane", rh);
+    const rs = G.rollUp({ ...G.goalById(gh.key), children: ["run:sh1", "handoff:h7ea05"] }, { ...base(), ledger: { handoffs: [{ ...hand, status: "stopped", reportedAt: a0 + 90e3, result: "stopped without ticking it" }] }, jobs: J.loadJobs() });
+    ok("…and once that lane stopped without doing it, the goal has ended, so what's left is picked up again", rs.state === "ended", rs);
+    ok("…a paused run with no handover out of its folder is still going", G.rollUp({ ...G.goalById(gh.key), children: ["run:sh1"] }, { ...base(), jobs: J.loadJobs() }).state === "running");
+
     // from 0.94.1 a run's end marks them itself
     const pr = join(CFG, "drafts", "act-a7ea0003");
     run("sw1", pr, { at: a0 + 1000, state: "waiting", waitingOn: "user", what: "your yes to redeploy" }); run("sw0", pr, { at: a0 + 500, state: "paused" });
