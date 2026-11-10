@@ -26,10 +26,9 @@ try {
   writeFileSync(join(sym, "TASKS.md"), "# t\n- [ ] do a thing\n");
   writeFileSync(join(sym, "agent.log"), "x");
   writeFileSync(join(C, "runs.json"), JSON.stringify([{ path: lane, name: "Agent: lane", startedAt: Date.now() }]));
-  let started = 0;
-  a.continueLanes({ now: Date.now(), run: () => { started++; return { busy: true }; } }); // ended just now: too soon
+  a.continueLanes({ now: Date.now(), run: () => { return { busy: true }; } }); // ended just now: too soon
   ok("too soon is named", lines().some((x) => /ended under 2 minutes ago/.test(x)), lines());
-  a.continueLanes({ now: Date.now() + 10 * 60000, run: () => { started++; return { blocked: true, note: "Claude is down" }; } });
+  a.continueLanes({ now: Date.now() + 10 * 60000, run: () => { return { blocked: true, note: "Claude is down" }; } });
   ok("a blocked start is named with its note", lines().some((x) => /start was blocked: Claude is down/.test(x)), lines());
 } finally { rmSync(HOME, { recursive: true, force: true }); }
 console.log(`\n${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0);
