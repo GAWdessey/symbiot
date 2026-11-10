@@ -484,7 +484,7 @@ async function openTab(b, who, targetId) {
   if (b.tabUa) await send("Network.setUserAgentOverride", { userAgent: b.tabUa });
   // every `method` event on this tab, until the function it gives is called
   const on = (method, f) => c.on((m) => { if (m && m.sessionId === sessionId && m.method === method) f(m.params || {}); });
-  const tab = { who, targetId, page: { send, until, idle, on, c, targetId }, shown: "", used: Date.now(), unhook: () => { unhookNet(); unauth(); } };
+  const tab = { who, targetId, page: { send, until, idle, sent: net.sent, on, c, targetId }, shown: "", used: Date.now(), unhook: () => { unhookNet(); unauth(); } };
   b.tabs.set(who, tab);
   return tab;
 }
@@ -545,15 +545,17 @@ const nap = (ms) => new Promise((r) => setTimeout(r, ms).unref());
 // 7 MB canvaskit.wasm from gstatic got a dating app's demo shot on its splash screen, said to be
 // quiet, on every 1440 picture (5 Nov 2026).
 // A request that failed or answered 4xx/5xx is finished, not in flight; an image that did is
-// kept in broken, so a missing picture can be told from one shoot took too early.
+// kept in broken, so a missing picture can be told from one shoot took too early. sent():
+// how many requests the page has made so far, to tell a list that fetched more from one
+// that only drew itself further (grown).
 const IDLE = { first: 400, calm: 600, max: 8000 };
 const shortUrl = (u) => { try { const x = new URL(u); return x.host + x.pathname; } catch { return String(u || "").slice(0, 120); } };
 function netWatch() {
-  const inflight = new Map(), broken = new Map(); let fed = 0;
+  const inflight = new Map(), broken = new Map(); let fed = 0, sent = 0;
   const seen = (m) => {
     const p = (m && m.params) || {};
     if (m.method === "Network.dataReceived") { if (inflight.has(p.requestId)) fed = Date.now(); }
-    else if (m.method === "Network.requestWillBeSent") { if (!/^data:|^blob:/i.test((p.request && p.request.url) || "")) inflight.set(p.requestId, { url: p.request.url, type: p.type }); }
+    else if (m.method === "Network.requestWillBeSent") { if (!/^data:|^blob:/i.test((p.request && p.request.url) || "")) { inflight.set(p.requestId, { url: p.request.url, type: p.type }); sent++; } }
     else if (m.method === "Network.responseReceived") { if (p.type === "Image" && p.response && p.response.status >= 400) broken.set(p.requestId, p.response.url); }
     else if (m.method === "Network.loadingFinished") inflight.delete(p.requestId);
     else if (m.method === "Network.loadingFailed") { const r = inflight.get(p.requestId); inflight.delete(p.requestId); if (r && !p.canceled && (p.type || r.type) === "Image") broken.set(p.requestId, r.url); }
@@ -564,7 +566,7 @@ function netWatch() {
     while (Date.now() < end && calm < IDLE.calm) { await sleep(100); calm = inflight.size <= 1 && Date.now() - fed >= 100 ? calm + 100 : 0; }
     return calm >= IDLE.calm;
   };
-  return { seen, idle, late: () => [...new Set([...inflight.values()].map((r) => shortUrl(r.url)))], broken: () => [...new Set([...broken.values()].map(shortUrl))], clear: () => broken.clear() };
+  return { seen, idle, sent: () => sent, late: () => [...new Set([...inflight.values()].map((r) => shortUrl(r.url)))], broken: () => [...new Set([...broken.values()].map(shortUrl))], clear: () => broken.clear() };
 }
 
 // A login wall on a site the user linked (Settings → Connections) or trusted: their own Chrome's
@@ -1040,9 +1042,13 @@ async function evaluate(page, expression) {
 // loads its later slots as it's scrolled down, and a whole-page map stopped at the first
 // end, on 4 Nov, when there were slots to the 16th: 2026-11-10): at the end, wait for
 // the page to go quiet and then up to GROW_MS more for it to have grown. `expr` reads
-// its length now; the new length, or `was` when nothing more came.
-const GROW_MS = 750;
-async function grown(page, expr, was) {
+// its length now; the new length, or `was` when nothing more came. Only when getting
+// there made the page ask for more (a request since `since`, its sent() before the
+// scroll): a list that just draws itself further as it scrolls (a test's virtual list
+// placed its rows past its own end) isn't loading more, and isn't waited on.
+const GROW_MS = 750, ASK_MS = 300;
+async function grown(page, expr, was, since = null) {
+  if (since != null && page.sent) { await sleep(ASK_MS); if (page.sent() === since) return was; }
   if (page.idle) await page.idle().catch(() => {});
   for (const end = Date.now() + GROW_MS; ;) {
     const now = Number(await evaluate(page, expr).catch(() => 0)) || 0;
@@ -1064,6 +1070,7 @@ async function snapshotWhole(page, name) {
   await evaluate(page, "window.__symbiotWhole = null");
   try {
     for (let y = 0, i = 0; i < 60; i++) {
+      const asked = page.sent ? page.sent() : null;
       await evaluate(page, `scrollTo({ top: ${y}, behavior: 'instant' })`); await sleep(150);
       const at = Number(await evaluate(page, "scrollY")) || 0;
       if (!info || info.items.length < 200) { info = await collect(page, COLLECT_WHOLE); keepFramed(info.items); }
@@ -1071,7 +1078,7 @@ async function snapshotWhole(page, name) {
       shots.push({ png: Buffer.from(data, "base64"), y: at }); end = at + VIEW.h;
       await evaluate(page, HIDE_STUCK);
       h = (await evaluate(page, PAGE_HEIGHT)).h;
-      if (end >= h && h < MAX_TALL) h = await grown(page, PAGE_LONG, h); // a page that loads more at its end
+      if (end >= h && h < MAX_TALL) h = await grown(page, PAGE_LONG, h, asked); // a page that loads more at its end
       if (end >= Math.min(MAX_TALL, h) || at < y) break; // the bottom (or it wouldn't scroll further)
       y = Math.min(at + VIEW.h - OVERLAP, Math.min(MAX_TALL, h) - VIEW.h);
     }
@@ -1110,10 +1117,11 @@ async function snapshotList(page, name) {
   await evaluate(page, "window.__symbiotWhole = null");
   try {
     for (let y = 0, i = 0; i < 100; i++) {
+      const asked = page.sent ? page.sent() : null;
       const m = await evaluate(page, scrollJs(y, sel)); if (!m || m.y <= at) break; // it wouldn't scroll further
       await sleep(150);
       at = m.y; max = m.max;
-      if (at >= max && max < room) max = await grown(page, listLong(sel), max); // a list that loads more at its end
+      if (at >= max && max < room) max = await grown(page, listLong(sel), max, asked); // a list that loads more at its end
       const last = at >= Math.min(max, room);
       if (!list || list.items.length < 200) list = await collect(page, collectJs(false, { selector: sel, part: "list", last, inset: box.inset }));
       const { data } = await page.send("Page.captureScreenshot", { format: "png" });
@@ -1391,6 +1399,7 @@ function scrollPage(id, to = "down", { who = "" } = {}) {
   if (!s.page || !s.page.url) return Promise.resolve({ error: "Scroll works on a mapped page." });
   return oneAtATime(() => withPage(async (page, b) => {
     const here = await showScreen(page, b, s, { same: true }), sc = s.page.scroll;
+    let asked = page.sent ? page.sent() : null;
     const { result } = await page.send("Runtime.evaluate", { expression: scrollJs(to, sc ? sc.selector || "" : null), returnByValue: true });
     const m = result && result.value;
     b.shown = s.id;
@@ -1399,6 +1408,8 @@ function scrollPage(id, to = "down", { who = "" } = {}) {
     await page.idle(); // a page that loads more as you scroll
     // to the bottom: of all of it, where it loads more each time it gets there (LinkedIn's Scheduled posts)
     for (let i = 0; to === "bottom" && i < 30; i++) {
+      if (page.sent && page.sent() === asked) break; // it asked for nothing more: that's all of it
+      asked = page.sent ? page.sent() : null;
       const n = (await page.send("Runtime.evaluate", { expression: scrollJs("bottom", sc ? sc.selector || "" : null), returnByValue: true })).result?.value;
       if (!n || n.y <= m.y) break;
       m.y = n.y; m.max = n.max; await page.idle();
