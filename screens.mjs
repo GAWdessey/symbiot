@@ -144,7 +144,11 @@ function stitchPng(pieces, h) {
 // where they overlap, and what's below the list in the last shot moved down by
 // `more`. Beside the opened-out list, each column carries on in its colour at the
 // list's bottom edge. null when a shot can't be read, or they differ.
-function stitchListPng(pieces, box, more) {
+// inset: how far down the list's box a header that sticks in it reaches (LinkedIn's
+// Scheduled posts box keeps its tabs at its top as it scrolls): a shot after the
+// first is laid from under it, so the header shows once, at the top, not on every
+// part over the rows it covered (2026-11-10).
+function stitchListPng(pieces, box, more, inset = 0) {
   const imgs = pieces.map((p) => ({ img: pngDecode(p.png), y: Math.max(0, Math.round(p.y) || 0) })), first = imgs.length && imgs[0].img;
   if (!first || !box || imgs.some(({ img }) => !img || img.w !== first.w || img.h !== first.h || img.bpp !== first.bpp || img.ctype !== first.ctype || img.depth !== first.depth)) return null;
   more = Math.max(0, Math.round(more) || 0);
@@ -155,7 +159,7 @@ function stitchListPng(pieces, box, more) {
   for (let y = end; y < end + more; y++) first.px.copy(px, y * st, (end - 1) * st, end * st);
   last.px.copy(px, (end + more) * st, end * st, H * st);
   for (const { img, y: at } of imgs) {
-    for (let r = box.y; r < end && r + at < end + more; r++) img.px.copy(px, (r + at) * st + box.x * bpp, r * st + box.x * bpp, r * st + (box.x + box.w) * bpp);
+    for (let r = box.y + (at > 0 ? Math.max(0, Math.round(inset) || 0) : 0); r < end && r + at < end + more; r++) img.px.copy(px, (r + at) * st + box.x * bpp, r * st + box.x * bpp, r * st + (box.x + box.w) * bpp);
   }
   return pngCrop({ ...first, h, px }, { x: 0, y: 0, w: first.w, h });
 }

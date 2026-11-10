@@ -724,7 +724,10 @@ const LABEL_OF = `
 // (snapshotList). part "list": what's in the list, called again as it scrolls
 // and kept like whole's, each where it is with the list opened out (its y plus
 // how far the list is scrolled), cut to the list's box. part "rest": the rest of
-// the window, what's below the list moved down by `more`.
+// the window, what's below the list moved down by `more`. inset: how far down the
+// list's box a header that sticks in it reaches; once the list has scrolled, that
+// header was marked already (it stays put, so it would be marked again on every part)
+// and what's under it was shown whole by the part before.
 const collectJs = (whole, list = null) => `(() => { ${SCROLLER} ${DEEP} ${LABEL_OF}
   const SEL = ${JSON.stringify(CLICKABLE)};
   const W = innerWidth, H = innerHeight, X = ${whole ? "scrollX" : "0"}, Y = ${whole ? "scrollY" : "0"};
@@ -745,7 +748,8 @@ const collectJs = (whole, list = null) => `(() => { ${SCROLLER} ${DEEP} ${LABEL_
     if (t === 'a' || r === 'link') return 'link';
     return 'button';
   };
-  const stuck = (e) => { for (let n = e; n && n !== document.body; n = upOf(n)) if (/^(fixed|sticky)$/.test(getComputedStyle(n).position)) return true; return false; };
+  const stuck = (e, up = document.body) => { for (let n = e; n && n !== up; n = upOf(n)) if (/^(fixed|sticky)$/.test(getComputedStyle(n).position)) return true; return false; };
+  const INSET = IN && IN.inset > 0 ? IN.inset : 0;
   // in a shadow root: the path to its host, " >>> ", then the path in it (deepQuery)
   const cssPath = (e) => {
     const parts = [], root = e.getRootNode();
@@ -806,7 +810,8 @@ const collectJs = (whole, list = null) => `(() => { ${SCROLLER} ${DEEP} ${LABEL_
     const CL = inList ? LB : { left: 0, top: 0, right: W, bottom: H };
     // cut off at the list's bottom: the next part shows all of it (it overlaps), unless this is the
     // last; cut off at its top, the part before showed all of it
-    if (inList && b.height <= LB.bottom - LB.top && ((!IN.last && b.bottom > LB.bottom + 1) || (LIST.scrollTop > 0 && b.top < LB.top - 1))) continue;
+    if (inList && b.height <= LB.bottom - LB.top && ((!IN.last && b.bottom > LB.bottom + 1) || (LIST.scrollTop > 0 && b.top < LB.top + INSET - 1))) continue;
+    if (inList && LIST.scrollTop > 0 && stuck(e, LIST)) continue;
     const x = Math.max(CL.left, b.left), y = Math.max(CL.top, b.top), x2 = Math.min(CL.right, b.right), y2 = Math.min(CL.bottom, b.bottom);
     if (x2 - x < 4 || y2 - y < 4) continue;
     const st = getComputedStyle(e);
@@ -1031,6 +1036,23 @@ async function evaluate(page, expression) {
   if (exceptionDetails) throw new Error("Couldn't read the page: " + ((exceptionDetails.exception && exceptionDetails.exception.description) || exceptionDetails.text));
   return result && result.value;
 }
+// A list or page that loads more as it reaches its end (LinkedIn's Scheduled posts box
+// loads its later slots as it's scrolled down, and a whole-page map stopped at the first
+// end, on 4 Nov, when there were slots to the 16th: 2026-11-10): at the end, wait for
+// the page to go quiet and then up to GROW_MS more for it to have grown. `expr` reads
+// its length now; the new length, or `was` when nothing more came.
+const GROW_MS = 750;
+async function grown(page, expr, was) {
+  if (page.idle) await page.idle().catch(() => {});
+  for (const end = Date.now() + GROW_MS; ;) {
+    const now = Number(await evaluate(page, expr).catch(() => 0)) || 0;
+    if (now > was + 1) return now;
+    if (Date.now() >= end) return was;
+    await sleep(150);
+  }
+}
+const PAGE_LONG = "Math.max((document.scrollingElement || document.documentElement).scrollHeight, document.body ? document.body.scrollHeight : 0)";
+const listLong = (sel) => `(() => { ${DEEP} const e = deepOne(${JSON.stringify(sel)}); return e ? Math.round(e.scrollHeight - e.clientHeight) : 0; })()`;
 async function snapshotWhole(page, name) {
   const first = await evaluate(page, PAGE_HEIGHT);
   if (first.inside) return snapshotList(page, name);
@@ -1049,6 +1071,7 @@ async function snapshotWhole(page, name) {
       shots.push({ png: Buffer.from(data, "base64"), y: at }); end = at + VIEW.h;
       await evaluate(page, HIDE_STUCK);
       h = (await evaluate(page, PAGE_HEIGHT)).h;
+      if (end >= h && h < MAX_TALL) h = await grown(page, PAGE_LONG, h); // a page that loads more at its end
       if (end >= Math.min(MAX_TALL, h) || at < y) break; // the bottom (or it wouldn't scroll further)
       y = Math.min(at + VIEW.h - OVERLAP, Math.min(MAX_TALL, h) - VIEW.h);
     }
@@ -1070,11 +1093,19 @@ async function snapshotWhole(page, name) {
 // The page itself doesn't move, so the window is as it was after.
 async function snapshotList(page, name) {
   const top = await collect(page), sel = top.scroll && top.scroll.selector;
+  // the list's box in the window, from the top, and how far down it a header that sticks in it reaches
+  // (inset: LinkedIn's Scheduled posts box keeps its tabs there), scrolled to its top
   const box = sel && await evaluate(page, `(() => { ${DEEP} const e = deepOne(${JSON.stringify(sel)}); if (!e) return null;
-    const b = e.getBoundingClientRect(), x = Math.max(0, Math.round(b.left)), y = Math.max(0, Math.round(b.top));
-    return { x, y, w: Math.min(innerWidth, Math.round(b.right)) - x, h: Math.min(innerHeight, Math.round(b.bottom)) - y }; })()`);
+    e.scrollTo({ top: 0, behavior: 'instant' });
+    const b = e.getBoundingClientRect(), x = Math.max(0, Math.round(b.left)), y = Math.max(0, Math.round(b.top)), h = Math.min(innerHeight, Math.round(b.bottom)) - y;
+    let inset = 0;
+    for (const n of e.querySelectorAll('*')) {
+      const cs = getComputedStyle(n); if (!(cs.position === 'fixed' || (cs.position === 'sticky' && cs.top !== 'auto'))) continue;
+      const r = n.getBoundingClientRect(); if (r.height && r.top < y + h / 3 && r.bottom > y) inset = Math.max(inset, Math.round(r.bottom) - y);
+    }
+    return { x, y, w: Math.min(innerWidth, Math.round(b.right)) - x, h, inset: Math.min(inset, Math.floor(h / 2)) }; })()`);
   if (!box || box.w < 8 || box.h < 40) return { error: "Couldn't find the list that scrolls on this page. Use Scroll down to map the next part of it.", inside: true };
-  const room = MAX_TALL - VIEW.h, step = Math.max(20, box.h - Math.min(OVERLAP, Math.floor(box.h / 4)));
+  const seen = box.h - box.inset, room = MAX_TALL - VIEW.h, step = Math.max(20, seen - Math.min(OVERLAP, Math.floor(seen / 4)));
   let list = null, rest = null, at = -1, max = 0; const shots = [];
   await evaluate(page, "window.__symbiotWhole = null");
   try {
@@ -1082,8 +1113,9 @@ async function snapshotList(page, name) {
       const m = await evaluate(page, scrollJs(y, sel)); if (!m || m.y <= at) break; // it wouldn't scroll further
       await sleep(150);
       at = m.y; max = m.max;
+      if (at >= max && max < room) max = await grown(page, listLong(sel), max); // a list that loads more at its end
       const last = at >= Math.min(max, room);
-      if (!list || list.items.length < 200) list = await collect(page, collectJs(false, { selector: sel, part: "list", last }));
+      if (!list || list.items.length < 200) list = await collect(page, collectJs(false, { selector: sel, part: "list", last, inset: box.inset }));
       const { data } = await page.send("Page.captureScreenshot", { format: "png" });
       shots.push({ png: Buffer.from(data, "base64"), y: at });
       if (last) break;
@@ -1091,7 +1123,7 @@ async function snapshotList(page, name) {
     }
     rest = await collect(page, collectJs(false, { selector: sel, part: "rest", more: at }));
   } finally { await evaluate(page, `window.__symbiotWhole = null; ${scrollJs(0, sel)}`).catch(() => {}); }
-  const png = shots.length && stitchListPng(shots, box, at);
+  const png = shots.length && stitchListPng(shots, box, at, box.inset);
   if (!png) return { error: "Couldn't put the list's screenshots together." };
   const tall = VIEW.h + at, items = [...rest.items, ...list.items].filter((r) => r.y < tall).slice(0, 200);
   const s = saveScreen(name, png, { url: top.url, title: top.title, full: true, list: sel, items }, " (whole page)");
@@ -1365,6 +1397,12 @@ function scrollPage(id, to = "down", { who = "" } = {}) {
     if (!m) return { error: "Nothing scrolls on this page: it all fits in the window.", stay: true };
     if (m.y === m.from) return { error: `That's the ${/^(up|top)$/.test(to) ? "top" : "bottom"} of the page already.`, stay: true };
     await page.idle(); // a page that loads more as you scroll
+    // to the bottom: of all of it, where it loads more each time it gets there (LinkedIn's Scheduled posts)
+    for (let i = 0; to === "bottom" && i < 30; i++) {
+      const n = (await page.send("Runtime.evaluate", { expression: scrollJs("bottom", sc ? sc.selector || "" : null), returnByValue: true })).result?.value;
+      if (!n || n.y <= m.y) break;
+      m.y = n.y; m.max = n.max; await page.idle();
+    }
     // named for how far down it is: "Inbox ↓ 40%"
     const pct = m.max > 0 ? Math.round(m.y / m.max * 100) : 0;
     const next = await snapshot(page, s.name.replace(/ ↓ \d+%$/, "") + (pct ? ` ↓ ${pct}%` : ""));

@@ -2,6 +2,12 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one), for anyone who installs the app: what changed in it, never whose work it was (no projects, people, accounts, services, run ids or task wording of the person who made it). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.94.12 — 2026-11-10
+
+- **A list inside a pop-up is read to its very end**, even one that loads more as it's scrolled: `symbiot screens map --whole` and `screens whole` wait at the list's end for the rest to load and carry on, and `screens scroll <id> bottom` goes to the end of all of it, not just of what had loaded. A whole page that loads more at its bottom gets the same wait.
+- **A header that sticks at the top of a pop-up's list shows once** in a whole-page map, at the top, instead of on every part of it over the rows it hid; those rows are now in the map.
+- The marketing lane reads every scheduled post still to come live, all of it, for its weekly report and to find a post's free day, and lists any slot only its records have apart.
+
 ## 0.94.11 — 2026-11-05
 
 - **A goal whose older runs were cleared from the record now finishes and is judged**, instead of reading as still going forever. At most two follow-up runs start per pass, and none in a paused lane.

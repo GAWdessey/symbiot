@@ -33,7 +33,7 @@ import { resolveProvider, write, textOf } from "./ai.mjs";
 import { commits, discoveredRepos, laneMap } from "./scan.mjs";
 import { readTexts, pagePicture, pageClip, siteUrl, CLIP } from "./headless.mjs";
 import { runHandoff, runningHandoff } from "./agents.mjs";
-import { MARKETING_DIR, ensureMarketing, setDraftStatus, productOf, productNames, draftStatuses, postedCmd, parseDraft, inLane } from "./marketing.mjs";
+import { MARKETING_DIR, ensureMarketing, setDraftStatus, productOf, productNames, draftStatuses, postedCmd, parseDraft, inLane, liScheduledRead } from "./marketing.mjs";
 
 const PATHS = { posts: join(CONFIG_DIR, "posts.json"), log: join(CONFIG_DIR, "posts-log.jsonl"), voice: join(CONFIG_DIR, "voice.md"), media: join(CONFIG_DIR, "post-media"), test: join(CONFIG_DIR, "post-test.json") };
 const PLATFORM = "linkedin";
@@ -333,7 +333,7 @@ function handToMarketing(p, { now = Date.now(), paths = PATHS, dir = MARKETING_D
     const f = join(dir, ".symbiot", "ANSWERS.md"), had = existsSync(f) ? readFileSync(f, "utf8") : "# Answers\n";
     // It has no time of its own, so it goes on the next free day, never "now": three approved at once
     // all said post now, on a day that already had a post, against one a day (19 Oct 2026)
-    writeFileSync(f, `${had.replace(/\s*$/, "")}\n\n### Approved: ${rel}\nThe user approved this post under Drafts to post. It has no time of its own, so schedule it on LinkedIn for the next free day, in LinkedIn's own scheduler through Symbiot's signed-in browser: at most one post a day, so check what's already posted or scheduled on the profile, and the other approved drafts in this lane with a day, and take the first day with none, in the morning. Use exactly the text under its post (${p.text.length} characters, unchanged)${media.length ? ` and attach ${media.join(", ")}` : ""}. Then check it's in the scheduled posts, mark it posted for the day and time it goes out (\`${postedCmd(rel)} --at "YYYY-MM-DD HH:MM"\`), and say which day in your last message.\n_answered ${new Date(now).toISOString().slice(0, 10)}_\n`);
+    writeFileSync(f, `${had.replace(/\s*$/, "")}\n\n### Approved: ${rel}\nThe user approved this post under Drafts to post. It has no time of its own, so schedule it on LinkedIn for the next free day, in LinkedIn's own scheduler through Symbiot's signed-in browser: at most one post a day, so check what's already posted or scheduled on the profile (all of LinkedIn's scheduled slots, read live: \`${liScheduledRead()}\`), and the other approved drafts in this lane with a day, and take the first day with none, in the morning. Use exactly the text under its post (${p.text.length} characters, unchanged)${media.length ? ` and attach ${media.join(", ")}` : ""}. Then check it's in the scheduled posts, mark it posted for the day and time it goes out (\`${postedCmd(rel)} --at "YYYY-MM-DD HH:MM"\`), and say which day in your last message.\n_answered ${new Date(now).toISOString().slice(0, 10)}_\n`);
   } catch (e) { return { error: "Couldn't tell Marketing's agent: " + ((e && e.message) || e) }; }
   if (running(dir)) return { rel, queued: true, said: "Approved. Marketing's agent schedules it for the next free day on LinkedIn once the run there now finishes." };
   const e = run(dir, { force: true });
