@@ -30,6 +30,8 @@ try {
   const asked = [];
   const pi = await P.prItems({ prs: P.openedPrs(tasks, now), gh: async (args) => { asked.push(args.join(" ")); return JSON.stringify({ state: "OPEN", mergeable: "CONFLICTING" }); } });
   ok("one line each, what and where it stands", pi.length === 1 && pi[0].text === "PR symbiot#216 (symbiot): has conflicts" && pi[0].open && /pr view https:\/\/github\.com\/me\/symbiot\/pull\/216 --json/.test(asked[0]), [pi, asked]);
+  const pm = await P.prItems({ prs: P.openedPrs(tasks, now), gh: async () => JSON.stringify({ state: "MERGED", mergedAt: "2026-10-27T11:39:59Z" }) });
+  ok("a merged PR carries when GitHub merged it", pm.length === 1 && pm[0].state === "merged" && pm[0].mergedAt === "2026-10-27T11:39:59Z", pm);
   ok("gh signed out or missing: nothing listed, no error", (await P.prItems({ prs: P.openedPrs(tasks, now), gh: async () => null })).length === 0);
 
   console.log("NPM — a published package's version on the registry");
@@ -78,6 +80,11 @@ try {
   P.actOn([{ text: "PR symbiot#216 (symbiot): ready to merge", href: "https://github.com/me/symbiot/pull/216", kind: "pr", lane: "symbiot", subject: "symbiot#216", state: "ready to merge", open: true }], { map: {} });
   ok("…and approved again once GitHub has no objection", J.loadJobs().find((j) => j.key === blocked.key).state === "approved");
   ok("…a PR you closed is left alone", !added.some((a) => /atlas#3/.test(a[0])));
+  const handed = [], mergedIt = (n, at) => ({ text: `PR symbiot#${n} (symbiot): merged`, href: `https://github.com/me/symbiot/pull/${n}`, kind: "pr", lane: "symbiot", subject: `symbiot#${n}`, state: "merged", open: false, ...(at ? { mergedAt: at } : {}) });
+  const t0 = Date.parse("2026-11-10T09:03:00Z");
+  P.actOn([mergedIt(308, "2026-10-27T11:39:59Z"), mergedIt(370, "2026-11-10T08:40:00Z"), mergedIt(371)], { map: { symbiot: dl }, merged: (path, l, pr) => handed.push(pr), now: t0 });
+  ok("a merge weeks old the watch only now lists isn't news: no deploy step, no 'merged a minute ago' (#308, 10 Nov 2026)", !handed.some((h) => /\/308$/.test(h)), handed);
+  ok("…a fresh one is, and one GitHub gave no date for is too", handed.some((h) => /\/370$/.test(h)) && handed.some((h) => /\/371$/.test(h)), handed);
 
   console.log("STOPPED BY YOU — stays stopped");
   W.removeWatch(st.id);

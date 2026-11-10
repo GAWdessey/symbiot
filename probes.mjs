@@ -53,10 +53,10 @@ const prName = (url) => { const m = url.match(/github\.com\/([^/]+)\/([^/]+)\/pu
 async function prItems({ prs = openedPrs(), gh = (args) => run("gh", args) } = {}) {
   const out = [];
   for (const p of prs) {
-    const raw = await gh(["pr", "view", p.url, "--json", "state,mergeable,mergeStateStatus,statusCheckRollup"]);
+    const raw = await gh(["pr", "view", p.url, "--json", "state,mergeable,mergeStateStatus,statusCheckRollup,mergedAt"]);
     let v = null; try { v = JSON.parse(raw); } catch {}
     const st = prState(v); if (!st) continue;
-    out.push({ text: `PR ${prName(p.url)}${p.lane ? ` (${p.lane})` : ""}: ${st}`, href: p.url, kind: "pr", lane: p.lane, subject: prName(p.url), state: st, open: v.state === "OPEN" });
+    out.push({ text: `PR ${prName(p.url)}${p.lane ? ` (${p.lane})` : ""}: ${st}`, href: p.url, kind: "pr", lane: p.lane, subject: prName(p.url), state: st, open: v.state === "OPEN", ...(st === "merged" && v.mergedAt ? { mergedAt: String(v.mergedAt) } : {}) });
   }
   return out;
 }
@@ -259,9 +259,15 @@ async function readStates({ map, deps = {} } = {}) {
 // waiting for "once Meta approves it" goes then, and not to check again before.
 // merged: a PR of Symbiot's that merged goes to its lane's deploy (deploy.mjs onMerged: "Deploy it?",
 // or with a standing yes, deployed and checked).
+// Only a merge GitHub dates within MERGE_NEWS is one: the watch listed #181, #279 and #308, merged 2 to 4
+// weeks before, as new on 10 Nov 2026, and each became "merged a minute ago, not live" and a run to roll
+// out what had been live for weeks.
+const MERGE_NEWS = 3 * 86400e3;
+const freshMerge = (it, now) => { const t = Date.parse(it.mergedAt || ""); return !Number.isFinite(t) || now - t < MERGE_NEWS; };
 function actOn(items, { map = {}, add, run, merged, now = Date.now() } = {}) {
   const did = [];
   for (const it of items || []) {
+    if (it.kind === "pr" && it.state === "merged" && !freshMerge(it, now)) { did.push({ old: it.lane, pr: it.href }); continue; }
     if (it.kind === "pr" && it.state === "merged" && it.lane && map[it.lane] && merged) { try { Promise.resolve(merged(map[it.lane], it.lane, it.href)).catch(() => {}); did.push({ merged: it.lane, pr: it.href }); } catch {} }
     // the job record follows GitHub: a queued merge that is blocked says so (PR #258 read "merge queued" while it had conflicts, 23 Oct 2026), and says approved again once it clears
     if (it.kind === "pr" && it.open && it.lane && it.href) {

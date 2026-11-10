@@ -205,7 +205,8 @@ function afterShip(path, repo, pr, stage, { ask = true, files } = {}) {
   if (pr) markTasks(repo, pr, live);
   const asked = ask && target && pr ? deployAsk(path, repo, pr, target, stage) : false; // stage: an Approve that queued the merge isn't merged yet (PR #209 was asked about as merged, 19 Oct 2026)
   if (pr) landed(repo, pr); // the lane's runs that waited for this Approve are done, in this PR
-  if (pr) track(prKey(repo, pr), { kind: "pr", lane: repo, text: `PR ${pr}`, pr, state: stage === "merged" ? "merged" : "approved", waitingOn: asked ? "user" : "", note: live.text });
+  // merged with nothing to deploy is finished, not "merged, not live": that state starts a rollout run (intuition.mjs)
+  if (pr) track(prKey(repo, pr), { kind: "pr", lane: repo, text: `PR ${pr}`, pr, state: stage !== "merged" ? "approved" : live.state === "none" ? "done" : "merged", waitingOn: asked ? "user" : "", note: live.text });
   return { ...live, ...(target ? { target: where(target) } : {}), ...(asked ? { asked: true } : {}) };
 }
 // Checked on the live site: the tasks of a PR (or the one task) are live now.
