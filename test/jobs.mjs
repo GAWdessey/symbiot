@@ -14,7 +14,7 @@ let pass = 0, fail = 0;
 const ok = (n, c, got) => { if (c) { pass++; console.log("  ✓ " + n); } else { fail++; console.log("  ✗ " + n + (got !== undefined ? "  got: " + JSON.stringify(got).slice(0, 400) : "")); } };
 const J = await import("../jobs.mjs");
 const D = await import("../deploy.mjs");
-const { saveTasks } = await import("../core.mjs");
+const { saveTasks, saveConfig, loadConfig } = await import("../core.mjs");
 const T0 = 1_800_000_000_000;
 
 console.log("A JOB'S ROW");
@@ -31,6 +31,7 @@ J.track("run:a1", { state: "failed" }, { now: T0 + 120e3 });
 ok("an ended job waits on nobody", J.loadJobs()[0].waitingOn === "" && J.waitingOnUser().length === 0);
 
 console.log("MERGED IS NOT LIVE");
+saveConfig({ ...loadConfig(), deploy: { web: { where: "prod-box", url: "https://web.example" } } }); // web ships somewhere
 saveTasks([{ id: "t1", text: "fix it", repo: "web", pr: "https://github.com/o/web/pull/42", archived: true, done: true }]);
 D.afterShip(null, "web", "https://github.com/o/web/pull/42", "approved", { ask: false, files: [] });
 ok("an Approve that queued the merge says approved, not merged", J.loadJobs().find((j) => j.key === "pr:web#42")?.state === "approved");
@@ -38,6 +39,8 @@ D.afterShip(null, "web", "https://github.com/o/web/pull/42", "merged", { ask: fa
 ok("merged once it is", J.loadJobs().find((j) => j.key === "pr:web#42")?.state === "merged");
 D.markLive("t1");
 ok("live only when checked", J.loadJobs().find((j) => j.key === "pr:web#42")?.state === "live");
+D.afterShip(null, "cli", "https://github.com/o/cli/pull/5", "merged", { ask: false, files: [] });
+ok("a lane with nothing to deploy is done once merged, not 'merged, not live'", J.loadJobs().find((j) => j.key === "pr:cli#5")?.state === "done");
 
 console.log("WHAT THE CHAT AND THE TERMINAL SAY");
 J.track("task:e1", { kind: "email", text: "Email the partner", state: "sent" }, { now: T0 });

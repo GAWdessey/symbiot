@@ -56,6 +56,8 @@ const site = lane("site", { ".github/workflows/pages.yml": PAGES }), sitePr = "h
 ok("a workflow's paths are what it deploys for", JSON.stringify(D.deployTarget(site, "site").paths) === JSON.stringify(["site/**", ".github/workflows/pages.yml"]), D.deployTarget(site, "site"));
 const code = D.afterShip(site, "site", sitePr, "merged", { files: ["agents.mjs", "test/x.mjs"] });
 ok("a PR that changed none of them: no deploy question, and it says there's nothing to deploy", !code.asked && code.state === "none" && /None of its files/.test(code.text) && !/Deploy site/.test((() => { try { return readFileSync(join(site, ".symbiot", "QUESTIONS.md"), "utf8"); } catch { return ""; } })()), code);
+{ const J = await import("../jobs.mjs"), j = J.loadJobs().find((x) => x.key === J.prKey("site", sitePr));
+  ok("…and its job is finished, not 'merged, not live' (that state starts a rollout run)", j && j.state === "done" && /None of its files/.test(j.note), j); }
 const page = D.afterShip(site, "site", "https://github.com/x/site/pull/211", "merged", { files: ["agents.mjs", "site/index.html"] });
 ok("…one that changed a site file is asked about, as before", page.asked && page.state === "pending", page);
 ok("…and when GitHub can't say which files, it's asked as before", D.afterShip(site, "site", "https://github.com/x/site/pull/212", "merged", { files: null }).asked === true);
