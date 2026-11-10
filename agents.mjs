@@ -2553,27 +2553,38 @@ function autoStart(path, { now = Date.now(), take = true, key = "" } = {}) {
   if (take) { all[path] = { ...rec, starts: [...starts, k ? { t: now, k } : now] }; delete all[path].due; saveContinued(all); }
   return true;
 }
+// Why a queued run was not started (0.94.12): the 9-10 Nov 2026 stall had ten quiet hours with no log saying why.
+// One line in .symbiot/not-started.log each time the reason for a lane changes (not every minute).
+function notStarted(path, why, now = Date.now()) {
+  try {
+    const f = join(path, ".symbiot", "not-started.log"); let last = ""; try { last = readFileSync(f, "utf8").trimEnd().split("\n").pop() || ""; } catch {}
+    if (last.replace(/^\S+ /, "") === "not started: " + why) return false;
+    appendFileSync(f, `${new Date(now).toISOString()} not started: ${why}\n`); return true;
+  } catch { return false; }
+}
 function continueLanes({ now = Date.now(), run = runHandoff, runs = loadRuns } = {}) {
   const out = [], seen = loadContinued(), was = JSON.stringify(seen), paths = [...new Set(runs().map((r) => r.path).filter(Boolean))];
   for (const p of Object.keys(seen)) if (!paths.includes(p) && (!existsSync(p) || now - ((seen[p] && seen[p].at) || 0) > CONTINUED_KEEP)) delete seen[p];
   for (const path of paths) {
     try {
-      if (runningHandoff(path) || isParked(path)) continue;
+      if (runningHandoff(path)) continue;
+      if (isParked(path)) { notStarted(path, "the lane is parked", now); continue; }
       // a [~] that names no real blocker is open work too (idleWaits): nothing would ever start it again
       // and so is one waiting on a question no one is asked (lostAsks): it asks it again
       const md = readSymbiot(path, "TASKS.md"), open = (md.match(/^\s*(?:[-*+]|\d+[.)])\s*\[ \]/gm) || []).length + idleWaits(md, handedLanes(path)).length + (lostAsks(path, { md }).length ? 1 : 0);
       if (!open) { delete seen[path]; continue; }
+      const hold = (why) => notStarted(path, why, now);
       let ended = 0; try { ended = statSync(join(path, ".symbiot", "agent.log")).mtimeMs; } catch { continue; }
-      if (now - ended < CONTINUE_AFTER) continue;
+      if (now - ended < CONTINUE_AFTER) { hold("its last run ended under 2 minutes ago"); continue; }
       const ticked = (md.match(/^\s*(?:[-*+]|\d+[.)])\s*\[[xX]\]/gm) || []).length;
       const tasks = openTasks(path), last = seen[path], all = autoStarts(last, now), starts = all.filter((x) => !startKey(x)); // its own starts: keyed ones are other work's (autoStart)
-      if (starts.length >= AUTO_MAX || all.length >= AUTO_FOLDER_MAX) continue;
+      if (starts.length >= AUTO_MAX || all.length >= AUTO_FOLDER_MAX) { hold(`the hourly cap is used (${starts.length} of ${AUTO_MAX} for this work, ${all.length} of ${AUTO_FOLDER_MAX} in this folder)`); continue; }
       // its newest run's record says why it stopped: only one that stopped with work it can still do
       // (paused) is started again; one waiting on the user, a lane, a reply or a time isn't (0.68.1)
-      const rec = runRecord(path); if (rec && rec.state !== "paused") continue;
-      if (last && last.open && !last.due && tasks.length >= last.open.length) continue;
-      if (blockedAgain(path, runCmdOf(path))) continue;
-      const e = run(path); if (e && e.id && !e.busy && !e.blocked) { seen[path] = { ticked, open: tasks, at: now, starts: [...all, now] }; out.push(path); }
+      const rec = runRecord(path); if (rec && rec.state !== "paused") { hold(`its last run stopped as "${rec.state}", not paused, so it waits on that`); continue; }
+      if (last && last.open && !last.due && tasks.length >= last.open.length) { hold("the last start made no progress on its open tasks"); continue; }
+      if (blockedAgain(path, runCmdOf(path))) { hold("the run command is blocked again (same fault as before)"); continue; }
+      const e = run(path); if (e && (e.busy || e.blocked)) hold(e.busy ? "the lane is busy" : `the start was blocked${e.note ? ": " + String(e.note).slice(0, 160) : ""}`); if (e && e.id && !e.busy && !e.blocked) { seen[path] = { ticked, open: tasks, at: now, starts: [...all, now] }; out.push(path); }
     } catch {}
   }
   if (JSON.stringify(seen) !== was) saveContinued(seen);
@@ -2975,4 +2986,4 @@ function agentsNow({ now = Date.now() } = {}) {
 }
 const forgetAgents = () => { agentsKept = null; };
 
-export { bouncedInARow, BOUNCE_MAX, previewMedia, PREVIEW_MEDIA, QLINES, finishedRuns, restarting, saysNoBrowser, BROWSER_NOTE, setupChore, SETUP_CHORE, lostAsks, noteLostAsks, handoffsSig, handBlocked, ensureRunnable, launcherOf, launchFault, opsWalls, walled, OPS_RO, OPS_OWN, OPS_HIDDEN, runOpen, namedRun, twinRunning, TWIN_WAIT, wholeLog, uiReview, onGoalAnswer, runOutcome, settleRecord, waitsOutside, triageSweep, runSection, autoStart, AUTO_MAX, AUTO_FOLDER_MAX, oneNeedEach, NOTHING_FOR_YOU, chaseReport, CHASED, UNMET, heldAsk, onCardGone, withOwnTools, escalation, grantCard, cardRules, cardIsPermission, runPhase, onRunEnd, isClaudeCmd, GUARD, tidyRule, tidyRules, tidySettings, pruneRuns, claudePlugins, idlePlugins, runSettings, archiveAnswers, allAnswers, answersDigest, ANSWERS_ARCHIVE, ANSWERS_KEEP, runsTick, RUN_START, HANG_MIN, noteBlocked, userAnswers, CONTINUED_FILE, onAnswered, CHANGES, toKnownHost, continueLanes, autoPick, autoDecide, FACTS, factsOf, knownRun, withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, linkReach, fillHandoff, runHandoff, nothingToDo, whereOf, whereLine, whereAnswer, askTask, PARKED_NOTE, parkedPaths, isParked, parkLane, agentMissing, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, unchangedStep, waitingFor, offLimits, startWaiting, noteUntracked, untrackedBefore, forgetUntracked, writeTasks, droppedTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, pickAgent, findOrcaCli, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, routeIdeas, agentQuestions, answerQuestions, agentsList, agentsNow, forgetAgents, AGENTS_KEEP, needsOf, settleNeeds, closeAsk, closedAsk, sameSubject, NEEDS_FOR, readLastWords, readNeeds, parseRead, READ_FILE, autoAllow, autoAllowSweep, allowlistInWork, installAllowlist, inWork, withScope, withTrust, sandboxFor, sandboxLifts, sandboxEnv, sandboxNeeds, sandboxState, sandboxWrites, SANDBOX_DIR, resumeFor, noteSession, tooLong, carryOn, RESUME_CTX, CARRY_PROMPT, trustFull, GUARD_SETTINGS, runCmdOf, claimLock, wideRoot, sandboxDenies, questionFolders, folderState, dirtyState, ANSWERS_SEEN, newAnswers, claudeDownIn, claudePause, noteClaudeDown, resetTime, PAUSE_FILE, startGap, isUrgent, urgentStop, urgentFirst, urgentUndo, urgentDone, urgentSweep, urgentState, licenceGate, stopRun, loadRunFiles, saveRunFiles, forgetRunFiles, withModel, routedModel, userWords, onShipping, waitingTask, namedBlocker, tildeNote, idleWaits };
+export { notStarted, bouncedInARow, BOUNCE_MAX, previewMedia, PREVIEW_MEDIA, QLINES, finishedRuns, restarting, saysNoBrowser, BROWSER_NOTE, setupChore, SETUP_CHORE, lostAsks, noteLostAsks, handoffsSig, handBlocked, ensureRunnable, launcherOf, launchFault, opsWalls, walled, OPS_RO, OPS_OWN, OPS_HIDDEN, runOpen, namedRun, twinRunning, TWIN_WAIT, wholeLog, uiReview, onGoalAnswer, runOutcome, settleRecord, waitsOutside, triageSweep, runSection, autoStart, AUTO_MAX, AUTO_FOLDER_MAX, oneNeedEach, NOTHING_FOR_YOU, chaseReport, CHASED, UNMET, heldAsk, onCardGone, withOwnTools, escalation, grantCard, cardRules, cardIsPermission, runPhase, onRunEnd, isClaudeCmd, GUARD, tidyRule, tidyRules, tidySettings, pruneRuns, claudePlugins, idlePlugins, runSettings, archiveAnswers, allAnswers, answersDigest, ANSWERS_ARCHIVE, ANSWERS_KEEP, runsTick, RUN_START, HANG_MIN, noteBlocked, userAnswers, CONTINUED_FILE, onAnswered, CHANGES, toKnownHost, continueLanes, autoPick, autoDecide, FACTS, factsOf, knownRun, withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, linkReach, fillHandoff, runHandoff, nothingToDo, whereOf, whereLine, whereAnswer, askTask, PARKED_NOTE, parkedPaths, isParked, parkLane, agentMissing, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, unchangedStep, waitingFor, offLimits, startWaiting, noteUntracked, untrackedBefore, forgetUntracked, writeTasks, droppedTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, pickAgent, findOrcaCli, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, routeIdeas, agentQuestions, answerQuestions, agentsList, agentsNow, forgetAgents, AGENTS_KEEP, needsOf, settleNeeds, closeAsk, closedAsk, sameSubject, NEEDS_FOR, readLastWords, readNeeds, parseRead, READ_FILE, autoAllow, autoAllowSweep, allowlistInWork, installAllowlist, inWork, withScope, withTrust, sandboxFor, sandboxLifts, sandboxEnv, sandboxNeeds, sandboxState, sandboxWrites, SANDBOX_DIR, resumeFor, noteSession, tooLong, carryOn, RESUME_CTX, CARRY_PROMPT, trustFull, GUARD_SETTINGS, runCmdOf, claimLock, wideRoot, sandboxDenies, questionFolders, folderState, dirtyState, ANSWERS_SEEN, newAnswers, claudeDownIn, claudePause, noteClaudeDown, resetTime, PAUSE_FILE, startGap, isUrgent, urgentStop, urgentFirst, urgentUndo, urgentDone, urgentSweep, urgentState, licenceGate, stopRun, loadRunFiles, saveRunFiles, forgetRunFiles, withModel, routedModel, userWords, onShipping, waitingTask, namedBlocker, tildeNote, idleWaits };
