@@ -304,6 +304,7 @@ console.log("MARKETING — LinkedIn linked: no card asks you to sign in or do it
   mkdirSync(join(M.MARKETING_DIR, "drafts", "symbiot"), { recursive: true }); writeFileSync(join(M.MARKETING_DIR, H), readFileSync(join(dir, H), "utf8")); // the lane's own, where a report's path points
   const rr = readReport("x", { list: [{ id: "x", title: "t", name: "LINK-CHECK.md", file: join(dir, ".symbiot", "LINK-CHECK.md"), folder: dir, mtime: 1 }], mark: false });
   ok("an opened report hands the UI those cards, to render with Approve, Reject and Change", Array.isArray(rr.cards) && rr.cards.join() === H, rr.cards);
+  ok("the brief: a weekly report's coming LinkedIn slots come from a live read of all of the scheduler, those only in records listed apart", /screens map "https:\/\/www\.linkedin\.com\/feed\/\?shareActive=true&view=management" --whole/.test(M.marketingBrief([]).join("\n")) && /to its very end/.test(M.marketingBrief([]).join("\n")) && /only in your records, never as if read from LinkedIn/.test(M.marketingBrief([]).join("\n")));
   ok("the brief: Show HN is submitted by the agent, no hand-offs a signed-in site could do", /never write \\?"submit by hand\\?"/i.test(M.marketingBrief([]).join("\n")) && /hands the user a step a connector or a signed-in site could do|never hand the user a step a connector or a signed-in site could do/i.test(M.marketingBrief([]).join("\n")));
 }
 
