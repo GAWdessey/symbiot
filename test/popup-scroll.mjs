@@ -47,13 +47,33 @@ L.addEventListener('scroll', () => {
   fetch('/more?from=' + n).then((r) => r.text()).then((h) => { S.insertAdjacentHTML('beforeend', h); busy = false; });
 });
 </script></body>`;
+// The UI review's page (round 1, 2026-11-11): a pop-up drawn as a div over a dimmed page (the
+// backdrop holds the pop-up, so whatever is at a row's spot is "inside" it), 40 rows that load 10
+// at a time with a sticky tab header. After Scroll bottom, rows scrolled up out of the list sat
+// over the backdrop and were still marked (Edit slot 27 at y=0): pressing one clicked the page.
+const review = `<!doctype html><html><head><meta charset=utf-8><title>Scheduled posts</title><style>
+body{font:15px system-ui;margin:0;background:#eee}
+.back{position:fixed;inset:0;background:rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center}
+.modal{background:#fff;width:520px;height:560px;border-radius:8px;display:flex;flex-direction:column}
+.modal h2{margin:0;padding:16px}
+#list{overflow-y:auto;flex:1}
+.tabs{position:sticky;top:0;background:#fff;padding:10px 16px;border-bottom:1px solid #ccc;display:flex;gap:8px}
+.row{display:flex;justify-content:space-between;padding:14px 16px;border-bottom:1px solid #eee}
+</style></head><body><main><p>Feed behind</p></main>
+<div class=back role=dialog aria-modal=true><div class=modal><h2>Scheduled posts</h2>
+<div id=list><div class=tabs><button>Schedule post</button><button>Scheduled</button></div><div id=rows></div></div></div></div>
+<script>
+let n=0;const rows=document.getElementById('rows'),L=document.getElementById('list');
+function more(k){for(let i=0;i<k&&n<40;i++){n++;rows.insertAdjacentHTML('beforeend','<div class=row><span>Post '+n+'</span><button>Edit slot '+n+'</button></div>')}}
+more(10);L.addEventListener('scroll',()=>{if(L.scrollTop+L.clientHeight>=L.scrollHeight-2&&n<40){fetch("/more?n="+n);setTimeout(()=>more(10),300)}});
+</script></body></html>`;
 const count = (labels, l) => labels.filter((x) => x === l).length;
 if (!chromeBinary()) console.log("  - no Chrome here: skipped");
 else {
   const srv = createServer((q, r) => {
     const u = new URL(q.url, "http://x");
     if (u.pathname === "/more") return setTimeout(() => { r.writeHead(200, { "content-type": "text/html" }); r.end(rows(+u.searchParams.get("from") || 0)); }, 300);
-    r.writeHead(200, { "content-type": "text/html" }); r.end(u.pathname === "/lazy" ? lazy : page);
+    r.writeHead(200, { "content-type": "text/html" }); r.end(u.pathname === "/lazy" ? lazy : u.pathname === "/review" ? review : page);
   }).listen(0, "127.0.0.1");
   await new Promise((r) => srv.on("listening", r));
   h.keepBrowserOpen(60000);
@@ -78,6 +98,23 @@ else {
     const m1 = await h.mapPage(base, "Scheduled lazy");
     const bt = await h.scrollPage(m1.id, "bottom"), bls = ((bt && bt.regions) || []).map((r) => r.label);
     ok("Scroll bottom goes to the end of all of it, not the end of what had loaded", bls.includes(`Posting slot ${LAZY_ALL} of ${LAZY_ALL}`), { error: bt && bt.error, labels: bls.slice(-4), scroll: bt && bt.page && bt.page.scroll });
+
+    console.log("the UI review's pop-up (a div over a dimmed page):");
+    const rv = "127.0.0.1:" + srv.address().port + "/review";
+    const r1 = await h.mapPage(rv, "Review pop-up");
+    const rb = await h.scrollPage(r1.id, "bottom"), rbs = ((rb && rb.regions) || []).filter((r) => /^Edit slot/.test(r.label));
+    const box = (rb.regions || []).find((x) => x.label === "Scheduled");
+    ok("Scroll bottom reaches the last row", rbs.some((r) => r.label === "Edit slot 40"), rbs.map((r) => r.label).slice(-3));
+    ok("…and marks no row that has scrolled out of the pop-up's list", rbs.every((r) => +r.label.match(/\d+/)[0] >= 30) && rbs.every((r) => !box || r.y >= box.y), rbs.map((r) => r.label + "@" + r.y).slice(0, 5));
+    ok("…the two tabs are still marked", !!box && (rb.regions || []).some((x) => x.label === "Schedule post"));
+    // cold each time: a fresh browser, as the first run of the day is (one in five stopped at 10 rows)
+    let short = [];
+    for (let i = 0; i < 3; i++) {
+      await h.closeBrowser();
+      const wr = await h.mapPage(rv, "Review whole " + i, { whole: true }), got = ((wr && wr.regions) || []).filter((r) => /^Edit slot/.test(r.label)).length;
+      if (got !== 40) short.push({ run: i, got, error: wr && wr.error, note: wr && wr.note });
+    }
+    ok("map --whole reads all 40 rows in a cold browser, every time", !short.length, short);
   } catch (e) { if (e.message !== "skip") throw e; } finally { srv.close(); h.keepBrowserOpen(0); await h.closeBrowser(); }
 }
 rmSync(HOME, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
