@@ -1654,7 +1654,7 @@ function runningHandoff(path) {
 }
 // ---- runs that hang, and runs that ended while the app was down --------------
 // A hung `claude` (no output at all for HANG_MIN minutes) held its lane for as long
-// as the app ran: the 20-minute stall (work.mjs STALL_MS) only showed on its block.
+// as the app ran: the 10-minute quiet warning (work.mjs STALL_MS) only showed on its block.
 // runsTick, every minute: a run whose log hasn't changed for that long is stopped,
 // its whole process group (track starts it detached), SIGTERM then SIGKILL, and its
 // log says why. config.runHangMinutes sets the time (45 by default: a single command
@@ -1665,7 +1665,7 @@ function runningHandoff(path) {
 // restart mid-run skipped all of it, and Approve could leave that run's files out.
 // So it's on disk too (.symbiot/run-start.json), and once the run's pid is gone with
 // no exit seen, runsTick does the same bookkeeping from it.
-const RUN_START = "run-start.json", HANG_MIN = 45, START_MAX_FILES = 20000;
+const RUN_START = "run-start.json", HANG_MIN = 30, START_MAX_FILES = 20000;
 function saveRunStart(path, e, dirtyBefore, ticksBefore) {
   if (dirtyBefore && Object.keys(dirtyBefore).length > START_MAX_FILES) dirtyBefore = null; // a tree that big: not worth a file every run
   try { writeJsonAtomic(join(path, ".symbiot", RUN_START), { id: e.id, pid: e.pid, startedAt: e.startedAt, owner: process.pid, dirtyBefore, ticksBefore }, { indent: 0 }); } catch {}
