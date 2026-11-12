@@ -400,7 +400,11 @@ async function goalsTick(deps = {}, { now = Date.now() } = {}) {
     const g = { ...g0, children: [...(g0.children || [])], paths: [...(g0.paths || [])] };
     if (!g.doneWhen && deps.write) { const d = await doneWhenFor(g, { write: deps.write }); if (d) g.doneWhen = d.doneWhen; }
     adopt(g, ctx);
-    const r = rollUp(g, ctx), sig = `${r.state}|${r.waitingOn}|${r.what}|${g.children.length}|${r.kids.filter((c) => c.state === "ended").length}`;
+    const r = rollUp(g, ctx);
+    // its lane is paused and no agent of it is in the live list: parked, not "running now" (12 Nov 2026: a brokerly goal
+    // read "running now" for days while brokerly was paused and nothing ran)
+    if (r.state === "running" && parked(g) && !(g.paths || []).some((p) => { try { return ctx.running(p); } catch { return false; } })) { r.state = "waiting"; r.waitingOn = "paused lane"; r.what = "its lane is paused: nothing more is run on it until it's turned back on"; }
+    const sig = `${r.state}|${r.waitingOn}|${r.what}|${g.children.length}|${r.kids.filter((c) => c.state === "ended").length}`;
     if (sig !== g.sig) { g.sig = sig; g.moved = now; if (g.card && g.card.kind === "stalled") g.card = null; }
     g.state = r.state === "ended" ? "running" : r.state; g.waitingOn = r.waitingOn; g.what = r.what;
     if (r.state === "waiting") g.since = g.since && g.sinceOn === r.waitingOn ? g.since : (r.since || now), g.sinceOn = r.waitingOn; else { g.since = 0; g.sinceOn = ""; }
@@ -467,7 +471,7 @@ async function goalsTick(deps = {}, { now = Date.now() } = {}) {
         if (until && until <= now && start(c.path, "the time it waited for came") && deps.settle) deps.settle(c.path, "the time it waited for came");
       }
     }
-    if (g.state !== "done" && !(r.state === "waiting" && r.waitingOn === ELSEWHERE) && now - (g.moved || g.at) > STALL_AFTER && (!g.card || g.card.kind === "user")) g.card = { kind: "stalled", q: `Stalled: ${g.text}, ${g.waitingOn ? `waiting on ${g.waitingOn === "user" ? "you" : g.waitingOn}${g.what ? ` (${clip(g.what, 120)})` : ""}` : "with nothing moving"} since ${new Date(g.moved || g.at).toLocaleString("en-ZA", { hour12: false })}`, options: ["Look into it now", "Keep waiting", "Drop it"], at: now };
+    if (g.state !== "done" && g.waitingOn !== "paused lane" && !(r.state === "waiting" && r.waitingOn === ELSEWHERE) && now - (g.moved || g.at) > STALL_AFTER && (!g.card || g.card.kind === "user")) g.card = { kind: "stalled", q: `Stalled: ${g.text}, ${g.waitingOn ? `waiting on ${g.waitingOn === "user" ? "you" : g.waitingOn}${g.what ? ` (${clip(g.what, 120)})` : ""}` : "with nothing moving"} since ${new Date(g.moved || g.at).toLocaleString("en-ZA", { hour12: false })}`, options: ["Look into it now", "Keep waiting", "Drop it"], at: now };
     g.history = g.history || [];
     if (JSON.stringify(g) !== JSON.stringify(g0)) putGoal(g, { now });
   }
