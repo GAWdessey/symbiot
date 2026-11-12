@@ -812,7 +812,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       if (u.pathname === "/api/lanes") return jsonTag(req, res, lanesState());
       // a parked project (lane) starts no agent runs until it's unparked (agents.mjs parkLane)
       if (u.pathname === "/api/lanes/parked") { const map = laneMap(), ps = parkedPaths(); return json(res, { repos: Object.keys(map).filter((n) => ps.includes(map[n])), paths: ps }); }
-      if (u.pathname === "/api/lanes/park" && req.method === "POST") { const b = await readBody(req), map = laneMap(), p = Object.values(map).includes(String(b.path || "")) ? String(b.path) : map[String(b.repo || "")]; if (!p) return json(res, { error: "That project isn't on this computer." }); return json(res, parkLane(p, b.on !== false)); }
+      if (u.pathname === "/api/lanes/park" && req.method === "POST") { const b = await readBody(req), map = laneMap(), p = Object.values(map).includes(String(b.path || "")) ? String(b.path) : map[String(b.repo || "")]; if (!p) return json(res, { error: "That project isn't on this computer." }); return json(res, parkLane(p, b.on !== false, { by: "you" })); }
       // Watch (watch.mjs): a mapped page read again every few minutes, and what's new on it.
       if (u.pathname === "/api/watch") return json(res, watchState());
       // on a phone paired with your computer: the computer's Dashboard, from the copy it sent (phone.mjs boardForPhone)

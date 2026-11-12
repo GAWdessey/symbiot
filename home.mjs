@@ -22,9 +22,9 @@ import { readFileSync, writeFileSync, mkdirSync, statSync, existsSync } from "no
 import { watchBoard, draftReply, draftCards, draftAnswer } from "./watch.mjs";
 import { pendingReview, pushTasks, addTask, taskType, releaseNotIn, unplacedTasks } from "./tasks.mjs";
 import { estimate, estimateWords } from "./estimate.mjs";
-import { handoffsSig, newAnswers, launchFault, ensureRunnable, agentQuestions, answerQuestions, heldAsk, grantCard, cardIsPermission, onCardGone, setHandoffCmd, agentsList, agentsNow, forgetAgents, runHandoff, runningHandoff, handoffCmd, loadRuns, connectorsInfo, parkedPaths, agentMissing, settleNeeds, closeAsk, sameSubject, pickAgent, detectHandoffs, linkReach, unchangedStep, namedFiles, whereOf, claudePause, parkLane, waitingTask, namedBlocker, autoStart, settleRecord } from "./agents.mjs";
+import { handoffsSig, newAnswers, launchFault, ensureRunnable, agentQuestions, answerQuestions, heldAsk, grantCard, cardIsPermission, onCardGone, setHandoffCmd, agentsList, agentsNow, forgetAgents, runHandoff, runningHandoff, handoffCmd, loadRuns, connectorsInfo, parkedPaths, parkedOnPurpose, agentMissing, settleNeeds, closeAsk, sameSubject, pickAgent, detectHandoffs, linkReach, unchangedStep, namedFiles, whereOf, claudePause, parkLane, waitingTask, namedBlocker, autoStart, settleRecord } from "./agents.mjs";
 import { stallCards, loadStall, saveStall } from "./stall.mjs";
-import { isDone, recordDone, recordCard, cardDone, decidedBy, endTalk, doneList, asksBack, askBackNote, wantsReport, closesAsk, heldBy, reportsSince, talkOf, addTalk, talkText, YES, asksQ, saysDone, wantsToRead } from "./asksdone.mjs";
+import { isDone, recordDone, recordCard, cardDone, decidedBy, endTalk, doneList, asksBack, askBackNote, wantsReport, closesAsk, heldBy, reportsSince, talkOf, addTalk, talkText, YES, asksQ, saysDone, wantsToRead, rejectedList } from "./asksdone.mjs";
 import { captureSecrets, asksForSecret, meetsStep } from "./vault.mjs";
 import { linksState, signInAsked } from "./links.mjs";
 import { knowledgeState } from "./knowledge.mjs";
@@ -100,15 +100,34 @@ function unplacedCards(tasks, names) {
       sub: `so nothing picks ${n > 1 ? "them" : "it"} up: “${plain(ts[0].text, 70)}”${n > 1 ? ` and ${n - 1} more` : ""}. Pick ${n > 1 ? "their" : "its"} lane on the Workdesk`, shape: "tasks" };
   });
 }
+// A lane Symbiot isn't to work: turning it back on is an option the user turned down ("turning the Brokerly lane back
+// on"), or a decision on record says it's worked elsewhere ("Garth runs Brokerly work in Orca, not Symbiot").
+// rejected: the options' words; decisions: each decision's name and fact, as one line.
+const ON_AGAIN = /\b(back on|unpark|turn(?:ing|ed|s)? (?:\S+ ){0,3}on\b|resum|restart|start(?:ing)? (?:\S+ )?again)/i;
+const ELSEWHERE = /\bnot (?:in |on |through |with |from )?symbiot\b|\bsymbiot (?:doesn'?t|does not|won'?t|never|isn'?t to) (?:work|run)s? on\b|\bunpark\b|\bworked elsewhere\b/i;
+function laneOffSymbiot(name, { rejected = [], decisions = [] } = {}) {
+  const n = String(name || "").trim(); if (!n || /^symbiot$/i.test(n)) return false;
+  const re = new RegExp(`(^|[^\\w-])${n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}($|[^\\w-])`, "i");
+  return rejected.some((o) => re.test(o) && ON_AGAIN.test(o)) || decisions.some((d) => re.test(d) && ELSEWHERE.test(d));
+}
+const offSymbiotRecord = () => {
+  let rejected = [], decisions = [];
+  try { rejected = rejectedList().map((x) => x.option); } catch {}
+  try { decisions = (loadMind().nodes || []).filter((x) => x && x.kind === "decision").flatMap((x) => (x.facts || []).map((f) => `${x.name}: ${f.text}`)); } catch {}
+  return { rejected, decisions };
+};
 // Tasks queued in a paused lane: nothing runs them until the lane is unparked, and nothing on Home said so
 // ("it will be paused or dropped or forgotten within minutes", 29 Oct 2026). A card per lane, until it's unparked or
 // its tasks are done; it opens the Workdesk, where the pause is lifted. Symbiot never unparks a lane itself.
-function parkedCards(tasks, map, parked) {
+// No card for a lane the user paused on purpose (the Park button), or one Symbiot isn't to work at all (laneOffSymbiot):
+// "you dont work on brokerly" (12 Nov 2026), though "turning the Brokerly lane back on" was a turned-down option and
+// "Brokerly on Orca" a decision on record. skip(name, path) says which.
+function parkedCards(tasks, map, parked, { skip = () => false } = {}) {
   const by = {};
   for (const t of tasks || []) if (t && !t.done && !t.archived && !t.review && !t.later && t.repo && map[t.repo] && parked.has(map[t.repo])) (by[t.repo] = by[t.repo] || []).push(t);
-  return Object.entries(by).map(([name, ts]) => {
+  return Object.entries(by).filter(([name]) => { try { return !skip(name, map[name]); } catch { return true; } }).map(([name, ts]) => {
     const n = ts.length, short = plain(name, 50);
-    return { kind: "lane", id: "parked:" + name, repo: name, name: short, title: `${n > 1 ? n + " tasks are" : "A task is"} queued in ${short}, which is paused`,
+    return { kind: "lane", parked: true, id: "parked:" + name, repo: name, name: short, title: `${n > 1 ? n + " tasks are" : "A task is"} queued in ${short}, which is paused`,
       sub: `so nothing runs ${n > 1 ? "them" : "it"} until you unpark it: “${plain(ts[0].text, 70)}”${n > 1 ? ` and ${n - 1} more` : ""}. Unpark it on the Workdesk`, shape: "tasks" };
   });
 }
@@ -432,7 +451,8 @@ function dismissCard(key, { undo = false, file = DISMISSED_FILE, now = Date.now(
 }
 // A Merge PR card is gone by its PR, whatever its line says now: kept by its words, one dismissed while its CI ran
 // came back once CI finished or its description changed (gods-eye-view #1467, #1472, #1476 dismissed twice, 29 Oct 2026).
-const goneKey = (y, gone) => !!gone[cardKey(y)] || (/^pr:/.test(String((y && y.id) || "")) && Object.keys(gone).some((k) => k.startsWith(`${y.id}|`)));
+// A paused lane's card too: its line names the newest task and the count, so one cleared came back on the next build (12 Nov 2026).
+const goneKey = (y, gone) => !!gone[cardKey(y)] || (/^(pr|parked):/.test(String((y && y.id) || "")) && Object.keys(gone).some((k) => k.startsWith(`${y.id}|`)));
 const undismissed = (list, gone) => list.filter((y) => !goneKey(y, gone));
 onCardGone((path, q) => !!loadDismissed()[`${path}|${q}`]); // a step's card you dismissed holds its lane back no more (agents.mjs stepGone)
 // The chat's "clear" (control.mjs): cards off "Only the user can do", by a card's id, "merge:<owner/repo>" or
@@ -563,7 +583,8 @@ function homeState({ now = Date.now(), fresh = false, deps = {}, tick = false } 
   const stalls = deps.stalls || (() => { try { return stallCards(loadRuns().map((r) => r.path)); } catch { return []; } });
   if (!PHONE) try { you.push(...(deps.openPrs || ((m) => (Object.keys(deps).length ? [] : openPrCards(m, { now }))))(map)); } catch {} // PRs on GitHub that wait on their merge, checked live (probes.mjs)
   you.push(...troubles({ stuck: stuck(), list, map, named, now, drafts: drafts(), stalls: stalls() }));
-  try { you.push(...parkedCards((deps.tasks || loadTasks)() || [], map, new Set((() => { try { return (deps.parked || parkedPaths)() || []; } catch { return []; } })()))); } catch {}
+  try { const rec = deps.offSymbiot || offSymbiotRecord(), onPurpose = deps.parkedOnPurpose || parkedOnPurpose;
+    you.push(...parkedCards((deps.tasks || loadTasks)() || [], map, new Set((() => { try { return (deps.parked || parkedPaths)() || []; } catch { return []; } })()), { skip: (name, path) => onPurpose(path) || laneOffSymbiot(name, rec) })); } catch {}
   if (Object.keys(map).length) try { you.push(...unplacedCards((deps.tasks || loadTasks)() || [], [...Object.keys(map), "ops"])); } catch {} // no lanes read: none is known to be wrong
   // what the user asked for, followed through (goals.mjs): one waiting on them with no card of its own,
   // stalled, a follow-up to send, done or not finished; and an email that's waited a week for its reply
@@ -1709,4 +1730,4 @@ function setOnboarding({ step, skip, unskip, skipRest, done, restart } = {}) {
   return onboarding();
 }
 
-export { clearCards, clearable, goneKey, parkedCards, updateAsk, cardTalk, closeCard, closeDecided, cardFor, dropBlank, homeTick, HOME_LOOKED, WORK_KEEP, FIRST_RUN, troubles, agentDigest, garthLedger, plainAsk, dismissCard, cardKey, loadDismissed, DISMISSED_FILE, reportIdeasAdd, reportAsk, reportDraftAnswer, workTick, waitWhy, AUTO_GRACE, STUCK_AFTER, marketingState, marketingGo, marketingDraftAnswer, marketingTask, moveToMarketing, goLane, homeState, homeContext, homeAsk, homeAnswer, homeNext, nextUp, laneNamed, NEXT_FILE, workScene, forgetWork, workGo, displayName, firstSteps, onboarding, setOnboarding, startOnboarding, ONB_STEPS, ONB_STEPS_PHONE, onbSteps, phoneBits, phoneSetupFirst, finishedState, handedState, noteHanded, phoneChat, isPeak, reportIdeasDismiss, settleAsks, settleFromChat, unplacedCards };
+export { clearCards, clearable, goneKey, parkedCards, laneOffSymbiot, updateAsk, cardTalk, closeCard, closeDecided, cardFor, dropBlank, homeTick, HOME_LOOKED, WORK_KEEP, FIRST_RUN, troubles, agentDigest, garthLedger, plainAsk, dismissCard, cardKey, loadDismissed, DISMISSED_FILE, reportIdeasAdd, reportAsk, reportDraftAnswer, workTick, waitWhy, AUTO_GRACE, STUCK_AFTER, marketingState, marketingGo, marketingDraftAnswer, marketingTask, moveToMarketing, goLane, homeState, homeContext, homeAsk, homeAnswer, homeNext, nextUp, laneNamed, NEXT_FILE, workScene, forgetWork, workGo, displayName, firstSteps, onboarding, setOnboarding, startOnboarding, ONB_STEPS, ONB_STEPS_PHONE, onbSteps, phoneBits, phoneSetupFirst, finishedState, handedState, noteHanded, phoneChat, isPeak, reportIdeasDismiss, settleAsks, settleFromChat, unplacedCards };

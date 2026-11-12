@@ -257,6 +257,16 @@ try {
   ok("…two at most per tick", leftAsks.length === 2 && didT.filter((d) => d.whatsLeft).length === 2, [leftAsks.length, didT]);
   const gP = G.goalById(endedG[0].key);
   ok("…and a goal in a paused lane waits on it, with no run started there", gP.state === "waiting" && gP.waitingOn === "paused lane" && !(gP.leftTries > 0) && !leftAsks.some((r) => /number 1\b/.test(r)), gP);
+  console.log("GOALS — a goal still going in a paused lane, with no agent live there, is parked, not running now (12 Nov 2026)");
+  for (const x of J.goalRows().filter((x) => x.state !== "done")) { const y = G.goalById(x.key); y.state = "done"; J.putGoal(y); }
+  const pLane = join(HOME, "work", "pausedlane"), lLane = join(HOME, "work", "livelane");
+  const gPark = G.openGoal("Finish the verification demo video take two", { lane: "pausedlane", path: pLane, now: Date.now() - DAY / 2 });
+  const gLive = G.openGoal("Finish the onboarding screens for the pilot", { lane: "livelane", path: lLane, now: Date.now() - DAY / 2 });
+  await G.goalsTick({ ...base(), jobs: J.loadJobs(), parked: () => [pLane, lLane], running: (p) => p === lLane });
+  const gPk = G.goalById(gPark.key), gLv = G.goalById(gLive.key);
+  ok("…its paused lane, nothing live: waiting on the paused lane", gPk.state === "waiting" && gPk.waitingOn === "paused lane" && /lane is paused/.test(gPk.what), gPk);
+  ok("…an agent still live in a paused lane (it finishes its run): still running", gLv.state === "running", gLv);
+  ok("…and no Stalled card nags about a lane paused on purpose", !(gPk.card && gPk.card.kind === "stalled"), gPk.card);
   console.log("GOALS — rows opened before from questions and replies are closed as not goals");
   const junk = G.openGoal("who makes these cards? is it not you?", { lane: "ops" }), real = G.openGoal("Ship the redesigned demo console", { lane: "ops" });
   const n = G.tidyGoals();
