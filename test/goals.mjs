@@ -276,6 +276,13 @@ try {
     const gO = G.openGoal(words, { child: "task:shotT", lane: "bookly", path: join(HOME, "work", "shots2"), now: Date.now() - 6 * DAY });
     const tasks = [{ id: "shotT", repo: "bookly", text: `Look at it. Screenshots the user attached (open them with your Read tool): ${old}`, done: true }];
     ok("…an older goal finds them in its task's text", JSON.stringify(G.shotsOf(G.goalById(gO.key), { tasks })) === JSON.stringify([old]));
+    // a goal that kept no file path finds its upload by the time it was sent (28 Oct 2026 screenshot)
+    const t0 = Date.now() - 30 * DAY, byTime = join(up, `${t0 - 2000}-cccccc.png`), other = join(up, `${t0 + 90 * 60000}-dddddd.png`); writeFileSync(byTime, "png"); writeFileSync(other, "png");
+    const gT = G.openGoal(words, { lane: "bookly", path: join(HOME, "work", "shots3"), now: t0 });
+    ok("…and one with no kept path finds its upload by when it was sent, not a later one", JSON.stringify(G.shotsOf(G.goalById(gT.key), { tasks: [] })) === JSON.stringify([byTime]), G.shotsOf(G.goalById(gT.key)));
+    ok("…a follow-up's screenshots join the goal even with no task of its own", (() => { const f = join(up, "1794000000000-eeeeee.png"); writeFileSync(f, "png"); const r = G.linkChild(gT.key, "", { shots: [f] }); return r && r.shots.includes(f); })());
+    ok("…the brief for a gone file says when it was asked", /asked \d{4}-\d\d-\d\d/.test(G.shotBrief({ asked: words, at: 1, shots: ["/nope/x.png"] }, { exists: () => false })));
+    for (const x of J.goalRows().filter((x) => x.key === gT.key)) { const y = G.goalById(x.key); y.state = "done"; J.putGoal(y); }
     const asks = [];
     await G.goalsTick({ ...base({ tasks }), jobs: J.loadJobs(), write: ai({ met: false, done: [], verified: "", left: "nothing describes it" }), ops: (req) => { asks.push(req); return { job: "shotleft" + asks.length }; } });
     const aS = asks.find((r) => r.includes(shot)) || "", aO = asks.find((r) => !r.includes(shot)) || "";
