@@ -932,7 +932,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
     if (relaunching) return; relaunching = true; // once: the next look came before this one had exited, and started a second
     const at = (server.address() || {}).port, own = at && at !== PORT ? { SYMBIOT_PORT: String(at) } : {};
     server.close(); if (server.closeAllConnections) server.closeAllConnections();
-    try { const ch = spawn(process.execPath, process.argv.slice(1), { detached: true, stdio: "ignore", env: { ...process.env, ...relaunchEnv(), ...own, SYMBIOT_RELAUNCH: "1" }, cwd: homedir() }); ch.unref(); } catch {}
+    try { const ch = spawn(process.execPath, process.argv.slice(1), { detached: true, stdio: "ignore", env: { ...process.env, ...relaunchEnv(), ...own, SYMBIOT_RELAUNCH: "1", SYMBIOT_KEPT: "" }, cwd: homedir() }); ch.unref(); } catch {} // SYMBIOT_KEPT cleared: the new app starts a keeper of its own (keepup.mjs)
     setTimeout(() => process.exit(0), 1200);
   }
   // A newer Symbiot installed under this one from outside the app (npm install -g in a

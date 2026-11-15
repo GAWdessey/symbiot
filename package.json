@@ -8,6 +8,7 @@
   },
   "files": [
     "index.mjs",
+    "keepup.mjs",
     "core.mjs",
     "ai.mjs",
     "triage.mjs",
