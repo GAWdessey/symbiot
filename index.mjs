@@ -207,8 +207,13 @@ async function cmdApp() {
     process.exitCode = await runSandbox({ bin: realpathSync(fileURLToPath(import.meta.url)), args: argv.slice(1).filter((a) => a !== "--fresh" && a !== "--keep"), keep: has("keep") });
     return;
   }
-  SERVING = true; setScanOptions({ quiet: true });
   if (process.env.SYMBIOT_STAMP_LOG === "1" || (!process.stdout.isTTY && process.env.SYMBIOT_STAMP_LOG !== "0")) stampLog(); // a log, not a terminal (the launcher's app, an update's relaunch): stamped too, so app.log has times on every line (16 Oct 2026)
+  // The server runs as a child with more heap, and starts again after a crash (keepup.mjs):
+  // it died out of memory on 30 Oct 2026 and nothing brought it back
+  const ku = await import("./keepup.mjs");
+  if (ku.wanted()) { process.exitCode = await ku.keepUp({ script: realpathSync(fileURLToPath(import.meta.url)), args: process.argv.slice(2) }); return; }
+  ku.watchHeap(); ku.watchParent();
+  SERVING = true; setScanOptions({ quiet: true });
   const { startApp } = await import("./server.mjs");
   return startApp({ bin: realpathSync(fileURLToPath(import.meta.url)), since: SINCE_WEEK, all: has("all"), c });
 }
