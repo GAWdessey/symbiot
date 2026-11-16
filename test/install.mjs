@@ -48,7 +48,12 @@ async function servesUi(bin) {
     try { await fetch(url.replace(/\/\?t=/, "/api/quit?t=")); } catch {}
     return /<script>[\s\S]+<\/script>/.test(page) && /id="lq"/.test(page); // the liquid home (the old tab bar is gone, 15 Oct 2026)
   } catch (e) { console.log("    " + e.message); return false; }
-  finally { try { child.kill("SIGKILL"); } catch {} }
+  finally {
+    // wait for it to be gone, so it isn't still writing into TMP while that's removed
+    const gone = child.exitCode !== null || child.signalCode !== null ? Promise.resolve() : new Promise((r) => { child.once("exit", r); setTimeout(r, 5000); });
+    try { child.kill("SIGKILL"); } catch {}
+    await gone;
+  }
 }
 
 try {
@@ -94,7 +99,11 @@ try {
     }
   }
 } finally {
-  rmSync(TMP, { recursive: true, force: true });
+  // Something the app started can still be writing a file into TMP as it goes: rmdir then fails with
+  // ENOTEMPTY, which failed 0.94.13's publish with every check passing (16 Nov 2026). Retry, and a
+  // temp folder left behind is no failure of the install.
+  try { rmSync(TMP, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }); }
+  catch (e) { console.log(`  - left the temp folder ${TMP} behind (${e.code || e.message})`); }
 }
 console.log(`\n${fail ? "✗" : "✓"} install: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
