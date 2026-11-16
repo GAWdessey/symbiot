@@ -64,6 +64,7 @@ const pairedPhone = () => { if (!PHONE) return false; try { return !!loadConfig(
 import { draftPreview, MARKETING, MARKETING_DIR, aboutMarketing, displayName, productNames, productOf, untagged, tagged, draftFiles, setDraftStatus, postedCmd } from "./marketing.mjs";
 import { noteCardWords } from "./triage.mjs";
 import { tetherLines } from "./tether.mjs";
+import { status as syncStatus } from "./sync.mjs";
 
 const KEEP = 15000; // the slower reads (git per repo awaiting review) are cached this long
 let cached = null, cachedSig = ""; // cachedSig: the runs it was built with (agents.mjs handoffsSig)
@@ -1006,6 +1007,15 @@ function clearable(all) {
     ...Object.entries(merges).map(([s, ids]) => `- merge:${s} (${ids.length} Merge PR card${ids.length > 1 ? "s" : ""}: ${ids.slice(0, 4).join(", ")}${ids.length > 4 ? ", …" : ""})`),
     ...rest.slice(0, 12).map((y) => `- ${y.id} (${plain(String(y.title || ""), 50)})`)];
 }
+// Symbiot-to-Symbiot sync exists (docs/SYNC.md): say so, whether this computer is paired and when it last synced,
+// and how to run it, so "sync my work from the desktop" is run, not met with "I have no record sync is built" (16 Nov 2026).
+function syncLines({ now = Date.now(), status = syncStatus } = {}) {
+  let s; try { s = status(); } catch { s = null; }
+  const how = "Run it with the CLI `symbiot sync now` (it pulls the other computer's memory, standing rules, every lane's tasks, questions and answers, and the vault in, and pushes this one's); the app also does it every 5 minutes on its own. `symbiot sync status` shows the state. Where a pull would replace something here that changed on both sides, the newer is kept and the other goes to sync-conflicts.json. Never say sync isn't built.";
+  if (!s || !s.paired) return [`Symbiot-to-Symbiot sync is built (memory, rules, tasks, vault between two computers). This computer is not paired: on the first computer \`symbiot sync init <private git repo>\`, here \`symbiot sync pair <same repo>\` (asks for the vault PIN, which only the user can give). ${how}`];
+  const ago = s.lastSync ? `${Math.max(0, Math.round((now - s.lastSync) / 60000))} min ago (${new Date(s.lastSync).toLocaleString()})` : "never yet";
+  return [`Symbiot-to-Symbiot sync is built and this computer is paired with ${s.url} as ${s.name}. Last sync: ${ago}${s.lastError ? `; last error: ${s.lastError}` : ""}${s.conflicts ? `; ${s.conflicts} changes on both sides kept in sync-conflicts.json` : ""}. ${how}`];
+}
 function homeContext(h, { cards } = {}) {
   const shown = new Set(h.you.map((y) => y.id)), rest = h.youCount > h.you.length ? (cards || (() => { try { return onUser(); } catch { return []; } })()).filter((y) => !shown.has(y.id)) : [];
   return [
@@ -1015,6 +1025,7 @@ function homeContext(h, { cards } = {}) {
     ...(h.you.some((y) => /^ask:/.test(y.id || "")) ? [`Agents asking (to answer for them, "answer" with these ids): ${h.you.filter((y) => /^ask:/.test(y.id || "")).map((y) => `${y.id} (${String(y.title).slice(0, 40)})`).join("; ")}`] : []),
     `New on what they watch:`, ...(h.feeds.length ? h.feeds.map((f) => `- ${f.title}: ${f.sub}${f.latest ? ` (latest: ${f.latest})` : ""}`) : ["- nothing new"]),
     `Agents working now (the live agent list, the only source for 'is anything running?'; a run in the job record below that isn't here has stopped): ${h.working}${h.working ? "" : ", so nothing is running"}.`, ...(h.runs || []).map((r) => `- [${r.id}] ${dayMark(r.started, h.at)}${r.name}: ${r.line}${r.eta ? ` (${r.eta})` : ""}${r.quiet ? ` (no progress in ${r.quiet} min)` : ""}${r.looping ? " (repeating the same step)" : ""}`),
+    ...syncLines({ now: h.at }),
     ...sentMailLines(),
     ...jobsLines({ now: h.at }),
     ...(() => { try { return tetherLines({ now: h.at }); } catch { return []; } })(),
@@ -1730,4 +1741,4 @@ function setOnboarding({ step, skip, unskip, skipRest, done, restart } = {}) {
   return onboarding();
 }
 
-export { clearCards, clearable, goneKey, parkedCards, laneOffSymbiot, updateAsk, cardTalk, closeCard, closeDecided, cardFor, dropBlank, homeTick, HOME_LOOKED, WORK_KEEP, FIRST_RUN, troubles, agentDigest, garthLedger, plainAsk, dismissCard, cardKey, loadDismissed, DISMISSED_FILE, reportIdeasAdd, reportAsk, reportDraftAnswer, workTick, waitWhy, AUTO_GRACE, STUCK_AFTER, marketingState, marketingGo, marketingDraftAnswer, marketingTask, moveToMarketing, goLane, homeState, homeContext, homeAsk, homeAnswer, homeNext, nextUp, laneNamed, NEXT_FILE, workScene, forgetWork, workGo, displayName, firstSteps, onboarding, setOnboarding, startOnboarding, ONB_STEPS, ONB_STEPS_PHONE, onbSteps, phoneBits, phoneSetupFirst, finishedState, handedState, noteHanded, phoneChat, isPeak, reportIdeasDismiss, settleAsks, settleFromChat, unplacedCards };
+export { syncLines, clearCards, clearable, goneKey, parkedCards, laneOffSymbiot, updateAsk, cardTalk, closeCard, closeDecided, cardFor, dropBlank, homeTick, HOME_LOOKED, WORK_KEEP, FIRST_RUN, troubles, agentDigest, garthLedger, plainAsk, dismissCard, cardKey, loadDismissed, DISMISSED_FILE, reportIdeasAdd, reportAsk, reportDraftAnswer, workTick, waitWhy, AUTO_GRACE, STUCK_AFTER, marketingState, marketingGo, marketingDraftAnswer, marketingTask, moveToMarketing, goLane, homeState, homeContext, homeAsk, homeAnswer, homeNext, nextUp, laneNamed, NEXT_FILE, workScene, forgetWork, workGo, displayName, firstSteps, onboarding, setOnboarding, startOnboarding, ONB_STEPS, ONB_STEPS_PHONE, onbSteps, phoneBits, phoneSetupFirst, finishedState, handedState, noteHanded, phoneChat, isPeak, reportIdeasDismiss, settleAsks, settleFromChat, unplacedCards };
