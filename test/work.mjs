@@ -114,7 +114,7 @@ try {
   const busy = parseRun([A([{ type: "text", text: "Step 2: look and feel. Shooting the monsters, camp and gates." }], 0), A([use("g1", "Bash", { command: "godot", description: "Render the marsh" })], 1)].join("\n"));
   const rl = runLine({ plan, step: stepOf(plan, busy.talk), work: busy, now: T + 60000 });
   ok("Home's line: step N of M, its label, and what it's on now", rl.line === "step 2 of 4: look and feel, plus a zoned world · shooting the monsters, camp and gates" && rl.step === 2 && rl.of === 4 && !rl.quiet, rl);
-  ok("…quiet past STALL_MS since its last move (a heartbeat isn't one), with the minutes", runLine({ plan, step: 2, work: busy, now: T + 1000 + STALL_MS + 5 * 60000 }).quiet === 25, runLine({ plan, step: 2, work: busy, now: T + STALL_MS + 5 * 60000 }));
+  ok("…quiet past STALL_MS since its last move (a heartbeat isn't one), with the minutes", runLine({ plan, step: 2, work: busy, now: T + 1000 + STALL_MS + 5 * 60000 }).quiet === 15, runLine({ plan, step: 2, work: busy, now: T + STALL_MS + 5 * 60000 }));
   const hb = (s) => JSON.stringify({ type: "tool_progress", tool_use_id: "g2-heartbeat-0", tool_name: "Bash", parent_tool_use_id: "g2", elapsed_time_seconds: s, heartbeat: true });
   const longRun = [A([use("g2", "Bash", { command: "pip install x", description: "Install x" })], 0), hb(30), hb(270)].join("\n");
   const lr = parseRun(longRun), fresh = parseRun(A([use("g2", "Bash", { command: "pip install x", description: "Install x" })], 0));

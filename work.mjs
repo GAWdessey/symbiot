@@ -189,7 +189,7 @@ function nowLine(w) {
 // A running agent in one line for Home: "step 2 of 4: look and feel, plus a zoned world
 // · shooting the monsters"; quiet: minutes since its last move, once that's past
 // STALL_MS (it may be stuck, or one long command), looping: its last steps all alike.
-const STALL_MS = 20 * 60 * 1000;
+const STALL_MS = 10 * 60 * 1000;
 function runLine({ plan = [], step = 0, work = {}, now = Date.now() } = {}) {
   const n = short(nowLine(work), 90), lower = (s) => s.charAt(0).toLowerCase() + s.slice(1);
   const at = step && plan[step - 1] ? `step ${step} of ${plan.length}: ${lower(plan[step - 1].label)}` : plan.length ? `${plan.length} steps in its brief` : "";

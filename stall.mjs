@@ -16,7 +16,7 @@
 import { join } from "node:path";
 import { readFileSync, writeFileSync, unlinkSync, mkdirSync, appendFileSync } from "node:fs";
 
-const STALL_FILE = "stall.json", STALL_MIN = 20, STALL_RESET = 6 * 3600000;
+const STALL_FILE = "stall.json", STALL_MIN = 15, STALL_RESET = 6 * 3600000;
 const clip = (s, n) => { s = String(s || "").replace(/\s+/g, " ").trim(); return s.length > n ? s.slice(0, n - 1).replace(/\s+\S*$/, "") + "…" : s; };
 
 function loadStall(path) { try { const o = JSON.parse(readFileSync(join(path, ".symbiot", STALL_FILE), "utf8")); return o && typeof o === "object" ? o : null; } catch { return null; } }
@@ -24,7 +24,7 @@ function saveStall(path, rec) { try { mkdirSync(join(path, ".symbiot"), { recurs
 function clearStall(path) { try { unlinkSync(join(path, ".symbiot", STALL_FILE)); } catch {} }
 
 // work: a parsed run (work.mjs parseRun). Minutes without a step once that's a stall, else 0.
-function stalledFor(work, { now = Date.now(), startedAt = 0, stallMs = STALL_MIN * 60000, hangMs = 45 * 60000 } = {}) {
+function stalledFor(work, { now = Date.now(), startedAt = 0, stallMs = STALL_MIN * 60000, hangMs = 30 * 60000 } = {}) {
   if (!work || !work.stream || work.final) return 0; // a log with no steps in it (another agent's plain output): the hang rule's alone
   const moved = Math.max(Number(work.moved) || 0, Number(startedAt) || 0); if (!moved) return 0;
   const quiet = now - moved, busy = !!work.running || (work.bg || 0) > 0;

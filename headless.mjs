@@ -750,6 +750,24 @@ const collectJs = (whole, list = null) => `(() => { ${SCROLLER} ${DEEP} ${LABEL_
     if (t === 'a' || r === 'link') return 'link';
     return 'button';
   };
+  // the part of the window e can show in: the window, cut to every box around it that hides what
+  // overflows (a list that scrolls inside a pop-up). A row scrolled up out of the UI review's pop-up
+  // list sat over the dimmed page behind, which holds the pop-up, so it passed as on top and was
+  // marked where pressing it clicks the page (2026-11-11). A fixed box isn't cut by what's around it.
+  const clipOf = (e) => {
+    const c = { left: 0, top: 0, right: W, bottom: H };
+    for (let n = upOf(e); n && n !== document.body && n !== document.documentElement; n = upOf(n)) {
+      if (n.nodeType !== 1) continue;
+      const st = getComputedStyle(n);
+      if (st.overflowX !== 'visible' || st.overflowY !== 'visible') {
+        const b = n.getBoundingClientRect();
+        if (st.overflowX !== 'visible') { c.left = Math.max(c.left, b.left); c.right = Math.min(c.right, b.right); }
+        if (st.overflowY !== 'visible') { c.top = Math.max(c.top, b.top); c.bottom = Math.min(c.bottom, b.bottom); }
+      }
+      if (st.position === 'fixed') break;
+    }
+    return c;
+  };
   const stuck = (e, up = document.body) => { for (let n = e; n && n !== up; n = upOf(n)) if (/^(fixed|sticky)$/.test(getComputedStyle(n).position)) return true; return false; };
   const INSET = IN && IN.inset > 0 ? IN.inset : 0;
   // in a shadow root: the path to its host, " >>> ", then the path in it (deepQuery)
@@ -809,7 +827,7 @@ const collectJs = (whole, list = null) => `(() => { ${SCROLLER} ${DEEP} ${LABEL_
     if (up && kinds.get(up) === kind && kind !== 'field') continue;
     // an on/off switch drawn by the site shows its face (faceOf) in its real checkbox's place
     const face = faceOf(e), b = (face || e).getBoundingClientRect();
-    const CL = inList ? LB : { left: 0, top: 0, right: W, bottom: H };
+    const CL = inList ? LB : clipOf(e);
     // cut off at the list's bottom: the next part shows all of it (it overlaps), unless this is the
     // last; cut off at its top, the part before showed all of it
     if (inList && b.height <= LB.bottom - LB.top && ((!IN.last && b.bottom > LB.bottom + 1) || (LIST.scrollTop > 0 && b.top < LB.top + INSET - 1))) continue;
@@ -1047,16 +1065,26 @@ async function evaluate(page, expression) {
 // scroll): a list that just draws itself further as it scrolls (a test's virtual list
 // placed its rows past its own end) isn't loading more, and isn't waited on.
 const GROW_MS = 750, ASK_MS = 300;
-async function grown(page, expr, was, since = null) {
+// nudge: run once when nothing came in time, before the end is called final: scrolls up a little
+// and back to the end, so the page's scroll handler fires again. One review run in five, in a cold
+// browser, stopped at the first 10 of 40 rows: the next page came after the wait (2026-11-11).
+async function grown(page, expr, was, since = null, nudge = "") {
   if (since != null && page.sent) { await sleep(ASK_MS); if (page.sent() === since) return was; }
-  if (page.idle) await page.idle().catch(() => {});
-  for (const end = Date.now() + GROW_MS; ;) {
-    const now = Number(await evaluate(page, expr).catch(() => 0)) || 0;
-    if (now > was + 1) return now;
-    if (Date.now() >= end) return was;
-    await sleep(150);
+  for (let tries = nudge ? 2 : 1; tries > 0; tries--) {
+    if (page.idle) await page.idle().catch(() => {});
+    for (const end = Date.now() + GROW_MS; ;) {
+      const now = Number(await evaluate(page, expr).catch(() => 0)) || 0;
+      if (now > was + 1) return now;
+      if (Date.now() >= end) break;
+      await sleep(150);
+    }
+    if (tries > 1) { await evaluate(page, nudge).catch(() => {}); await sleep(ASK_MS); }
   }
+  return was;
 }
+// scroll up a little and back to the end: the page itself, or the list at sel
+const NUDGE_PAGE = "(() => { const d = document.scrollingElement || document.documentElement; d.scrollBy({ top: -80, behavior: 'instant' }); d.scrollTo({ top: d.scrollHeight, behavior: 'instant' }); })()";
+const nudgeList = (sel) => `(() => { ${DEEP} const e = deepOne(${JSON.stringify(sel)}); if (!e) return; e.scrollBy({ top: -80, behavior: 'instant' }); e.scrollTo({ top: e.scrollHeight, behavior: 'instant' }); })()`;
 const PAGE_LONG = "Math.max((document.scrollingElement || document.documentElement).scrollHeight, document.body ? document.body.scrollHeight : 0)";
 const listLong = (sel) => `(() => { ${DEEP} const e = deepOne(${JSON.stringify(sel)}); return e ? Math.round(e.scrollHeight - e.clientHeight) : 0; })()`;
 async function snapshotWhole(page, name) {
@@ -1078,7 +1106,7 @@ async function snapshotWhole(page, name) {
       shots.push({ png: Buffer.from(data, "base64"), y: at }); end = at + VIEW.h;
       await evaluate(page, HIDE_STUCK);
       h = (await evaluate(page, PAGE_HEIGHT)).h;
-      if (end >= h && h < MAX_TALL) h = await grown(page, PAGE_LONG, h, asked); // a page that loads more at its end
+      if (end >= h && h < MAX_TALL) h = await grown(page, PAGE_LONG, h, asked, NUDGE_PAGE); // a page that loads more at its end
       if (end >= Math.min(MAX_TALL, h) || at < y) break; // the bottom (or it wouldn't scroll further)
       y = Math.min(at + VIEW.h - OVERLAP, Math.min(MAX_TALL, h) - VIEW.h);
     }
@@ -1121,7 +1149,7 @@ async function snapshotList(page, name) {
       const m = await evaluate(page, scrollJs(y, sel)); if (!m || m.y <= at) break; // it wouldn't scroll further
       await sleep(150);
       at = m.y; max = m.max;
-      if (at >= max && max < room) max = await grown(page, listLong(sel), max, asked); // a list that loads more at its end
+      if (at >= max && max < room) max = await grown(page, listLong(sel), max, asked, nudgeList(sel)); // a list that loads more at its end
       const last = at >= Math.min(max, room);
       if (!list || list.items.length < 200) list = await collect(page, collectJs(false, { selector: sel, part: "list", last, inset: box.inset }));
       const { data } = await page.send("Page.captureScreenshot", { format: "png" });

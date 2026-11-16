@@ -51,7 +51,10 @@ try {
   console.log("5) A SAVE THAT DIDN'T TAKE");
   const r = v.captureSecrets(`the api key is ${KEY.split("").reverse().join("")}x9`, {});
   ok("a save read back from the vault is [saved: …]", r.saved.length === 1 && !r.failed.length && v.holds(r.saved[0], [KEY.split("").reverse().join("") + "x9"]), r);
-  const lock = () => chmodSync(C, 0o500), unlock = () => chmodSync(C, 0o700); // the vault's folder can't be written
+  // The vault can't be written: its folder read-only (Linux, macOS), and vault.json itself read-only,
+  // since Windows ignores a folder's mode but won't let a save replace a read-only file (nightly, 9 Nov 2026).
+  const IDX = join(C, "vault.json");
+  const lock = () => { chmodSync(IDX, 0o400); chmodSync(C, 0o500); }, unlock = () => { chmodSync(C, 0o700); chmodSync(IDX, 0o600); };
   lock();
   const bad = v.captureSecrets("my token: Zk8yW2vU7tS6rQ5pO4nM3lK2jH1g", {});
   unlock();
@@ -71,5 +74,5 @@ try {
   ok("…and an answer that claims nothing of a key is left alone", T.unheldClaim(q, { verdict: "answered", answer: "Use the staging server first, as you said on 3 Nov." }, { met: () => "" }) === null);
   const j = await T.judge(q, {}, { write: async () => ({ text: JSON.stringify(claims) }), met: () => "" });
   ok("judge() applies it to the AI's verdict", j.verdict === "user", j);
-} finally { try { chmodSync(C, 0o700); } catch {} rmSync(HOME, { recursive: true, force: true }); }
+} finally { try { chmodSync(C, 0o700); chmodSync(join(C, "vault.json"), 0o600); } catch {} rmSync(HOME, { recursive: true, force: true }); }
 console.log(`\n${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0);

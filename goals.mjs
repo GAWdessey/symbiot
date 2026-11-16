@@ -27,7 +27,7 @@
 // Its cards are questions on Home like any other (path "goal:<id>"), answered through
 // agents.mjs answerQuestions (onGoalAnswer, set by server.mjs).
 import { join } from "node:path";
-import { mkdirSync, writeFileSync, readFileSync, existsSync } from "node:fs";
+import { mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { CONFIG_DIR, loadTasks, clipWords, jobWords, readState, writeJsonAtomic, sameTask } from "./core.mjs";
 import { goalRows, putGoal, loadJobs, ENDED, FINISHED } from "./jobs.mjs";
@@ -61,8 +61,8 @@ function openGoal(words, { child = "", lane = "", path = "", shots = [], now = D
 const goalById = (id, { jobs = loadJobs() } = {}) => jobs.find((j) => j.key === (String(id).startsWith("goal:") ? id : "goal:" + id)) || null;
 const goalOf = (childKey, { jobs = loadJobs() } = {}) => goalRows({ jobs }).find((g) => (g.children || []).includes(childKey)) || null;
 function linkChild(id, key, { path = "", shots = [], now = Date.now() } = {}) {
-  const g = goalById(id); if (!g || !key) return null;
-  if (!g.children.includes(key)) g.children.push(key);
+  const g = goalById(id); if (!g) return null; if (!key && !cleanShots(shots).length) return null;
+  if (key && !g.children.includes(key)) g.children.push(key);
   if (path && !g.paths.includes(path)) g.paths.push(path);
   if (cleanShots(shots).length) g.shots = cleanShots([...(g.shots || []), ...shots]);
   g.changed = now; putGoal(g, { now }); return g;
@@ -118,26 +118,35 @@ async function goalFor(words, { child = "", lane = "", path = "", shots = [], no
   if (kind === "none" || (kind === "new" && answering)) return null;
   if (kind === "new") return openGoal(words, { child, lane, path, shots, now }); // new work in a lane with a goal open is a goal of its own
   const join = goalToJoin(words, { lane, path, now });
-  return join ? (child ? linkChild(join.key, child, { path, shots, now }) : join) : null;
+  return join ? (child || cleanShots(shots).length ? linkChild(join.key, child || "", { path, shots, now }) || join : join) : null; // a follow-up keeps its screenshots
 }
 // ---- the screenshots a goal carries ----------------------------------------------------
 // Its own, else the files its tasks were handed (home.mjs adds "Screenshots the user attached (open
 // them with your Read tool): …" to a task's text), so a goal opened before shots were kept has them too.
 const SHOT_LINE = /Screenshots the user attached \(open them with your Read tool\): ([^\n]+)/g;
-function shotsOf(g, { tasks = [] } = {}) {
+function shotsOf(g, { tasks = [], dir = UPLOADS_DIR } = {}) {
   if (g && (g.shots || []).length) return cleanShots(g.shots);
   const ids = new Set((g && g.children || []).filter((c) => String(c).startsWith("task:")).map((c) => String(c).slice(5)));
   const found = [];
   for (const t of tasks) if (t && ids.has(t.id)) for (const m of String(t.text || "").matchAll(SHOT_LINE)) found.push(...m[1].split(/,\s*/));
-  return cleanShots(found);
+  if (found.length) return cleanShots(found);
+  return cleanShots(shotsByTime(g, { dir }));
+}
+// A goal that kept no file path (opened before shots were kept, 28 Oct 2026) still finds its upload:
+// uploads are named "<ms when saved>-<id>.<ext>" and saved just before the words reach the goal.
+const UPLOADS_DIR = join(CONFIG_DIR, "uploads");
+function shotsByTime(g, { dir = UPLOADS_DIR } = {}) {
+  if (!g || !g.at || !/\(The user attached/i.test(String(g.asked || ""))) return [];
+  let files = []; try { files = readdirSync(dir); } catch { return []; }
+  return files.filter((f) => { const t = +(/^(\d{13})-/.exec(f) || [])[1]; return t && t <= g.at + 5000 && t >= g.at - 120000; }).sort().map((f) => join(dir, f));
 }
 const SAID_ATTACHED = /\s*\(The user attached[^)]*\)/gi;
 // What a run started for the goal is told about them: the files to Read, or, when they were cleared
 // off this computer, that they're gone, so it asks for them again instead of looking for them.
-function shotBrief(g, { tasks = [], exists = existsSync } = {}) {
-  const all = shotsOf(g, { tasks }), here = all.filter((p) => { try { return exists(p); } catch { return false; } });
+function shotBrief(g, { tasks = [], exists = existsSync, dir = UPLOADS_DIR } = {}) {
+  const all = shotsOf(g, { tasks, dir }), here = all.filter((p) => { try { return exists(p); } catch { return false; } });
   if (here.length) return `\n\nScreenshots the user attached (open them with your Read tool): ${here.join(", ")}`;
-  if (all.length || /\(The user attached/i.test(String((g && g.asked) || ""))) return "\n\nThe screenshot the user attached is no longer on this computer (attachments are kept a week). Don't guess what it showed: if the work needs it, ask the user in QUESTIONS.md to attach it again.";
+  if (all.length || /\(The user attached/i.test(String((g && g.asked) || ""))) return `\n\nThe screenshot the user attached is no longer on this computer (attachments are kept a week; this goal was asked ${new Date(g.at || 0).toISOString().slice(0, 10)}). Don't guess what it showed: if the work needs it, ask the user in QUESTIONS.md to attach it again.`;
   return "";
 }
 // The files an open goal still needs, kept when old uploads are cleared (server.mjs saveShots).
@@ -391,7 +400,11 @@ async function goalsTick(deps = {}, { now = Date.now() } = {}) {
     const g = { ...g0, children: [...(g0.children || [])], paths: [...(g0.paths || [])] };
     if (!g.doneWhen && deps.write) { const d = await doneWhenFor(g, { write: deps.write }); if (d) g.doneWhen = d.doneWhen; }
     adopt(g, ctx);
-    const r = rollUp(g, ctx), sig = `${r.state}|${r.waitingOn}|${r.what}|${g.children.length}|${r.kids.filter((c) => c.state === "ended").length}`;
+    const r = rollUp(g, ctx);
+    // its lane is paused and no agent of it is in the live list: parked, not "running now" (12 Nov 2026: a brokerly goal
+    // read "running now" for days while brokerly was paused and nothing ran)
+    if (r.state === "running" && parked(g) && !(g.paths || []).some((p) => { try { return ctx.running(p); } catch { return false; } })) { r.state = "waiting"; r.waitingOn = "paused lane"; r.what = "its lane is paused: nothing more is run on it until it's turned back on"; }
+    const sig = `${r.state}|${r.waitingOn}|${r.what}|${g.children.length}|${r.kids.filter((c) => c.state === "ended").length}`;
     if (sig !== g.sig) { g.sig = sig; g.moved = now; if (g.card && g.card.kind === "stalled") g.card = null; }
     g.state = r.state === "ended" ? "running" : r.state; g.waitingOn = r.waitingOn; g.what = r.what;
     if (r.state === "waiting") g.since = g.since && g.sinceOn === r.waitingOn ? g.since : (r.since || now), g.sinceOn = r.waitingOn; else { g.since = 0; g.sinceOn = ""; }
@@ -458,7 +471,7 @@ async function goalsTick(deps = {}, { now = Date.now() } = {}) {
         if (until && until <= now && start(c.path, "the time it waited for came") && deps.settle) deps.settle(c.path, "the time it waited for came");
       }
     }
-    if (g.state !== "done" && !(r.state === "waiting" && r.waitingOn === ELSEWHERE) && now - (g.moved || g.at) > STALL_AFTER && (!g.card || g.card.kind === "user")) g.card = { kind: "stalled", q: `Stalled: ${g.text}, ${g.waitingOn ? `waiting on ${g.waitingOn === "user" ? "you" : g.waitingOn}${g.what ? ` (${clip(g.what, 120)})` : ""}` : "with nothing moving"} since ${new Date(g.moved || g.at).toLocaleString("en-ZA", { hour12: false })}`, options: ["Look into it now", "Keep waiting", "Drop it"], at: now };
+    if (g.state !== "done" && g.waitingOn !== "paused lane" && !(r.state === "waiting" && r.waitingOn === ELSEWHERE) && now - (g.moved || g.at) > STALL_AFTER && (!g.card || g.card.kind === "user")) g.card = { kind: "stalled", q: `Stalled: ${g.text}, ${g.waitingOn ? `waiting on ${g.waitingOn === "user" ? "you" : g.waitingOn}${g.what ? ` (${clip(g.what, 120)})` : ""}` : "with nothing moving"} since ${new Date(g.moved || g.at).toLocaleString("en-ZA", { hour12: false })}`, options: ["Look into it now", "Keep waiting", "Drop it"], at: now };
     g.history = g.history || [];
     if (JSON.stringify(g) !== JSON.stringify(g0)) putGoal(g, { now });
   }
@@ -523,4 +536,4 @@ function goalAnswer(path, answers = [], deps = {}, { now = Date.now() } = {}) {
   return { ok: true, saved: 1, said };
 }
 
-export { doneLine, goalKind, goalFor, shotsOf, shotBrief, goalShots, answersQuestion, goalToJoin, tidyGoals, plainlyNotWork, openGoal, linkChild, goalById, goalOf, doneWhenFor, childState, adopt, rollUp, judgeDone, writeBreakdown, goalsTick, goalCards, goalAnswer, folderOf, STALL_AFTER, NUDGE_AFTER, SURFACE_AFTER, WAIT_OLD };
+export { doneLine, goalKind, goalFor, shotsOf, shotsByTime, shotBrief, goalShots, answersQuestion, goalToJoin, tidyGoals, plainlyNotWork, openGoal, linkChild, goalById, goalOf, doneWhenFor, childState, adopt, rollUp, judgeDone, writeBreakdown, goalsTick, goalCards, goalAnswer, folderOf, STALL_AFTER, NUDGE_AFTER, SURFACE_AFTER, WAIT_OLD };

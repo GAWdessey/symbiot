@@ -39,6 +39,9 @@ try {
   const idle = parseRun(log([said(t0, "Checking the rest of the path with a one-option question:"), call(t0, "a", "grep -n labels plain.mjs"), back(t0, "a"), thinking, thinking]));
   ok("thinking with no step for 25 minutes is a stall (its log still grows, so the hang rule never saw it)", stalledFor(idle, at(25)) === 25, stalledFor(idle, at(25)));
   ok("…but not at 15", stalledFor(idle, at(15)) === 0);
+  { const { STALL_MIN } = await import("../stall.mjs"), { STALL_MS } = await import("../work.mjs"), { HANG_MIN } = await import("../agents.mjs");
+    ok("a stall is 15 minutes, Home warns it has gone quiet at 10, and a hung command is cut at 30", STALL_MIN === 15 && STALL_MS === 10 * min && HANG_MIN === 30, [STALL_MIN, STALL_MS, HANG_MIN]);
+    ok("with no limits given, 16 idle minutes is already a stall (it was 21)", stalledFor(idle, { now: t0 + 16 * min, startedAt: t0 }) === 16); }
   const inFlight = parseRun(log([said(t0, "Running the full suite"), call(t0, "b", "npm test")]));
   ok("a command still running isn't a stall at 25 minutes (a full test suite runs 15)", stalledFor(inFlight, at(25)) === 0);
   ok("…until the hang time (45 min)", stalledFor(inFlight, at(50)) === 50);

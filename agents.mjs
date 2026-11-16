@@ -962,14 +962,21 @@ function licenceGate(repoPath, st = licenceState()) {
 const PARKED_NOTE = "Parked: its tasks start no agent runs until you unpark it.";
 function parkedPaths() { const p = loadConfig().parked; return Array.isArray(p) ? p.filter((x) => typeof x === "string" && x) : []; }
 const isParked = (path) => !!path && parkedPaths().includes(path);
-function parkLane(path, on) {
+// by: "you" when the user parked it themselves (the Park button): a lane paused on purpose, which Home
+// doesn't nag to unpark (12 Nov 2026: "you dont work on brokerly"). Symbiot's own parking (urgent work) leaves it unset.
+function parkLane(path, on, { by = "" } = {}) {
   path = String(path || ""); if (!path) return { error: "No project to park." };
   const cfg = loadConfig(), list = parkedPaths().filter((p) => p !== path);
   if (on) list.push(path);
   if (list.length) cfg.parked = list; else delete cfg.parked;
+  const byMap = cfg.parkedBy && typeof cfg.parkedBy === "object" ? { ...cfg.parkedBy } : {};
+  if (on && by) byMap[path] = by; else if (!on) delete byMap[path];
+  for (const k of Object.keys(byMap)) if (!list.includes(k)) delete byMap[k];
+  if (Object.keys(byMap).length) cfg.parkedBy = byMap; else delete cfg.parkedBy;
   saveConfig(cfg);
   return { ok: true, parked: !!on };
 }
+const parkedOnPurpose = (path) => { const b = loadConfig().parkedBy; return !!path && isParked(path) && !!(b && b[path] === "you"); };
 // ---- urgent work goes first -------------------------------------------------
 // "symbiot keeps crashing" waited behind a routine run in its own lane (the Home
 // layout, step 5 of 6) and 5 more tasks, and the user parked meridian and robin by hand
@@ -1654,7 +1661,7 @@ function runningHandoff(path) {
 }
 // ---- runs that hang, and runs that ended while the app was down --------------
 // A hung `claude` (no output at all for HANG_MIN minutes) held its lane for as long
-// as the app ran: the 20-minute stall (work.mjs STALL_MS) only showed on its block.
+// as the app ran: the 10-minute quiet warning (work.mjs STALL_MS) only showed on its block.
 // runsTick, every minute: a run whose log hasn't changed for that long is stopped,
 // its whole process group (track starts it detached), SIGTERM then SIGKILL, and its
 // log says why. config.runHangMinutes sets the time (45 by default: a single command
@@ -1665,7 +1672,7 @@ function runningHandoff(path) {
 // restart mid-run skipped all of it, and Approve could leave that run's files out.
 // So it's on disk too (.symbiot/run-start.json), and once the run's pid is gone with
 // no exit seen, runsTick does the same bookkeeping from it.
-const RUN_START = "run-start.json", HANG_MIN = 45, START_MAX_FILES = 20000;
+const RUN_START = "run-start.json", HANG_MIN = 30, START_MAX_FILES = 20000;
 function saveRunStart(path, e, dirtyBefore, ticksBefore) {
   if (dirtyBefore && Object.keys(dirtyBefore).length > START_MAX_FILES) dirtyBefore = null; // a tree that big: not worth a file every run
   try { writeJsonAtomic(join(path, ".symbiot", RUN_START), { id: e.id, pid: e.pid, startedAt: e.startedAt, owner: process.pid, dirtyBefore, ticksBefore }, { indent: 0 }); } catch {}
@@ -2986,4 +2993,4 @@ function agentsNow({ now = Date.now() } = {}) {
 }
 const forgetAgents = () => { agentsKept = null; };
 
-export { notStarted, bouncedInARow, BOUNCE_MAX, previewMedia, PREVIEW_MEDIA, QLINES, finishedRuns, restarting, saysNoBrowser, BROWSER_NOTE, setupChore, SETUP_CHORE, lostAsks, noteLostAsks, handoffsSig, handBlocked, ensureRunnable, launcherOf, launchFault, opsWalls, walled, OPS_RO, OPS_OWN, OPS_HIDDEN, runOpen, namedRun, twinRunning, TWIN_WAIT, wholeLog, uiReview, onGoalAnswer, runOutcome, settleRecord, waitsOutside, triageSweep, runSection, autoStart, AUTO_MAX, AUTO_FOLDER_MAX, oneNeedEach, NOTHING_FOR_YOU, chaseReport, CHASED, UNMET, heldAsk, onCardGone, withOwnTools, escalation, grantCard, cardRules, cardIsPermission, runPhase, onRunEnd, isClaudeCmd, GUARD, tidyRule, tidyRules, tidySettings, pruneRuns, claudePlugins, idlePlugins, runSettings, archiveAnswers, allAnswers, answersDigest, ANSWERS_ARCHIVE, ANSWERS_KEEP, runsTick, RUN_START, HANG_MIN, noteBlocked, userAnswers, CONTINUED_FILE, onAnswered, CHANGES, toKnownHost, continueLanes, autoPick, autoDecide, FACTS, factsOf, knownRun, withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, linkReach, fillHandoff, runHandoff, nothingToDo, whereOf, whereLine, whereAnswer, askTask, PARKED_NOTE, parkedPaths, isParked, parkLane, agentMissing, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, unchangedStep, waitingFor, offLimits, startWaiting, noteUntracked, untrackedBefore, forgetUntracked, writeTasks, droppedTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, pickAgent, findOrcaCli, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, routeIdeas, agentQuestions, answerQuestions, agentsList, agentsNow, forgetAgents, AGENTS_KEEP, needsOf, settleNeeds, closeAsk, closedAsk, sameSubject, NEEDS_FOR, readLastWords, readNeeds, parseRead, READ_FILE, autoAllow, autoAllowSweep, allowlistInWork, installAllowlist, inWork, withScope, withTrust, sandboxFor, sandboxLifts, sandboxEnv, sandboxNeeds, sandboxState, sandboxWrites, SANDBOX_DIR, resumeFor, noteSession, tooLong, carryOn, RESUME_CTX, CARRY_PROMPT, trustFull, GUARD_SETTINGS, runCmdOf, claimLock, wideRoot, sandboxDenies, questionFolders, folderState, dirtyState, ANSWERS_SEEN, newAnswers, claudeDownIn, claudePause, noteClaudeDown, resetTime, PAUSE_FILE, startGap, isUrgent, urgentStop, urgentFirst, urgentUndo, urgentDone, urgentSweep, urgentState, licenceGate, stopRun, loadRunFiles, saveRunFiles, forgetRunFiles, withModel, routedModel, userWords, onShipping, waitingTask, namedBlocker, tildeNote, idleWaits };
+export { notStarted, bouncedInARow, BOUNCE_MAX, previewMedia, PREVIEW_MEDIA, QLINES, finishedRuns, restarting, saysNoBrowser, BROWSER_NOTE, setupChore, SETUP_CHORE, lostAsks, noteLostAsks, handoffsSig, handBlocked, ensureRunnable, launcherOf, launchFault, opsWalls, walled, OPS_RO, OPS_OWN, OPS_HIDDEN, runOpen, namedRun, twinRunning, TWIN_WAIT, wholeLog, uiReview, onGoalAnswer, runOutcome, settleRecord, waitsOutside, triageSweep, runSection, autoStart, AUTO_MAX, AUTO_FOLDER_MAX, oneNeedEach, NOTHING_FOR_YOU, chaseReport, CHASED, UNMET, heldAsk, onCardGone, withOwnTools, escalation, grantCard, cardRules, cardIsPermission, runPhase, onRunEnd, isClaudeCmd, GUARD, tidyRule, tidyRules, tidySettings, pruneRuns, claudePlugins, idlePlugins, runSettings, archiveAnswers, allAnswers, answersDigest, ANSWERS_ARCHIVE, ANSWERS_KEEP, runsTick, RUN_START, HANG_MIN, noteBlocked, userAnswers, CONTINUED_FILE, onAnswered, CHANGES, toKnownHost, continueLanes, autoPick, autoDecide, FACTS, factsOf, knownRun, withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, linkReach, fillHandoff, runHandoff, nothingToDo, whereOf, whereLine, whereAnswer, askTask, PARKED_NOTE, parkedPaths, isParked, parkLane, parkedOnPurpose, agentMissing, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, unchangedStep, waitingFor, offLimits, startWaiting, noteUntracked, untrackedBefore, forgetUntracked, writeTasks, droppedTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, pickAgent, findOrcaCli, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, routeIdeas, agentQuestions, answerQuestions, agentsList, agentsNow, forgetAgents, AGENTS_KEEP, needsOf, settleNeeds, closeAsk, closedAsk, sameSubject, NEEDS_FOR, readLastWords, readNeeds, parseRead, READ_FILE, autoAllow, autoAllowSweep, allowlistInWork, installAllowlist, inWork, withScope, withTrust, sandboxFor, sandboxLifts, sandboxEnv, sandboxNeeds, sandboxState, sandboxWrites, SANDBOX_DIR, resumeFor, noteSession, tooLong, carryOn, RESUME_CTX, CARRY_PROMPT, trustFull, GUARD_SETTINGS, runCmdOf, claimLock, wideRoot, sandboxDenies, questionFolders, folderState, dirtyState, ANSWERS_SEEN, newAnswers, claudeDownIn, claudePause, noteClaudeDown, resetTime, PAUSE_FILE, startGap, isUrgent, urgentStop, urgentFirst, urgentUndo, urgentDone, urgentSweep, urgentState, licenceGate, stopRun, loadRunFiles, saveRunFiles, forgetRunFiles, withModel, routedModel, userWords, onShipping, waitingTask, namedBlocker, tildeNote, idleWaits };

@@ -257,6 +257,16 @@ try {
   ok("…two at most per tick", leftAsks.length === 2 && didT.filter((d) => d.whatsLeft).length === 2, [leftAsks.length, didT]);
   const gP = G.goalById(endedG[0].key);
   ok("…and a goal in a paused lane waits on it, with no run started there", gP.state === "waiting" && gP.waitingOn === "paused lane" && !(gP.leftTries > 0) && !leftAsks.some((r) => /number 1\b/.test(r)), gP);
+  console.log("GOALS — a goal still going in a paused lane, with no agent live there, is parked, not running now (12 Nov 2026)");
+  for (const x of J.goalRows().filter((x) => x.state !== "done")) { const y = G.goalById(x.key); y.state = "done"; J.putGoal(y); }
+  const pLane = join(HOME, "work", "pausedlane"), lLane = join(HOME, "work", "livelane");
+  const gPark = G.openGoal("Finish the verification demo video take two", { lane: "pausedlane", path: pLane, now: Date.now() - DAY / 2 });
+  const gLive = G.openGoal("Finish the onboarding screens for the pilot", { lane: "livelane", path: lLane, now: Date.now() - DAY / 2 });
+  await G.goalsTick({ ...base(), jobs: J.loadJobs(), parked: () => [pLane, lLane], running: (p) => p === lLane });
+  const gPk = G.goalById(gPark.key), gLv = G.goalById(gLive.key);
+  ok("…its paused lane, nothing live: waiting on the paused lane", gPk.state === "waiting" && gPk.waitingOn === "paused lane" && /lane is paused/.test(gPk.what), gPk);
+  ok("…an agent still live in a paused lane (it finishes its run): still running", gLv.state === "running", gLv);
+  ok("…and no Stalled card nags about a lane paused on purpose", !(gPk.card && gPk.card.kind === "stalled"), gPk.card);
   console.log("GOALS — rows opened before from questions and replies are closed as not goals");
   const junk = G.openGoal("who makes these cards? is it not you?", { lane: "ops" }), real = G.openGoal("Ship the redesigned demo console", { lane: "ops" });
   const n = G.tidyGoals();
@@ -276,6 +286,13 @@ try {
     const gO = G.openGoal(words, { child: "task:shotT", lane: "bookly", path: join(HOME, "work", "shots2"), now: Date.now() - 6 * DAY });
     const tasks = [{ id: "shotT", repo: "bookly", text: `Look at it. Screenshots the user attached (open them with your Read tool): ${old}`, done: true }];
     ok("…an older goal finds them in its task's text", JSON.stringify(G.shotsOf(G.goalById(gO.key), { tasks })) === JSON.stringify([old]));
+    // a goal that kept no file path finds its upload by the time it was sent (28 Oct 2026 screenshot)
+    const t0 = Date.now() - 30 * DAY, byTime = join(up, `${t0 - 2000}-cccccc.png`), other = join(up, `${t0 + 90 * 60000}-dddddd.png`); writeFileSync(byTime, "png"); writeFileSync(other, "png");
+    const gT = G.openGoal(words, { lane: "bookly", path: join(HOME, "work", "shots3"), now: t0 });
+    ok("…and one with no kept path finds its upload by when it was sent, not a later one", JSON.stringify(G.shotsOf(G.goalById(gT.key), { tasks: [] })) === JSON.stringify([byTime]), G.shotsOf(G.goalById(gT.key)));
+    ok("…a follow-up's screenshots join the goal even with no task of its own", (() => { const f = join(up, "1794000000000-eeeeee.png"); writeFileSync(f, "png"); const r = G.linkChild(gT.key, "", { shots: [f] }); return r && r.shots.includes(f); })());
+    ok("…the brief for a gone file says when it was asked", /asked \d{4}-\d\d-\d\d/.test(G.shotBrief({ asked: words, at: 1, shots: ["/nope/x.png"] }, { exists: () => false })));
+    for (const x of J.goalRows().filter((x) => x.key === gT.key)) { const y = G.goalById(x.key); y.state = "done"; J.putGoal(y); }
     const asks = [];
     await G.goalsTick({ ...base({ tasks }), jobs: J.loadJobs(), write: ai({ met: false, done: [], verified: "", left: "nothing describes it" }), ops: (req) => { asks.push(req); return { job: "shotleft" + asks.length }; } });
     const aS = asks.find((r) => r.includes(shot)) || "", aO = asks.find((r) => !r.includes(shot)) || "";
