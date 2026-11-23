@@ -523,9 +523,16 @@ try {
   try { quit = (await fetch(base + "/api/quit", { headers: H })).status; } catch { quit = -1; }
   ok(`GET /api/quit -> ${quit}`, quit === 200, quit);
 } finally {
-  child.kill("SIGKILL");
+  // wait for the app to be gone, so it isn't still holding a file in HOME while that's removed
+  const gone = child.exitCode !== null || child.signalCode !== null ? Promise.resolve() : new Promise((r) => { child.once("exit", r); setTimeout(r, 5000); });
+  try { child.kill("SIGKILL"); } catch {}
   reg.close();
-  rmSync(HOME, { recursive: true, force: true });
+  await gone;
+  // On Windows a file the app had open can stay locked a moment after it exits: rmdir then throws
+  // EBUSY, which turned the nightly red with every smoke check passing (21 Nov 2026). Retry, and a
+  // temp folder left behind is no failure of the smoke test.
+  try { rmSync(HOME, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }); }
+  catch (e) { console.log(`  - left the temp folder ${HOME} behind (${e.code || e.message})`); }
 }
 console.log(`\n${fail ? "✗" : "✓"} smoke: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

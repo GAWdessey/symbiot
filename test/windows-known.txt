@@ -3,6 +3,7 @@
 # fails there fails the nightly; one on it that passes is named in the log, to take off.
 # 5 Nov 2026: off, 11 that passed the nightlies of 2-4 Nov; on, frames.mjs (Chrome in a Windows runner)
 # and ownerlogin.mjs (its gh stand-in is a sh script, which Windows can't run).
+# 21 Nov 2026: off, install.mjs (it passed the nightlies of 19-21 Nov once its temp folder removal retried).
 adapt.mjs
 app.mjs
 asks.mjs
@@ -29,7 +30,6 @@ frames.mjs
 goals.mjs
 gocards.mjs
 guard.mjs
-install.mjs
 knowledge.mjs
 lanes.mjs
 launcher.mjs
