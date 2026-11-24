@@ -31,7 +31,8 @@ try {
   const pw = l.entries.find((e) => e.name.startsWith("acme"));
   ok("a password's kind, account and date", pw.kind === "Password" && pw.account === "jane@example.com" && pw.saved > 0, pw);
   ok("a key's and a set of codes' kinds, and how many codes are left", l.entries.find((e) => /API key/.test(e.name)).kind === "API key or token" && l.entries.find((e) => /npm/.test(e.name)).kind === "Recovery codes" && l.entries.find((e) => /npm/.test(e.name)).left === 2);
-  ok("kinds read from names: a one-time code, an account id, anything else", V.kindOf("zoho.com code") === "One-time code" && V.kindOf("twilio-account-sid") === "Account ID" && V.kindOf("twilio-auth-token") === "API key or token" && V.kindOf("wifi") === "Secret");
+  ok("kinds read from names: a one-time code, an account id, anything else", V.kindOf("zoho.com code") === "One-time code" && V.kindOf("twilio-account-sid") === "Account ID" && V.kindOf("twilio-auth-token") === "API key or token" && V.kindOf("acme portal") === "Secret");
+  ok("…a login or a Wi-Fi network reads as its password (UI review, 24 Nov 2026)", V.kindOf("wifi") === "Password" && V.kindOf("Office Wi-Fi (Harbourline 5G)") === "Password" && V.kindOf("Xero login") === "Password" && V.kindOf("github login recovery codes") === "Recovery codes" && V.kindOf("zoho login code") === "One-time code");
   ok("locked, with no PIN set yet", l.pin === false && !l.unlocked);
 
   console.log("THE UNLOCK GATE — a fresh unlock with the vault PIN, for a short while");
@@ -81,6 +82,9 @@ try {
   const two = V.issuesOf([{ name: "google-sam-bookly", count: 1, used: 0 }, { name: "cloudflare password (sam@acme.co.za)", count: 1, used: 0 }], { peek: () => ({ values: [{ v: "one-pw" }] }) });
   ok("…one password on two services' logins: keep both, never \"delete the other\" (26 Oct 2026)", two["google-sam-bookly"].some((x) => x.kind === "same" && /Keep both/.test(x.text) && !/delete/.test(x.text)) && two["cloudflare password (sam@acme.co.za)"].some((x) => /Same password as “Google sam bookly”/.test(x.text)), two);
 
+  const cds = V.issuesOf([{ name: "npm recovery codes", count: 8, used: 0 }, { name: "GitHub recovery codes", count: 8, used: 0 }], { peek: () => ({ values: [{ v: "a1b2-c3d4" }, { v: "e5f6-g7h8" }] }) });
+  ok("…two sets with the same codes say codes, not a password or a login", cds["GitHub recovery codes"].some((x) => x.kind === "same" && x.text === "Same codes as “npm recovery codes”. Keep one: delete the other.") && cds["npm recovery codes"].length === 1 && !/password|login/.test(JSON.stringify(cds)), cds);
+
   console.log("KEEPING IT TIDY — add, rename and delete, unlocked only, logged without the value");
   const t3 = Date.now() + 3600000;
   ok("locked, none of them does anything", V.addEntry({ label: "x", values: ["y"], now: t3 }).locked && V.renameEntry("npm recovery codes", { label: "z", now: t3 }).locked && V.removeEntry("npm recovery codes", { now: t3 }).locked && listSecrets().length === 3);
@@ -91,10 +95,17 @@ try {
   const rn = V.renameEntry("Example Pay test API key", { label: "Example Pay sandbox key", token: tk, now: t3 + 3 });
   ok("rename: same value and date under the new name, the old name gone", rn.ok && getSecret("Example Pay sandbox key").value === KEY && !listSecrets().some((x) => x.name === "Example Pay test API key"), rn);
   ok("…not onto a name that's taken", /already one/.test(V.renameEntry("Example Pay sandbox key", { label: "npm recovery codes", token: tk, now: t3 + 4 }).error || ""));
+  const ch = V.renameEntry(ad.name, { label: "Acme portal password", account: "jane@example.com", values: ["Quartz8Heron!"], token: tk, now: t3 + 4 });
+  ok("edit: a changed password replaces the old one in place, same name and site", ch.ok && ch.name === ad.name && getSecret(ad.name).value === "Quartz8Heron!" && listSecrets().find((x) => x.name === ad.name).count === 1, ch);
+  ok("…left empty, the saved value stays", V.renameEntry(ad.name, { label: "Acme portal password", account: "jane@example.com", values: [], token: tk, now: t3 + 4 }).ok && getSecret(ad.name).value === "Quartz8Heron!");
+  ok("…logged as changed, without the value", V.vaultLog()[0].act === "change" && V.vaultLog()[0].name === ad.name && !readFileSync(join(CFG, "vault-log.json"), "utf8").includes("Quartz8Heron!"));
+  const rc = V.renameEntry("npm recovery codes", { label: "npm recovery codes", values: ["new-1", "new-2", "new-3"], token: tk, now: t3 + 4 });
+  ok("…a set of codes is replaced whole, none used", rc.ok && listSecrets().find((x) => x.name === "npm recovery codes").count === 3 && listSecrets().find((x) => x.name === "npm recovery codes").used === 0 && getSecret("npm recovery codes").value === "new-1");
+  ok("…and only with the vault unlocked", V.renameEntry(ad.name, { label: "Acme portal password", account: "jane@example.com", values: ["x"], now: t3 + 4 }).locked && getSecret(ad.name).value === "Quartz8Heron!");
   const rm = V.removeEntry(ad.name, { token: tk, now: t3 + 5 });
   ok("delete: gone", rm.ok && !listSecrets().some((x) => x.name === ad.name));
   const lg2 = V.vaultLog();
-  ok("each change is in the log, newest first, without its value", lg2[0].act === "delete" && lg2[1].act === "rename" && lg2[1].from === "Example Pay test API key" && lg2[2].act === "add" && !readFileSync(join(CFG, "vault-log.json"), "utf8").includes("Tidal5Fern!"), lg2.slice(0, 3));
+  ok("each change is in the log, newest first, without its value", lg2[0].act === "delete" && lg2.find((x) => x.act === "rename").from === "Example Pay test API key" && lg2.some((x) => x.act === "add" && x.name === ad.name) && !readFileSync(join(CFG, "vault-log.json"), "utf8").includes("Tidal5Fern!"), lg2.slice(0, 3));
   ok("an agent's socket reaches none of it", !(await import("../screens.mjs")).sockGate("/api/vault/add") && !(await import("../screens.mjs")).sockGate("/api/vault/delete") && !(await import("../screens.mjs")).sockGate("/api/vault/rename"));
 
   console.log("AGENT RUNS — can't read the PIN's file");
@@ -108,7 +119,7 @@ try {
   const uiJs = [...EMBEDDED_UI.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]).join("\n");
   const grab = (name) => { const i = uiJs.indexOf("function " + name + "("); let depth = 0, j = uiJs.indexOf("{", i); for (; j < uiJs.length; j++) { if (uiJs[j] === "{") depth++; else if (uiJs[j] === "}" && --depth === 0) break; } return uiJs.slice(i, j + 1); };
   const grabVar = (name) => (uiJs.match(new RegExp("var " + name + "=[\\s\\S]*?;\\n")) || [""])[0];
-  const fns = ["esc", "escQ", "vaultDate", "vaultHue", "vaultMono", "vaultSub", "vaultFmt", "vaultFind", "vaultField", "vaultListHtml", "vaultIssue", "vaultLast", "vaultDetailHtml", "vaultCopyLabel", "vaultLine", "vaultClipLeft", "vaultClip", "vaultUnclip"];
+  const fns = ["esc", "escQ", "vaultDate", "vaultHue", "vaultMono", "vaultSub", "vaultFmt", "vaultFind", "vaultField", "vaultListHtml", "vaultIssue", "vaultLast", "vaultEditValue", "vaultDetailHtml", "vaultCopyLabel", "vaultLine", "vaultClipLeft", "vaultClip", "vaultUnclip"];
   const page = new Function("var agoTxt=function(){return 'just now';};" + uiJs.match(/var VLT=\{.*\n/)[0] + grabVar("VIC") + fns.map(grab).join("\n") + "\nreturn {VLT:VLT,VCLIP:VCLIP,VCLIP_MS:VCLIP_MS,vaultField:vaultField,vaultListHtml:vaultListHtml,vaultDetailHtml:vaultDetailHtml,vaultClip:vaultClip,vaultUnclip:vaultUnclip};")();
   const e = { name: "npm recovery codes", label: "npm recovery codes", group: "npm", short: "Recovery codes", kind: "Recovery codes", account: "", saved: Date.now(), count: 2, left: 1, issues: [] };
   const tw = { name: "token", label: "Token", group: "Other", short: "Token", kind: "API key or token", account: "", saved: Date.now(), count: 1, left: 1, issues: [{ kind: "vague", text: "Its name doesn't say what it's for." }, { kind: "same", other: "npm recovery codes", text: "Same value as “npm recovery codes”." }] };
@@ -124,6 +135,8 @@ try {
   ok("the detail says what needs a look and offers the fix: rename it, open the other, delete this one", /say what it/.test(det) && /data-va='rename'/.test(det) && /data-va='pick' data-n='npm recovery codes'/.test(det) && /Delete this one/.test(det) && /Agents ask for/.test(det));
   if (!/Agents ask for/.test(det) || !/data-va=.pick./.test(det)) console.log(det.slice(0, 1500));
   page.VLT.mode = "delete"; const del = page.vaultDetailHtml(tw); page.VLT.mode = "";
+  page.VLT.mode = "rename"; const edp = page.vaultDetailHtml(tw), edc = page.vaultDetailHtml(e); page.VLT.mode = "";
+  ok("Edit offers the value: a password, key or code with Show, left empty to keep it; a set offers Replace the codes", /Password, key or code<span class='vpw'><input id='vaultrv' type='password'/.test(edp) && /data-va='peekedit'>Show</.test(edp) && /Left empty, the saved one stays/.test(edp) && /Replace the codes/.test(edc) && /id='vaultrc'/.test(edc) && !/id='vaultrv'/.test(edc));
   ok("Delete asks first, in the page, and says it can be undone", /Delete “Token”\?/.test(del) && /data-va='delyes'/.test(del) && /undo/.test(del));
   page.VLT.ok[tw.name] = "c"; page.VLT.okn = tw.name; Object.assign(page.VCLIP, { v: "x", who: { name: tw.name, key: "c" }, until: Date.now() + 24000 });
   const cop = page.vaultDetailHtml(tw); page.VLT.ok = {}; page.VLT.okn = "";
@@ -148,6 +161,11 @@ try {
   ok("shown codes get a column wide enough to keep each one on a line", /\.vcodes\{display:grid;grid-template-columns:repeat\(auto-fill,minmax\(min\(100%,300px\),1fr\)\)/.test(EMBEDDED_UI));
   ok("the red Delete button: dark text on the dark looks' light red, white on the light looks' deep red", /button\.vdanger\{background:var\(--vred\);color:#1B0B0C/.test(EMBEDDED_UI) && /body\.lq-light #panel-vault button\.vdanger\{color:#fff\}/.test(EMBEDDED_UI));
   ok("…and the unlock clears a note left from before it", /vaultClose\(\);vaultSay\(was\?/.test(uiJs));
+  ok("the unlock box lives on the page's body, so it's centred in the window whatever the scroll (UI review, 24 Nov 2026)", /\[vm,sh\]\.forEach\(function\(x\)\{if\(x&&document\.body[^\n]*document\.body\.appendChild\(x\)/.test(uiJs) && /sh\.addEventListener\('click',onClick\)/.test(uiJs) && /sh\.addEventListener\('keydown',onKey\)/.test(uiJs) && /#panel-vault,#vaultmsg,#vaultsheet\{--vred/.test(EMBEDDED_UI));
+  ok("…and leaving the page closes it", /if\(VLT\.sheet\)vaultClose\(\);\}/.test(uiJs));
+  ok("the pane follows what the search leaves, and so do the counts", /if\(!phone&&!inList\(VLT\.sel\)&&list\.length\)VLT\.sel=list\[0\]\.name;\s*var e=inList\(VLT\.sel\)\?vaultFind\(VLT\.sel\):null/.test(uiJs) && /function vaultFilters\(\)\{[^\n]*vaultMatch\(e,VLT\.q\)/.test(uiJs));
+  ok("on a phone, a shown value takes the full width with Hide and Copy under it, and every target is 40 px", /@media \(max-width:760px\)\{[^]*?\.vval\{flex-wrap:wrap[^]*?#vaultmsg button,\.vpw button\{min-height:40px\}/.test(EMBEDDED_UI));
+  ok("Pearl's Add is solid dark, the strongest thing on the page", /body\.lq-look-pearl #panel-vault button\.vadd[^{]*\{background:linear-gradient\(180deg,#4A505A/.test(EMBEDDED_UI));
   ok("the page waits 30 seconds", page.VCLIP_MS === 30000);
   const board = { text: "", focused: true, writeText(t) { if (!this.focused) return Promise.reject(new Error("Document is not focused")); this.text = t; return Promise.resolve(); } };
   const timers = []; const later = (f, ms) => { timers.push({ f, ms, live: true }); return timers.length; }, stop = (id) => { if (timers[id - 1]) timers[id - 1].live = false; };
@@ -181,7 +199,7 @@ try {
   const lum = (h) => { const c = [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16) / 255).map((x) => (x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4)); return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]; };
   const ratio = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p); return (x + 0.05) / (y + 0.05); };
   const hex = (re) => ((EMBEDDED_UI.match(re) || [])[1] || "").replace(/^#fff$/i, "#FFFFFF");
-  const darkBg = hex(/#panel-vault,#vaultmsg\{--vred:(#[0-9A-Fa-f]{6})/), lightBg = hex(/body\.lq-light #vaultmsg\{--vred:(#[0-9A-Fa-f]{6})/);
+  const darkBg = hex(/#panel-vault,#vaultmsg,#vaultsheet\{--vred:(#[0-9A-Fa-f]{6})/), lightBg = hex(/body\.lq-light #vaultmsg\{--vred:(#[0-9A-Fa-f]{6})/);
   const darkFg = hex(/#vaultmsg\.err\{background:var\(--vred\);color:(#[0-9A-Fa-f]{3,6})\}/), lightFg = hex(/body\.lq-light #vaultmsg\.err\{color:(#[0-9A-Fa-f]{3,6})\}/);
   ok("the error note's text is readable on its red, in the dark looks and the light one", darkFg && lightFg && ratio(darkFg, darkBg) >= 4.5 && ratio(lightFg, lightBg) >= 4.5, { darkFg, darkBg, lightFg, lightBg });
   ok("Settings links to it, and it's a page by name", /id="openvault"/.test(EMBEDDED_UI) && /vault:'Vault'/.test(uiJs) && (await import("../adapt.mjs")).SHAPES.includes("vault"));

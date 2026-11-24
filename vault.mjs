@@ -128,6 +128,15 @@ function setSite(name, site) {
   const { site: _was, ...rest } = e; store(name, to ? { ...rest, site: to } : rest);
   return { ok: true, name, site: to };
 }
+// The user's own change to what's kept (the Vault page's Edit, unlocked with their PIN: vaultview.mjs renameEntry):
+// the values replaced, as a changed password is in 1Password or Bitwarden, the name and site kept. A set of codes
+// gets its new codes, none used. Never on the app's socket.
+function setValues(name, values) {
+  const e = load(name); if (!e) return { error: `No secret called "${name}".` };
+  const vals = [...new Set([].concat(values).map((v) => String(v || "").trim()).filter(Boolean))]; if (!vals.length) return { error: "Nothing to save." };
+  store(name, { ...e, values: vals.map((v) => ({ v, used: false })) });
+  return { ok: true, name, count: vals.length };
+}
 // Save secret values under a name. A name that exists gets the new values added to it.
 // site: the site it fills on (fillSite), when the one saving it knows; one that has a site keeps it (bindSite).
 function saveSecret(name, values, { site = "" } = {}) {
@@ -530,4 +539,4 @@ function heldFor(text) {
   return "";
 }
 
-export { asksForSecret, holds, fillSite, onSite, bindSite, setSite, toKeyring, heldFor, heldName, vaultSealed, repairFalseSaves, meetsStep, serviceOf, saveSecret, saveCode, CODE_TTL, listSecrets, getSecret, peekSecret, markUsed, deleteSecret, renameSecret, findSecrets, captureSecrets, scrubStored, SCRUB_V };
+export { asksForSecret, holds, fillSite, onSite, bindSite, setSite, setValues, toKeyring, heldFor, heldName, vaultSealed, repairFalseSaves, meetsStep, serviceOf, saveSecret, saveCode, CODE_TTL, listSecrets, getSecret, peekSecret, markUsed, deleteSecret, renameSecret, findSecrets, captureSecrets, scrubStored, SCRUB_V };

@@ -691,7 +691,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       if (u.pathname === "/api/vault/value" && req.method === "POST") { const b = await readBody(req); return json(res, vaultValue(String(b.name || ""), { token: String(b.token || ""), act: b.act === "copy" ? "copy" : "reveal" })); }
       // Keeping it tidy, on an unlocked page only: add one, rename one, delete one (vaultview.mjs).
       if (u.pathname === "/api/vault/add" && req.method === "POST") { const b = await readBody(req); return json(res, vaultAdd({ label: b.label, account: b.account, values: Array.isArray(b.values) ? b.values : [], site: typeof b.site === "string" ? b.site : "", token: String(b.token || "") })); }
-      if (u.pathname === "/api/vault/rename" && req.method === "POST") { const b = await readBody(req); return json(res, vaultRename(String(b.name || ""), { label: b.label, account: b.account, ...(typeof b.site === "string" ? { site: b.site } : {}), token: String(b.token || "") })); }
+      if (u.pathname === "/api/vault/rename" && req.method === "POST") { const b = await readBody(req); return json(res, vaultRename(String(b.name || ""), { label: b.label, account: b.account, ...(typeof b.site === "string" ? { site: b.site } : {}), ...(Array.isArray(b.values) ? { values: b.values } : {}), token: String(b.token || "") })); }
       if (u.pathname === "/api/vault/delete" && req.method === "POST") { const b = await readBody(req); return json(res, vaultRemove(String(b.name || ""), { token: String(b.token || "") })); }
       if (u.pathname === "/api/screens/signin" && req.method === "POST") { const b = await readBody(req); return json(res, await signIn(b.site)); }
       // What Symbiot remembers across the app (mind.mjs), and forgetting it.

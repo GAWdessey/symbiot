@@ -1085,25 +1085,25 @@ body.lq-light #quota .qpill,body.lq-light #quota .qpop{background:rgba(255,255,2
 .ssh{margin:0 0 10px;font:600 16px var(--sans);letter-spacing:-.01em;color:var(--bone);display:flex;align-items:baseline;gap:8px}
 .ssh .muted{font-weight:400;font-size:12.5px}
 /* the Vault page (vaultview.mjs): grouped by service, one picked in a detail pane, what needs a look; no value until it's unlocked */
-#panel-vault,#vaultmsg{--vred:#F07B7F;--vdig:#8CC2FF;--vsym:#F2B766}#panel-vault{max-width:1080px;margin:0 auto;--vred:#F07B7F;--vdig:#8CC2FF;--vsym:#F2B766;--vsoft:rgba(255,255,255,.045);--vsel:rgba(255,255,255,.085)}
-body.lq-light #vaultmsg{--vred:#B42318}body.lq-light #panel-vault button.vdanger{color:#fff}body.lq-light #panel-vault{--vred:#B42318;--vdig:#1D5FC4;--vsym:#9A5200;--vsoft:rgba(21,26,33,.045);--vsel:rgba(21,26,33,.075)}
+#panel-vault,#vaultmsg,#vaultsheet{--vred:#F07B7F;--vdig:#8CC2FF;--vsym:#F2B766;--vsoft:rgba(255,255,255,.045)}#panel-vault{max-width:1080px;margin:0 auto;--vred:#F07B7F;--vdig:#8CC2FF;--vsym:#F2B766;--vsoft:rgba(255,255,255,.045);--vsel:rgba(255,255,255,.085)}
+body.lq-light #vaultmsg{--vred:#B42318}body.lq-light #vaultsheet{--vred:#B42318;--vsoft:rgba(21,26,33,.045)}body.lq-light #panel-vault button.vdanger{color:#fff}body.lq-light #panel-vault{--vred:#B42318;--vdig:#1D5FC4;--vsym:#9A5200;--vsoft:rgba(21,26,33,.045);--vsel:rgba(21,26,33,.075)}
 .vsl{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
 .vbar{display:flex;align-items:center;gap:10px;margin:2px 0 12px}
 .vsearch{position:relative;flex:1;min-width:0}
 .vsearch svg{position:absolute;left:13px;top:50%;margin-top:-8px;width:16px;height:16px;color:var(--faint);pointer-events:none}
 #panel-vault .vsearch input{width:100%;min-height:42px;padding:0 40px 0 38px;border-radius:12px;font-size:14px}
-.vsearch kbd{position:absolute;right:10px;top:50%;transform:translateY(-50%);font:500 12px var(--sans);color:var(--faint);border:1px solid var(--line);border-radius:6px;padding:1px 7px;pointer-events:none}
+.vsearch kbd{position:absolute;right:10px;top:50%;transform:translateY(-50%);font:500 12.5px var(--sans);color:var(--faint);border:1px solid var(--line);border-radius:6px;padding:1px 7px;pointer-events:none}
 .vsearch input:focus+kbd,.vsearch input:not(:placeholder-shown)+kbd{display:none}
-.vchip{display:flex;align-items:center;gap:6px;min-height:42px;padding:0 6px 0 12px;border-radius:12px;border:1px solid var(--line);font-size:13.5px;color:var(--text);white-space:nowrap}
+.vchip{display:flex;align-items:center;gap:6px;min-height:42px;padding:0 6px 0 12px;border-radius:12px;border:1px solid var(--line);font-size:14px;color:var(--text);white-space:nowrap}
 .vchip svg{width:15px;height:15px;flex:none}
 .vchip.open{border-color:var(--green);color:var(--bone)}.vchip.open svg{color:var(--green)}
 .vchip b{font-weight:600;color:var(--bone)}
-.vchip button{min-height:32px;padding:0 10px;border-radius:8px;font-size:13px}
+.vchip button{min-height:32px;padding:0 10px;border-radius:8px;font-size:14px}
 #panel-vault button.vtxt{background:transparent;border:0;color:var(--bone);font-weight:600;padding:0 8px;min-height:32px;cursor:pointer}
 #panel-vault .vadd{min-height:42px;display:flex;align-items:center;gap:6px;padding:0 16px}
 .vadd svg{width:15px;height:15px}
 .vfilt{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 14px}
-#panel-vault .vfilt button{min-height:34px;padding:0 13px;border-radius:999px;font:500 13px var(--sans);background:transparent;border:1px solid var(--line);color:var(--text);display:flex;align-items:center;gap:7px;cursor:pointer}
+#panel-vault .vfilt button{min-height:34px;padding:0 13px;border-radius:999px;font:500 14px var(--sans);background:transparent;border:1px solid var(--line);color:var(--text);display:flex;align-items:center;gap:7px;cursor:pointer}
 #panel-vault .vfilt button[aria-pressed="true"]{background:var(--bone);color:var(--ink);border-color:var(--bone)}
 .vfilt i{font-style:normal;color:var(--faint)}.vfilt button[aria-pressed="true"] i{color:inherit;opacity:.7}
 .vdot{width:8px;height:8px;border-radius:50%;background:var(--amber);flex:none}
@@ -1123,53 +1123,53 @@ body.lq-light #vaultmsg{--vred:#B42318}body.lq-light #panel-vault button.vdanger
 body.lq-light .vmono{color:hsl(var(--h) 55% 28%);background:hsl(var(--h) 60% 90%)}
 .vdetail{position:sticky;top:var(--vtop,12px);min-width:0;border:1px solid var(--line);border-radius:16px;background:var(--ink2);padding:22px}
 .vdh{display:flex;align-items:center;gap:14px;min-width:0}
-.vdh .vmono{width:50px;height:50px;border-radius:14px;font-size:21px}
+.vdh .vmono{width:50px;height:50px;border-radius:14px;font-size:20px}
 .vdh .vtt{flex:1;min-width:0}
 .vdh h2{margin:0;font:600 20px/1.25 var(--sans);color:var(--bone);overflow-wrap:anywhere}
-.vdh p{margin:3px 0 0;font-size:13px;color:var(--faint)}
+.vdh p{margin:3px 0 0;font-size:12.5px;color:var(--faint)}
 .vdact{display:flex;gap:6px;flex:none}
-#panel-vault .vdact button,#panel-vault .vbtn{min-height:38px;padding:0 13px;font-size:13.5px}
+#panel-vault .vdact button,#panel-vault .vbtn{min-height:38px;padding:0 13px;font-size:14px}
 #panel-vault button.vdel{background:transparent;border:1px solid var(--line);color:var(--vred)}
 #panel-vault button.vdel:hover{border-color:var(--vred)}
 #panel-vault button.vdanger{background:var(--vred);color:#1B0B0C;border:0;border-radius:10px;font:inherit;font-weight:600;cursor:pointer}
-.vissue{display:flex;gap:10px 14px;align-items:center;flex-wrap:wrap;margin:18px 0 0;padding:12px 14px;border-radius:12px;border:1px solid color-mix(in srgb,var(--amber) 40%,transparent);background:color-mix(in srgb,var(--amber) 9%,transparent);font-size:13.5px;line-height:1.45;color:var(--text)}
+.vissue{display:flex;gap:10px 14px;align-items:center;flex-wrap:wrap;margin:18px 0 0;padding:12px 14px;border-radius:12px;border:1px solid color-mix(in srgb,var(--amber) 40%,transparent);background:color-mix(in srgb,var(--amber) 9%,transparent);font-size:14px;line-height:1.45;color:var(--text)}
 .vissue p{flex:1 1 240px;margin:0;display:flex;gap:9px;align-items:baseline}.vissue p .vdot{position:relative;top:-1px}
 .vissue .vib{display:flex;gap:6px}
 .vfield{margin-top:18px;border:1px solid var(--line);border-radius:12px;background:var(--vsoft)}
 .vfl{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:11px 14px 0;font-size:12.5px;color:var(--faint);min-height:20px}.vfl.vfl2{padding:8px 8px 0 14px}
 .vval{display:flex;align-items:center;gap:8px;padding:6px 8px 8px 14px;min-height:54px}
-.vval code{flex:1;min-width:0;font:500 15.5px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--bone);overflow-wrap:anywhere;user-select:all}
+.vval code{flex:1;min-width:0;font:500 14px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--bone);overflow-wrap:anywhere;user-select:all}
 .vval code.vhid{letter-spacing:.16em;color:var(--faint);user-select:none;white-space:nowrap;overflow:hidden}
 .vval code .vd{color:var(--vdig)}.vval code .vs{color:var(--vsym)}
-#panel-vault .vval button,#panel-vault .vcode button{min-height:38px;min-width:70px;padding:0 12px;font:600 13.5px var(--sans);display:flex;align-items:center;justify-content:center;gap:6px}
+#panel-vault .vval button,#panel-vault .vcode button{min-height:38px;min-width:70px;padding:0 12px;font:600 14px var(--sans);display:flex;align-items:center;justify-content:center;gap:6px}
 .vval button svg,.vcode button svg{width:15px;height:15px}
 #panel-vault .vval button[data-va='copy'],#panel-vault .vcode button{min-width:124px;padding:0 10px}
 .vcodes{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,300px),1fr));gap:6px;padding:6px 10px 10px}
 .vcode{display:flex;align-items:center;gap:6px;padding:4px 4px 4px 10px;border-radius:9px;background:var(--ink);font:500 14px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--bone);min-height:46px}
 .vcode span{flex:1;min-width:0;overflow-wrap:anywhere}
 .vcode.used span{text-decoration:line-through;color:var(--faint)}.vcode.used em{font:400 12.5px var(--sans);color:var(--faint);padding-right:8px}
-.vok{min-height:20px;padding:0 14px 10px;font-size:12.5px;color:var(--green)}
+.vok{min-height:20px;padding:0 14px 10px;font-size:14px;color:var(--green)}
 .vok:empty{display:none}.vok.vbad{color:var(--vred)}
-.vbadn{display:block;margin-top:4px;font-size:12.5px;color:var(--vred)}
-.vmeta{margin:20px 0 0;display:grid;grid-template-columns:max-content minmax(0,1fr);gap:9px 18px;font-size:13.5px;line-height:1.45}
+.vbadn{display:block;margin-top:4px;font-size:14px;color:var(--vred)}
+.vmeta{margin:20px 0 0;display:grid;grid-template-columns:max-content minmax(0,1fr);gap:9px 18px;font-size:14px;line-height:1.45}
 .vmeta dt{color:var(--faint)}.vmeta dd{margin:0;color:var(--text);min-width:0;overflow-wrap:anywhere}
-.vmeta code{font:500 13px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:var(--ink);color:var(--bone);padding:2px 7px;border-radius:6px}
+.vmeta code{font:500 12.5px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:var(--ink);color:var(--bone);padding:2px 7px;border-radius:6px}
 .vmeta button{margin-left:6px}
-#panel-vault .vmeta button.vtxt{min-height:28px;padding:0 6px;font-size:12.5px;color:var(--faint)}
+#panel-vault .vmeta button.vtxt{min-height:28px;padding:0 6px;font-size:14px;color:var(--faint)}
 #panel-vault .vmeta button.vtxt svg{width:13px;height:13px;vertical-align:-2px;margin-right:4px}
 .vform{display:grid;gap:12px;margin-top:2px}
-.vform label{display:grid;gap:5px;font-size:13px;color:var(--faint)}.vform .vhint{font-size:12px;line-height:1.4;color:var(--faint)}.vmeta .vnosite{color:var(--faint)}
-#panel-vault .vform input,#vaultsheet input,#vaultsheet textarea{width:100%;min-height:42px;font-size:14.5px;border-radius:10px;box-sizing:border-box}
-#vaultsheet textarea{min-height:120px;padding:10px 12px;font:500 14px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;resize:vertical}
+.vform label{display:grid;gap:5px;font-size:12.5px;color:var(--faint)}.vform .vhint{font-size:12.5px;line-height:1.4;color:var(--faint)}.vmeta .vnosite{color:var(--faint)}
+#panel-vault .vform input,#panel-vault .vform textarea,#vaultsheet input,#vaultsheet textarea{width:100%;min-height:42px;font-size:14px;border-radius:10px;box-sizing:border-box}
+#panel-vault .vform textarea,#vaultsheet textarea{min-height:120px;padding:10px 12px;font:500 14px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;resize:vertical}
 .vsb{display:flex;align-items:center;gap:8px;justify-content:flex-end;flex-wrap:wrap;margin-top:6px}
 #panel-vault .vsb button,#vaultsheet .vsb button{min-height:40px;padding:0 16px}
 .vconfirm{margin-top:18px;padding:14px 16px;border-radius:12px;border:1px solid var(--vred);background:color-mix(in srgb,var(--vred) 8%,transparent);font-size:14px;line-height:1.45;color:var(--text)}
 .vconfirm p{margin:0 0 10px}
 .vempty{padding:36px 22px;text-align:center;font-size:14px;line-height:1.55;color:var(--faint);border:1px dashed var(--line);border-radius:14px}
-.vempty b{display:block;margin-bottom:4px;font:600 15px var(--sans);color:var(--bone)}
+.vempty b{display:block;margin-bottom:4px;font:600 14px var(--sans);color:var(--bone)}
 .vempty .vsb{justify-content:center;margin-top:14px}
 .vskel{height:54px;margin:1px 0;border-radius:11px;background:var(--vsoft)}
-.vlog{margin:22px 4px 0;font-size:13px;color:var(--faint)}
+.vlog{margin:22px 4px 0;font-size:12.5px;color:var(--faint)}
 .vlog summary{cursor:pointer;min-height:40px;display:flex;align-items:center;font-weight:500}
 .vlog .vlr{display:flex;gap:10px;padding:6px 0;border-top:1px solid var(--line)}.vlog .vlr b{color:var(--text);font-weight:500;flex:1;min-width:0;overflow-wrap:anywhere}
 #panel-vault .vback{display:none}
@@ -1178,28 +1178,29 @@ body.lq-light .vmono{color:hsl(var(--h) 55% 28%);background:hsl(var(--h) 60% 90%
 @media (max-width:600px){#ownrow,#linerow{flex-direction:column;align-items:stretch;gap:10px}#ownrow>button,#linerow>button{width:100%;min-height:40px}}
 .ownsteps{margin:6px 0 4px;padding-left:22px}.ownsteps li{margin:4px 0}.ownpathrow{display:flex;gap:8px;align-items:center;margin-top:4px}.ownpath{flex:1;min-width:0;overflow-wrap:anywhere;word-break:break-all;font-size:12.5px;line-height:1.5}.owncopy{flex:none}
 #vaultmsg:empty{display:none}#vaultmsg.err{background:var(--vred);color:#1B0B0C}body.lq-light #vaultmsg.err{color:#fff}
-#vaultmsg button{min-height:32px;padding:0 12px;border-radius:8px;border:0;background:rgba(0,0,0,.12);color:inherit;font:600 13.5px var(--sans);cursor:pointer}
+#vaultmsg button{min-height:32px;padding:0 12px;border-radius:8px;border:0;background:rgba(0,0,0,.12);color:inherit;font:600 14px var(--sans);cursor:pointer}
 #vaultsheet{position:fixed;inset:0;z-index:90;display:grid;place-items:center;padding:16px;background:rgba(4,6,8,.55)}
 #vaultsheet.hidden{display:none}
 .vsheet{width:min(430px,100%);max-height:calc(100vh - 32px);overflow:auto;box-sizing:border-box;border-radius:18px;background:var(--ink2);border:1px solid var(--line);padding:24px;box-shadow:0 24px 60px rgba(0,0,0,.45)}
 .vsheet .vmono{width:44px;height:44px;border-radius:13px;margin-bottom:14px}
 .vsheet .vlockic{display:grid;place-items:center;width:44px;height:44px;border-radius:13px;margin-bottom:14px;background:var(--vsoft);color:var(--bone)}.vsheet .vlockic svg{width:20px;height:20px}
-.vsheet h3{margin:0 0 6px;font:600 18px/1.3 var(--sans);color:var(--bone)}
+.vsheet h3{margin:0 0 6px;font:600 20px/1.25 var(--sans);color:var(--bone)}
 .vsheet>p{margin:0 0 16px;font-size:14px;line-height:1.5;color:var(--text)}
 .vsheet .vform{gap:12px}
-.verr{min-height:0;font-size:13px;line-height:1.45;color:var(--vred)}.verr:empty{display:none}
+.verr{min-height:0;font-size:14px;line-height:1.45;color:var(--vred)}.verr:empty{display:none}
 .vfine{margin:16px 0 0;font-size:12.5px;line-height:1.5;color:var(--faint)}
 .vfine code{font:500 12.5px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--text)}
-.vcheck{display:flex!important;grid-template-columns:none!important;align-items:center;gap:8px!important;color:var(--text)!important;font-size:13.5px!important;cursor:pointer}
+.vcheck{display:flex!important;grid-template-columns:none!important;align-items:center;gap:8px!important;color:var(--text)!important;font-size:14px!important;cursor:pointer}
 .vcheck input{appearance:auto;-webkit-appearance:checkbox;width:18px!important;min-height:18px!important;height:18px;margin:0;padding:0;border-radius:4px;accent-color:var(--green)}
 .vpw{position:relative}.vpw input{padding-right:70px}
-#vaultsheet .vpw button{position:absolute;right:5px;top:5px;min-height:32px;padding:0 10px;font-size:12.5px}
+.vpw button{position:absolute;right:5px;top:5px;min-height:32px;padding:0 10px;font-size:14px}
 body.lq-liquid #panel-vault{--vtop:74px}body.lq-liquid .vdetail{border-color:rgba(255,255,255,.08);background:rgba(255,255,255,.035)}
 body.lq-liquid.lq-light .vdetail{border-color:rgba(21,26,33,.09);background:rgba(255,255,255,.7)}
 body.lq-liquid .vfield,body.lq-liquid .vchip,body.lq-liquid .vfilt button{border-color:rgba(255,255,255,.1)}
 body.lq-liquid.lq-light .vfield,body.lq-liquid.lq-light .vchip,body.lq-liquid.lq-light .vfilt button{border-color:rgba(21,26,33,.12)}
 body.lq-liquid .vchip.open{border-color:var(--green)}
 body.lq-liquid .vsheet{background:#16181C}body.lq-liquid.lq-light .vsheet{background:#FBFBFA}
+body.lq-look-pearl #panel-vault button.vadd,body.lq-look-pearl #panel-vault .vempty button.act{background:linear-gradient(180deg,#4A505A 0%,#2A2E35 55%,#1B1E23 100%);color:#FFFFFF;border:1px solid #1B1E23;box-shadow:0 1px 2px rgba(21,26,33,.12),0 8px 18px -10px rgba(21,26,33,.55)}
 @media (max-width:760px){
 .vsplit{grid-template-columns:minmax(0,1fr)}
 #panel-vault.vone .vlist,#panel-vault.vone .vfilt,#panel-vault.vone .vbar{display:none}
@@ -1215,6 +1216,8 @@ body.lq-liquid .vsheet{background:#16181C}body.lq-liquid.lq-light .vsheet{backgr
 .vbar{flex-wrap:wrap}.vsearch{flex:1 1 100%}.vchip{flex:1}
 .vfilt{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;margin-left:-2px;padding:0 2px 2px}.vfilt::-webkit-scrollbar{display:none}#panel-vault .vfilt button{flex:none}
 .vmeta{grid-template-columns:minmax(0,1fr);gap:2px}.vmeta dd{margin-bottom:10px}#panel-vault .vmeta button.vtxt{min-height:40px}
+.vval{flex-wrap:wrap;padding:6px 8px 8px}.vval code{flex:1 1 100%;padding:2px 6px 0}#panel-vault .vval button{flex:1 1 0}
+#panel-vault .vfilt button,.vchip button,#panel-vault button.vtxt,#panel-vault .vdact button,#panel-vault .vbtn,#panel-vault .vval button,#panel-vault .vcode button,#vaultmsg button,.vpw button{min-height:40px}.vpw button{top:1px}.vpw input{min-height:42px}
 }
 body.lq-liquid.lq-light .vlock.open{border-color:var(--green)}
 @media (max-width:560px){.vrow{grid-template-columns:minmax(0,1fr)}.vrow .va{grid-column:1;grid-row:auto;margin-top:6px}.vrow .va button{flex:1}.vlock input{flex:1 1 100%;width:100%}.vlock button{flex:1}}

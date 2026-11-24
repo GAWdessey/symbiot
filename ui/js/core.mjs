@@ -57,7 +57,7 @@ $('panel-reports').classList.toggle('hidden',tab!=='reports');if(tab==='reports'
 $('panel-asks').classList.toggle('hidden',tab!=='asks');if(tab==='asks')loadAsks();
 $('panel-marketing').classList.toggle('hidden',tab!=='marketing');if(tab==='marketing')loadMarketing();
 $('panel-computer').classList.toggle('hidden',tab!=='computer');if(tab==='computer')loadComputer();
-$('panel-vault').classList.toggle('hidden',tab!=='vault');if(tab==='vault'){vaultSay('');loadVault();}else{if(VLT.del)vaultFlush();if(VLT.token||Object.keys(VLT.shown).length)vaultLockNow();else if($('vaultmsg')&&$('vaultmsg').innerHTML)vaultSay('');} // leaving it locks it
+$('panel-vault').classList.toggle('hidden',tab!=='vault');if(tab==='vault'){vaultSay('');loadVault();}else{if(VLT.del)vaultFlush();if(VLT.token||Object.keys(VLT.shown).length)vaultLockNow();else if($('vaultmsg')&&$('vaultmsg').innerHTML)vaultSay('');if(VLT.sheet)vaultClose();} // leaving it locks it
 if(isRun){$('what').textContent=tab;wuHead();WUTEXT='';$('out').textContent=WUEMPTY;$('out').classList.add('muted');$('copy').classList.add('hidden');$('outfoot').style.display='none';if(tab==='week')showLatestWeek();}
 if(isMap&&!mapLoaded)loadMap();
 if(isTasks)loadTasks();
