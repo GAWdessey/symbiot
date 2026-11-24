@@ -82,6 +82,9 @@ function qKeyOf(qe){var box=qe.closest('.aq');var a=box&&agentById(box.getAttrib
 if(document.addEventListener)document.addEventListener('input',function(ev){var t=ev.target;if(!t||!t.classList||!t.classList.contains('qother')||!t.closest)return;var qe=t.closest('.aq .q'),k=qe&&qKeyOf(qe);if(k)bdSet(k,t.value,null,null,'desk');});
 function saveDrafts(el){el.querySelectorAll('.aq .q').forEach(function(qe){var k=qKeyOf(qe);if(!k)return;var pick=qe.querySelector('.qopt.on'),t=qe.querySelector('.qother').value;QDRAFT[k]={o:pick?pick.getAttribute('data-j'):'',t:t};if(t||bdAll()[k])bdSet(k,t,null,null,'desk');});}
 function restoreDrafts(el){el.querySelectorAll('.aq .q').forEach(function(qe){var k=qKeyOf(qe),d=QDRAFT[k];if(!d&&k){var b=bdAll()[k];if(b&&b.text)d={o:'',t:b.text};}if(!d)return;qe.querySelectorAll('.qopt[aria-pressed]').forEach(function(b){pickOpt(b,!b.disabled&&b.getAttribute('data-j')===d.o);});qe.querySelector('.qother').value=d.t||'';});}
+// the typed answers among those being sent, by their draft key; and every box on the page for those questions
+function deskTyped(a,ans){var out=[];document.querySelectorAll('.aq .q').forEach(function(qe){var k=qKeyOf(qe),i=qe.querySelector('.qother'),t=i&&String(i.value||'').trim();if(!k||!t||k.indexOf(a.path+'|')!==0)return;if(ans.some(function(x){return a.path+'|'+x.q===k&&x.a===t;})&&!out.some(function(x){return x.k===k;}))out.push({k:k,t:t});});return out;}
+function deskBoxes(xs,f){if(!xs.length)return;document.querySelectorAll('.aq .q').forEach(function(qe){var k=qKeyOf(qe),x=null;xs.forEach(function(y){if(y.k===k)x=y;});var i=x&&qe.querySelector('.qother');if(i)f(i,x);});}
 function collectAnswers(box,a){var out=[];box.querySelectorAll('.q').forEach(function(qe){var q=a.ask.questions[+qe.getAttribute('data-i')];if(!q)return;
 var other=(qe.querySelector('.qother').value||'').trim();var pick=qe.querySelector('.qopt.on');var ans=other||(pick?q.options[+pick.getAttribute('data-j')]:'');if(ans)out.push({q:q.q,a:ans});});return out;}
 // a picked option fills as the block's main button does (act); the rest stay outlined
@@ -90,13 +93,18 @@ function wireAsks(el){el.querySelectorAll('.aq').forEach(function(box){var a=age
 function send(rerun,given){var msg=document.getElementById(box.closest('#panel-asks')?'asksmsg':'agentsmsg');var ans=given||collectAnswers(box,a);
 if(!ans.length){msg.innerHTML="<div class='note err'>Pick an option or type an answer first.</div>";return;}
 box.querySelectorAll('button').forEach(function(b){b.disabled=true;});
+// what you typed leaves its box now, and its drafts with it, so a redraw while it's on its way (saveDrafts,
+// restoreDrafts) can't bring it back; a send that fails puts it back (Home's cards do the same, wireBlob)
+var typed=given?[]:deskTyped(a,ans);typed.forEach(function(x){delete QDRAFT[x.k];bdSet(x.k,'');});deskBoxes(typed,function(i){i.value='';});msg.innerHTML="<div class='muted'>Sending…</div>";
+var failed=function(t){box.querySelectorAll('button').forEach(function(b){b.disabled=false;});if(given)box.querySelectorAll('.qopt.on').forEach(function(b){pickOpt(b,false);});
+typed.forEach(function(x){QDRAFT[x.k]={o:'',t:x.t};bdSet(x.k,x.t,null,null,'desk');});deskBoxes(typed,function(i,x){if(!i.value)i.value=x.t;});msg.innerHTML="<div class='note err'>"+esc(t)+"</div>";};
 api('/api/agents/answer',{path:a.path,answers:ans,rerun:rerun}).then(function(r){
-if(!r||r.error){box.querySelectorAll('button').forEach(function(b){b.disabled=false;});if(given)box.querySelectorAll('.qopt.on').forEach(function(b){pickOpt(b,false);});msg.innerHTML="<div class='note err'>"+esc((r&&r.error)||'failed')+"</div>";return;}
+if(!r||r.error){failed((r&&r.error)||'failed');return;}
 ans.forEach(function(x){var k=a.path+'|'+x.q;delete QDRAFT[k];bdSet(k,'');}); // sent: its drafts go
-// and its box empties now, or the redraw (loadAgents' saveDrafts) keeps the sent words as a new draft
-box.querySelectorAll('input.qother').forEach(function(i){i.value='';});
+// and its box empties, the one pressed and any drawn again since, or the redraw keeps the sent words as a new draft
+box.querySelectorAll('input.qother').forEach(function(i){i.value='';});deskBoxes(ans.map(function(x){return {k:a.path+'|'+x.q};}),function(i){i.value='';});
 if(r.talk){box.querySelectorAll('button').forEach(function(b){b.disabled=false;});msg.innerHTML="<div class='lqblob'>"+blobTalk(r.talk,a.name)+"</div><div class='muted'>The question stays open: answer it when you're ready.</div>";return;}
-msg.innerHTML="<div class='note ok'>&#10003; Saved "+r.saved+" answer"+(r.saved>1?"s":"")+" for <b>"+esc(a.name)+"</b> in .symbiot/ANSWERS.md"+(r.rerun?" &middot; your agent is picking them up now.":".")+(r.yours&&r.yours.length?"<div class='err'><i class=ic-person></i> Still yours to do: "+esc(r.yours.join(' '))+"</div>":"")+(r.note?"<div class='muted'>"+esc(r.note)+"</div>":"")+"</div>";box.querySelectorAll('.qopt.on').forEach(function(b){pickOpt(b,false);});loadAgents();if(current==='asks')loadAsks();});}
+msg.innerHTML="<div class='note ok'>&#10003; Saved "+r.saved+" answer"+(r.saved>1?"s":"")+" for <b>"+esc(a.name)+"</b> in .symbiot/ANSWERS.md"+(r.rerun?" &middot; your agent is picking them up now.":".")+(r.yours&&r.yours.length?"<div class='err'><i class=ic-person></i> Still yours to do: "+esc(r.yours.join(' '))+"</div>":"")+(r.note?"<div class='muted'>"+esc(r.note)+"</div>":"")+"</div>";box.querySelectorAll('.qopt.on').forEach(function(b){pickOpt(b,false);});loadAgents();if(current==='asks')loadAsks();}).catch(function(e){failed(String((e&&e.message)||e));});}
 var s1=box.querySelector('.qsend'),s2=box.querySelector('.qsave');
 if(s1)s1.addEventListener('click',function(){send(true);});if(s2)s2.addEventListener('click',function(){send(false);});
 wirePreview(box,a);

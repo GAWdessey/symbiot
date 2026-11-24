@@ -24,6 +24,10 @@ function sameHtml(el,h){if(el._h===h)return true;el.innerHTML=h;el._h=h;return f
 // and wiped a half-typed answer (2026-10-09). With no twin (the card's gone) it's
 // rebuilt as usual: its draft is kept anyway (bdSet). Its content may be a redraw
 // behind, so the next call draws it afresh.
+// A box you send from empties the moment you send, as every chat does, not once the answer is in (seconds, for an
+// AI): "once i respond, the message i typed and sent doesnt go away" (22 Oct 2026). It gives back a function that
+// puts the words back if the send failed, unless you've typed something new there meanwhile.
+function sentBox(i){if(!i)return function(){};var t=i.value;i.value='';return function(){if(i&&!i.value)i.value=t;};}
 function keepTyping(el,h){if(el._h===h)return true;
 var f=document.activeElement,k=f&&f!==document.body&&el.contains&&el.contains(f)&&f.closest?f.closest('[data-key]'):null;
 if(!k||k.parentNode!==el){el.innerHTML=h;el._h=h;return false;}

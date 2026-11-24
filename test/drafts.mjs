@@ -152,6 +152,65 @@ try {
   // once, not again from inside: it ran out of stack on CI (0.66.10 publish, 2026-10-19)
   const fits = await js("(function(){var b=lqBuild,t=LQ.needTall,n=0;window.lqBuild=function(){n++;if(n>40)throw new Error('laid out '+n+' times');LQ.needTall=-100;lqBlobFit();};try{LQ.needTall=-100;lqBlobFit();return n;}catch(e){return String(e);}finally{window.lqBuild=b;LQ.needTall=t;}})()");
   ok("a card that grows as it's laid out lays the band out once, not again from inside", fits === 1, fits);
+
+  // "once i respond, the message i typed and sent doesnt go away" (goal, 22 Oct 2026). A typed reply that is a
+  // question to the card's agent waits seconds for its answer; Home redrew the card meanwhile from the kept draft,
+  // and the clearing that followed emptied only the card it was sent from, gone from the page by then.
+  console.log("SENT — what you sent leaves the box at once, and a redraw while it's on its way doesn't bring it back");
+  const talkQ = "Should I move the nightly check to 02:00?", talkC = card("act-talk", talkQ, ["yes (recommended)", "no"]);
+  writeFileSync(join(CFG, "runs.json"), JSON.stringify([perm, own, gone, win, talkC]));
+  await js("for(var k in BLOBFAIL)delete BLOBFAIL[k];LQ.fresh=true;lqLoad(false)"); // the failed card above no longer holds its page
+  ok("the card is up", await until(show("/nightly check to 02:00/")), await js("JSON.stringify((LQ.home.you||[]).map(function(y){return y.q}))"));
+  const slow = (reply) => `(function(){var f=window.fetch;window.fetch=function(u,o){if(String(u).indexOf('/api/agents/answer')>=0){window.fetch=f;return new Promise(function(r){setTimeout(function(){r({json:function(){return ${reply};}});},2500);});}return f.apply(this,arguments);};})()`;
+  const typeSend = (words) => `(function(){var b=${blobOf("/nightly check to 02:00/")},fr=b.querySelector('.bfree'),f=b.querySelector('.bfx'),i=f.querySelector('input');if(f.classList.contains('hidden'))fr.click();i.focus();i.value=${JSON.stringify(words)};i.dispatchEvent(new Event('input'));f.dispatchEvent(new Event('submit',{cancelable:true}));i.blur();})()`;
+  const liveBox = `(function(){var b=${blobOf("/nightly check to 02:00/")},i=b&&b.querySelector('.bfx input');return i?i.value:'no card';})()`;
+  await js(slow(`{ok:true,talk:[{from:'you',text:'why 02:00?'},{from:'agent',text:'It is the quietest hour.'}],said:'Asked its agent.'}`));
+  await js(typeSend("why 02:00?"));
+  ok("sent: the box is empty at once, before the answer is back", (await js(liveBox)) === "", await js(liveBox));
+  await js("LQ.fresh=true;lqLoad(false)"); await sleep(1200);
+  ok("...and stays empty when Home redraws the card while it's on its way", (await js(liveBox)) === "", await js(liveBox));
+  ok("...the agent's reply shows on the card, which stays", await until(`(function(){var b=${blobOf("/nightly check to 02:00/")};return !!b&&/quietest hour/.test(b.textContent);})()`, 8000), await js(`(function(){var b=${blobOf("/nightly check to 02:00/")};return b?b.textContent:'gone';})()`));
+  ok("...with the box still empty", (await js(liveBox)) === "", await js(liveBox));
+  await js("LQ.fresh=true;lqLoad(false)"); await sleep(1200);
+  ok("...through the next redraw too, its draft gone", (await js(liveBox)) === "" && !(await js("Object.keys(JSON.parse(localStorage.getItem('symbiot-blobdrafts')||'{}')).some(function(k){return /02:00/.test(k)})")), [await js(liveBox), await js("localStorage.getItem('symbiot-blobdrafts')")]);
+  // a send that fails gives the words back, into the card on the page now
+  await js(slow(`{error:"It didn't save."}`));
+  await js(typeSend("only if the backup is done"));
+  await js("LQ.fresh=true;lqLoad(false)"); await sleep(600);
+  ok("a send that fails puts your words back in the box, after a redraw too", await until(`(function(){var v=${liveBox};return v==='only if the backup is done';})()`, 8000), await js(liveBox));
+  ok("...with why on the card", /didn't save/.test(await js(`(${blobOf("/nightly check to 02:00/")}).querySelector('.bst').textContent`)), await js(`(${blobOf("/nightly check to 02:00/")}).querySelector('.bst').textContent`));
+
+  // the same question on the Workdesk's questions page (its own box, kept by saveDrafts/restoreDrafts)
+  await js("setTab('asks')");
+  const deskQ = `[...document.querySelectorAll('#askslist .aq .q')].find(function(q){return /nightly check to 02:00/.test(q.textContent)})`;
+  ok("on the Workdesk, the question is up with its own box", await until(`!!(${deskQ})`, 10000), await js("$('askslist').textContent.slice(0,300)"));
+  const deskBox = `(function(){var q=${deskQ},i=q&&q.querySelector('.qother');return i?i.value:'no box';})()`;
+  await js(slow(`{ok:true,talk:[{from:'you',text:'what runs at 02:00 now?'},{from:'agent',text:'Nothing else runs then.'}],said:'Asked its agent.'}`));
+  await js(`(function(){var q=${deskQ},i=q.querySelector('.qother');i.focus();i.value='what runs at 02:00 now?';i.dispatchEvent(new Event('input',{bubbles:true}));q.closest('.aq').querySelector('.qsend').click();i.blur();})()`);
+  ok("sent from the Workdesk: the box is empty at once", (await js(deskBox)) === "", await js(deskBox));
+  await js("loadAsks()"); await sleep(1200);
+  ok("...and a redraw while it's on its way keeps it empty", (await js(deskBox)) === "", await js(deskBox));
+  await sleep(2000); await js("loadAsks()"); await sleep(1200);
+  ok("...and after the agent's reply, through the next redraw, still empty", (await js(deskBox)) === "", [await js(deskBox), await js("localStorage.getItem('symbiot-blobdrafts')")]);
+  await js(slow(`{error:"It didn't save."}`));
+  await js(`(function(){var q=${deskQ},i=q.querySelector('.qother');i.value='skip it this week';q.closest('.aq').querySelector('.qsend').click();})()`);
+  await js("loadAsks()");
+  ok("a Workdesk send that fails puts your words back, after a redraw too", await until(`${deskBox}==='skip it this week'`, 8000), await js(deskBox));
+
+  // asking about a report: the question leaves the box as it's asked and shows above the answer
+  const repDir = join(CFG, "reports"); mkdirSync(repDir, { recursive: true });
+  writeFileSync(join(repDir, "NIGHTLY-CHECK-TIMES.md"), "# Nightly check times\n\nThe nightly check runs at 01:30 and takes about 43 minutes.\n");
+  await js("setTab('reports')");
+  ok("a report to ask about is listed", await until("[...document.querySelectorAll('#reportslist .rrow')].some(function(r){return /Nightly check times/.test(r.textContent)})", 10000), await js("($('reportslist')||{}).textContent"));
+  await js("[...document.querySelectorAll('#reportslist .rrow')].find(function(r){return /Nightly check times/.test(r.textContent)}).click()");
+  ok("...and opens with its ask box", await until("!!document.querySelector('#reportview .repask .repq')", 8000), "");
+  await js(`(function(){var f=window.fetch;window.fetch=function(u,o){if(String(u).indexOf('/api/reports/ask')>=0){window.fetch=f;return new Promise(function(r){setTimeout(function(){r({json:function(){return {answer:'It takes about 43 minutes.'};}});},2000);});}return f.apply(this,arguments);};var f2=document.querySelector('#reportview .repask');f2.querySelector('.repq').value='how long does it take?';f2.dispatchEvent(new Event('submit',{cancelable:true}));})()`);
+  ok("asked: the report's box is empty at once, the question shown while it thinks", (await js("document.querySelector('#reportview .repq').value")) === "" && /how long does it take/.test(await js("document.querySelector('#reportview .repmsg').textContent")), [await js("document.querySelector('#reportview .repq').value"), await js("document.querySelector('#reportview .repmsg').textContent")]);
+  ok("...and the answer comes under it", await until("/43 minutes/.test(document.querySelector('#reportview .repmsg').textContent)&&/You asked/.test(document.querySelector('#reportview .repmsg').textContent)", 6000), await js("document.querySelector('#reportview .repmsg').textContent"));
+
+  // Home's own chat: what you typed and a screenshot you attached both leave as you send (talk.mjs lqSay)
+  const chat = await js("(function(){var i=$('lqask');if(!i)return 'no box';LQ.atts=[{data:'data:image/png;base64,iVBORw0KGgo='}];lqAttsShow();i.value='open reports';lqSay();return JSON.stringify({box:i.value,atts:LQ.atts.length,shown:($('lqatts')||{innerHTML:''}).innerHTML.length});})()");
+  ok("Home's chat: sent, its box and its attached screenshot are both cleared", chat === JSON.stringify({ box: "", atts: 0, shown: 0 }), chat);
   ok("no errors on the page", !errors.length, errors);
 } catch (e) { ok("ran", false, String((e && e.stack) || e)); }
 await finish();
