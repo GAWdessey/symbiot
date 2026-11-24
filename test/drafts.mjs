@@ -179,6 +179,9 @@ try {
   await js("LQ.fresh=true;lqLoad(false)"); await sleep(600);
   ok("a send that fails puts your words back in the box, after a redraw too", await until(`(function(){var v=${liveBox};return v==='only if the backup is done';})()`, 8000), await js(liveBox));
   ok("...with why on the card", /didn't save/.test(await js(`(${blobOf("/nightly check to 02:00/")}).querySelector('.bst').textContent`)), await js(`(${blobOf("/nightly check to 02:00/")}).querySelector('.bst').textContent`));
+  // ...and in view: the box and why are the card's last lines, below its scroll area on a card taller than its room (UI review, 24 Nov 2026)
+  const seen = `(function(){var b=${blobOf("/nightly check to 02:00/")};if(!b)return 'gone';var r=b.getBoundingClientRect(),i=b.querySelector('.bfx input').getBoundingClientRect(),s=b.querySelector('.bst').getBoundingClientRect();return i.top>=r.top-1&&s.bottom<=r.bottom+1;})()`;
+  ok("...the box and why scrolled into view on the card", await until(seen, 3000), await js(seen));
 
   // the same question on the Workdesk's questions page (its own box, kept by saveDrafts/restoreDrafts)
   await js("setTab('asks')");
@@ -191,11 +194,14 @@ try {
   await js("loadAsks()"); await sleep(1200);
   ok("...and a redraw while it's on its way keeps it empty", (await js(deskBox)) === "", await js(deskBox));
   await sleep(2000); await js("loadAsks()"); await sleep(1200);
+  ok("...the exchange shows in the question's own block, under it and above its options", await until(`(function(){var q=${deskQ},t=q&&q.querySelector('.btalk'),o=q&&q.querySelector('.qopts');return !!t&&/Nothing else runs then/.test(t.textContent)&&!!(t.compareDocumentPosition(o)&4);})()`, 8000), await js(`(${deskQ}||{}).innerHTML`));
+  ok("...with 'the question stays open' on that block, not the page's line at the top", /stays open/.test(await js(`(${deskQ}).querySelector('.qst').textContent`)) && !/stays open|Nothing else runs/.test(await js("($('asksmsg')||{}).textContent||''")), [await js(`(${deskQ}).querySelector('.qst').textContent`), await js("($('asksmsg')||{}).textContent")]);
   ok("...and after the agent's reply, through the next redraw, still empty", (await js(deskBox)) === "", [await js(deskBox), await js("localStorage.getItem('symbiot-blobdrafts')")]);
   await js(slow(`{error:"It didn't save."}`));
   await js(`(function(){var q=${deskQ},i=q.querySelector('.qother');i.value='skip it this week';q.closest('.aq').querySelector('.qsend').click();})()`);
   await js("loadAsks()");
   ok("a Workdesk send that fails puts your words back, after a redraw too", await until(`${deskBox}==='skip it this week'`, 8000), await js(deskBox));
+  ok("...and says why on the question's block", await until(`/didn't save/.test((${deskQ}).querySelector('.qst').textContent)`, 3000), await js(`(${deskQ}).querySelector('.qst').textContent`));
 
   // asking about a report: the question leaves the box as it's asked and shows above the answer
   const repDir = join(CFG, "reports"); mkdirSync(repDir, { recursive: true });

@@ -21,7 +21,7 @@ var h="<div class='aq' data-id='"+esc(a.id)+"'>";
 // option press picks it, and the block's Send answers sends them together, so no run starts on half.
 var one=qs.length===1;
 if(qs.length){h+="<h4><i class=ic-ask></i> "+qs.length+" question"+(qs.length>1?"s":"")+" for you</h4>";
-qs.forEach(function(q,i){var rl=q.release;h+="<div class='q' data-i='"+i+"'>"+(q.task?"<div class='qfor' title='"+escQ(q.task)+"'>for: "+esc(q.task)+"</div>":"")+"<div class='qt'>"+esc(q.shown||q.q)+"</div>"+(q.preview?pvHtml(a,q,i):q.context?"<div class='qc'>"+codeText(q.context)+"</div>":"")+(rl?relHtml(rl):"");
+qs.forEach(function(q,i){var rl=q.release;h+="<div class='q' data-i='"+i+"'>"+(q.task?"<div class='qfor' title='"+escQ(q.task)+"'>for: "+esc(q.task)+"</div>":"")+"<div class='qt'>"+esc(q.shown||q.q)+"</div>"+(q.preview?pvHtml(a,q,i):q.context?"<div class='qc'>"+codeText(q.context)+"</div>":"")+(rl?relHtml(rl):"")+qTalkHtml(q,a);
 // a Go card (plain.mjs goCard): the hold's own line, where and what will be pressed, and its money, above its two buttons
 if(q.go&&q.go.line){var gi=q.go.line.indexOf(': ');h+="<div class='qgo'>"+(gi>0?"<b>"+esc(q.go.line.slice(0,gi))+"</b>: "+esc(q.go.line.slice(gi+2)):esc(q.go.line))+"</div>"+(q.go.money&&String(q.context||'').indexOf(q.go.money)<0?"<div class='qmoney'>"+esc(q.go.money)+"</div>":"");}
 var os=q.options||[];if(os.length)h+="<div class='qopts' role='group' aria-label='answers to choose from'>"+os.map(function(o,j){var off=rl&&rl.waiting&&DONEOPT.test(o);return "<button type='button' class='qopt "+(one&&!j?"act":"ghost")+"' data-j='"+j+"'"+(off?" disabled":"")+(one?"":" aria-pressed='false'")+">"+whoHtml(String((q.labels&&q.labels[j])||o).replace(/[ ]*[(]recommended[)][ ]*$/i,''))+(/[(]recommended[)][ ]*$/i.test(o)?"<i class='qrec'>recommended</i>":"")+(off?" <i>(once "+esc(rl.name+" "+rl.needs)+" is installed)</i>":"")+"</button>";}).join('')+(q.preview&&q.preview.ask?"<button type='button' class='qopt ghost qaskpv'>Ask for the preview</button>":"")+"</div>";
@@ -87,24 +87,38 @@ function deskTyped(a,ans){var out=[];document.querySelectorAll('.aq .q').forEach
 function deskBoxes(xs,f){if(!xs.length)return;document.querySelectorAll('.aq .q').forEach(function(qe){var k=qKeyOf(qe),x=null;xs.forEach(function(y){if(y.k===k)x=y;});var i=x&&qe.querySelector('.qother');if(i)f(i,x);});}
 function collectAnswers(box,a){var out=[];box.querySelectorAll('.q').forEach(function(qe){var q=a.ask.questions[+qe.getAttribute('data-i')];if(!q)return;
 var other=(qe.querySelector('.qother').value||'').trim();var pick=qe.querySelector('.qopt.on');var ans=other||(pick?q.options[+pick.getAttribute('data-j')]:'');if(ans)out.push({q:q.q,a:ans});});return out;}
+// What you asked the question's agent and what it said back sit in the question's own block, under the question and
+// above its options, with a status line under them, as on a Home card (blobTalk under .bq). They went to the page's
+// message line at the very top, above the lane's heading, the bubbles on opposite edges of the page (UI review, 24 Nov 2026).
+// Both are kept by the question's key through a redraw meanwhile (the talk as Home's BLOBTALK, the status line a minute).
+var DESKTALK={},DESKSAY={},DESKSAY_FOR=60000;
+function qTalkHtml(q,a){var k=a.path+'|'+q.q,t=q.talk&&q.talk.length?q.talk:DESKTALK[k],s=DESKSAY[k],on=!!s&&Date.now()-s.at<DESKSAY_FOR;
+return (t&&t.length?blobTalk(t,a.name):'')+"<div class='qst"+(on&&s.bad?" err":"")+"' role='status' aria-live='polite'>"+(on?s.h:'')+"</div>";}
+// every block for this question on the page (the lane's own and Questions'), by its draft key
+function deskQs(k,f){if(!k)return;document.querySelectorAll('.aq .q').forEach(function(qe){if(qKeyOf(qe)===k)f(qe);});}
+function deskTalk(k,t,nm){DESKTALK[k]=t;var html=blobTalk(t,nm);deskQs(k,function(qe){var tk=qe.querySelector('.btalk'),st=qe.querySelector('.qst');if(tk)tk.outerHTML=html;else if(st&&st.insertAdjacentHTML)st.insertAdjacentHTML('beforebegin',html);});}
+function deskSay(k,html,bad){if(html)DESKSAY[k]={h:html,bad:!!bad,at:Date.now()};else delete DESKSAY[k];deskQs(k,function(qe){var st=qe.querySelector('.qst');if(!st)return;st.innerHTML=html||'';if(st.classList)st.classList.toggle('err',!!bad);});}
 // a picked option fills as the block's main button does (act); the rest stay outlined
 function pickOpt(b,on){b.classList.toggle('on',on);if(!b.hasAttribute('aria-pressed'))return;b.setAttribute('aria-pressed',on?'true':'false');b.classList.toggle('act',on);b.classList.toggle('ghost',!on);}
 function wireAsks(el){el.querySelectorAll('.aq').forEach(function(box){var a=agentById(box.getAttribute('data-id'));if(!a||!a.ask)return;
-function send(rerun,given){var msg=document.getElementById(box.closest('#panel-asks')?'asksmsg':'agentsmsg');var ans=given||collectAnswers(box,a);
-if(!ans.length){msg.innerHTML="<div class='note err'>Pick an option or type an answer first.</div>";return;}
+function send(rerun,given){var page=document.getElementById(box.closest('#panel-asks')?'asksmsg':'agentsmsg');var ans=given||collectAnswers(box,a);
+// about one question, what it says goes on that question's block, by its options and box; about several, on the page's line
+var qs=box.querySelectorAll('.q'),qk=ans.length===1?a.path+'|'+ans[0].q:qs.length===1?qKeyOf(qs[0]):'';
+var say=function(t,bad){if(!qk){page.innerHTML="<div class='"+(bad?"note err":"muted")+"'>"+esc(t)+"</div>";return;}page.innerHTML='';deskSay(qk,esc(t),bad);};
+if(!ans.length){say('Pick an option or type an answer first.',true);return;}
 box.querySelectorAll('button').forEach(function(b){b.disabled=true;});
 // what you typed leaves its box now, and its drafts with it, so a redraw while it's on its way (saveDrafts,
 // restoreDrafts) can't bring it back; a send that fails puts it back (Home's cards do the same, wireBlob)
-var typed=given?[]:deskTyped(a,ans);typed.forEach(function(x){delete QDRAFT[x.k];bdSet(x.k,'');});deskBoxes(typed,function(i){i.value='';});msg.innerHTML="<div class='muted'>Sending…</div>";
+var typed=given?[]:deskTyped(a,ans);typed.forEach(function(x){delete QDRAFT[x.k];bdSet(x.k,'');});deskBoxes(typed,function(i){i.value='';});say('Sending…');
 var failed=function(t){box.querySelectorAll('button').forEach(function(b){b.disabled=false;});if(given)box.querySelectorAll('.qopt.on').forEach(function(b){pickOpt(b,false);});
-typed.forEach(function(x){QDRAFT[x.k]={o:'',t:x.t};bdSet(x.k,x.t,null,null,'desk');});deskBoxes(typed,function(i,x){if(!i.value)i.value=x.t;});msg.innerHTML="<div class='note err'>"+esc(t)+"</div>";};
+typed.forEach(function(x){QDRAFT[x.k]={o:'',t:x.t};bdSet(x.k,x.t,null,null,'desk');});deskBoxes(typed,function(i,x){if(!i.value)i.value=x.t;});say(t,true);};
 api('/api/agents/answer',{path:a.path,answers:ans,rerun:rerun}).then(function(r){
 if(!r||r.error){failed((r&&r.error)||'failed');return;}
-ans.forEach(function(x){var k=a.path+'|'+x.q;delete QDRAFT[k];bdSet(k,'');}); // sent: its drafts go
+ans.forEach(function(x){var k=a.path+'|'+x.q;delete QDRAFT[k];bdSet(k,'');if(!r.talk){delete DESKTALK[k];delete DESKSAY[k];}}); // sent: its drafts go (and, answered, its talk)
 // and its box empties, the one pressed and any drawn again since, or the redraw keeps the sent words as a new draft
 box.querySelectorAll('input.qother').forEach(function(i){i.value='';});deskBoxes(ans.map(function(x){return {k:a.path+'|'+x.q};}),function(i){i.value='';});
-if(r.talk){box.querySelectorAll('button').forEach(function(b){b.disabled=false;});msg.innerHTML="<div class='lqblob'>"+blobTalk(r.talk,a.name)+"</div><div class='muted'>The question stays open: answer it when you're ready.</div>";return;}
-msg.innerHTML="<div class='note ok'>&#10003; Saved "+r.saved+" answer"+(r.saved>1?"s":"")+" for <b>"+esc(a.name)+"</b> in .symbiot/ANSWERS.md"+(r.rerun?" &middot; your agent is picking them up now.":".")+(r.yours&&r.yours.length?"<div class='err'><i class=ic-person></i> Still yours to do: "+esc(r.yours.join(' '))+"</div>":"")+(r.note?"<div class='muted'>"+esc(r.note)+"</div>":"")+"</div>";box.querySelectorAll('.qopt.on').forEach(function(b){pickOpt(b,false);});loadAgents();if(current==='asks')loadAsks();}).catch(function(e){failed(String((e&&e.message)||e));});}
+if(r.talk){box.querySelectorAll('button').forEach(function(b){b.disabled=false;});var tq=a.ask.questions.filter(function(q){return a.path+'|'+q.q===qk;})[0];if(tq)tq.talk=r.talk;deskTalk(qk,r.talk,a.name);say("The question stays open: answer it when you're ready.");return;}
+page.innerHTML="<div class='note ok'>&#10003; Saved "+r.saved+" answer"+(r.saved>1?"s":"")+" for <b>"+esc(a.name)+"</b> in .symbiot/ANSWERS.md"+(r.rerun?" &middot; your agent is picking them up now.":".")+(r.yours&&r.yours.length?"<div class='err'><i class=ic-person></i> Still yours to do: "+esc(r.yours.join(' '))+"</div>":"")+(r.note?"<div class='muted'>"+esc(r.note)+"</div>":"")+"</div>";box.querySelectorAll('.qopt.on').forEach(function(b){pickOpt(b,false);});loadAgents();if(current==='asks')loadAsks();}).catch(function(e){failed(String((e&&e.message)||e));});}
 var s1=box.querySelector('.qsend'),s2=box.querySelector('.qsave');
 if(s1)s1.addEventListener('click',function(){send(true);});if(s2)s2.addEventListener('click',function(){send(false);});
 wirePreview(box,a);
