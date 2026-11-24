@@ -114,7 +114,7 @@ function lqAltsHtml(g){return g&&g.alts&&g.alts.length?"<span class='lqalts'>Or:
 function lqWhy(g){var el=$('lqwhy');if(!el)return;var on=!!(g&&(g.why||(g.alts&&g.alts.length)));if(el.classList)el.classList.toggle('on',on);
 el.innerHTML=on?(g.why?"<span>"+esc(g.why)+"</span>":'')+(g.alts&&g.alts.length?"<span>Or:</span>"+g.alts.map(function(a){return "<button type='button' class='lqmrow' data-go='"+escQ(a.to)+"'>"+esc(a.label||a.to)+"</button>";}).join(''):''):'';
 if(on)el.querySelectorAll('[data-go]').forEach(function(b){b.addEventListener('click',function(){lqNav(b.getAttribute('data-go'));});});}
-function lqSay(){var spoke=VOICE.spoke;VOICE.spoke=false;var i=$('lqask');var q=((i&&i.value)||'').trim(),shots=LQ.atts.slice();if(!q&&!shots.length)return;if(!q)q='Take a look at this screenshot.';i.value='';lqGrowAsk();LQ.atts=[];lqAttsShow();lqAct();
+function lqSay(){var spoke=VOICE.spoke;VOICE.spoke=false;var i=$('lqask');var q=((i&&i.value)||'').trim(),shots=LQ.atts.slice();if(!q&&!shots.length)return;if(!q)q='Take a look at this screenshot.';i.value='';if(!spoke&&VOICE.rec){VOICE.base='';VOICE.final='';try{VOICE.rec.abort();}catch(e){}}lqGrowAsk();LQ.atts=[];lqAttsShow();lqAct(); // typed and sent with the mic still listening: it stops, or what it heard wrote the sent words back
 var low=q.toLowerCase().replace(/^(please |can you |could you )/,''),hit=lqNavHit(q);
 if(hit){lqNav(hit);if(spoke)voiceResume();return;}
 if(/^(go|start|go for it|start them|start it)[.! ]*$/.test(low)){lqTalkMode(true);lqGoWork();return;}

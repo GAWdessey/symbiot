@@ -382,26 +382,41 @@ return h+"<div class='bst' role='status' aria-live='polite'></div>";}
 // and that card, or one sending, stays on the page shown (blobHeld): pressing lets go of the
 // focus, so a refresh paged it away with what it said (CI, 0.66.4 publish, 2026-10-16).
 var BLOBBUSY={},BLOBSENT={},BLOBSENT_FOR=120000,BLOBFAIL={},BLOBFAIL_FOR=60000;
+// What you typed leaves the box the moment you send it, and comes back only if the send fails. It stayed
+// there until the answer was in, seconds for a question to the card's agent, and a redraw meanwhile drew the
+// card again from its kept draft, while the clearing after emptied only the card it was sent from, gone from
+// the page by then ("once i respond, the message i typed and sent doesnt go away", 22 Oct 2026). So every
+// card drawn for a question is known by its key (BLOBBOXES), and sending, clearing and a failure reach the one
+// on the page now as well as the one pressed.
+var BLOBBOXES={};
+function blobSending(t){return typeof t==='string'&&t?'Sending “'+lqShort(t,80)+'”…':'Sending…';} // what you typed, out of its box, said where it went
+function blobBoxes(k,box){var a=(BLOBBOXES[k]||[]).filter(function(b){return b!==box&&b.isConnected!==false;});BLOBBOXES[k]=a.concat([box]).slice(-4);return BLOBBOXES[k];}
 function blobFailed(k){var x=BLOBFAIL[k];return x&&Date.now()-x.at<BLOBFAIL_FOR?x.t:'';}
 function blobHeld(k){return !!BLOBBUSY[k]||!!blobFailed(k);}
 function blobSent(y){var t=BLOBSENT[bdKey(y)];return !!t&&Date.now()-t<BLOBSENT_FOR;}
-function wireBlob(box,y,o){o=o||{};var say=o.say||lqSaid,nm=y.name||y.repo||'the agent',key=bdKey(y);
-var lock=function(on){box.querySelectorAll('button,input').forEach(function(b){b.disabled=on;});};
-var st=function(t,bad){var e=box.querySelector('.bst');if(!e)return;e.textContent=t||'';if(e.classList)e.classList.toggle('err',!!bad);if(o.grew)o.grew();};
-var busy=function(on,b){if(box.classList)box.classList.toggle('sending',on);if(box.setAttribute)box.setAttribute('aria-busy',on?'true':'false');box.querySelectorAll('.pressed').forEach(function(x){x.classList.remove('pressed');});if(on&&b&&b.classList)b.classList.add('pressed');lock(on);};
-var send=function(ans,j,b){ans=String(ans||'').trim();if(!ans||(!y.path&&!y.fix)||BLOBBUSY[key])return;BLOBBUSY[key]=1;delete BLOBFAIL[key];busy(true,b);st('Sending…');
-var fail=function(t){delete BLOBBUSY[key];BLOBFAIL[key]={t:t,at:Date.now()};busy(false);st(t,true);say(nm+': '+t,true);};
+function wireBlob(box,y,o){o=o||{};var say=o.say||lqSaid,nm=y.name||y.repo||'the agent',key=bdKey(y);blobBoxes(key,box);
+var each=function(f){var a=[box];(BLOBBOXES[key]||[]).forEach(function(x){if(x!==box&&x.isConnected!==false)a.push(x);});a.forEach(f);}; // this card, and the same question drawn again since
+var lock=function(on){each(function(c){c.querySelectorAll('button,input').forEach(function(b){b.disabled=on;});});};
+var st=function(t,bad){each(function(c){var e=c.querySelector('.bst');if(!e)return;e.textContent=t||'';if(e.classList)e.classList.toggle('err',!!bad);});if(o.grew)o.grew();};
+var busy=function(on,b){each(function(c){if(c.classList)c.classList.toggle('sending',on);if(c.setAttribute)c.setAttribute('aria-busy',on?'true':'false');c.querySelectorAll('.pressed').forEach(function(x){x.classList.remove('pressed');});});if(on&&b&&b.classList)b.classList.add('pressed');lock(on);};
+var boxes=function(f){each(function(c){c.querySelectorAll('.bfx input,input.qother').forEach(f);});};
+var send=function(ans,j,b){ans=String(ans||'').trim();if(!ans||(!y.path&&!y.fix)||BLOBBUSY[key])return;delete BLOBFAIL[key];
+var typed=j==null?ans:'';BLOBBUSY[key]=typed||1;if(typed){bdSet(y,'');boxes(function(i){i.value='';});} // sent: out of the box now, and out of its kept draft, so a redraw meanwhile draws it empty
+busy(true,b);st(blobSending(typed));
+var fail=function(t){delete BLOBBUSY[key];BLOBFAIL[key]={t:t,at:Date.now()};
+if(typed){bdSet(y,typed);boxes(function(i){if(!i.value)i.value=typed;});each(function(c){var f=c.querySelector('.bfx'),fr=c.querySelector('.bfree');if(f&&f.classList)f.classList.remove('hidden');if(fr)fr.setAttribute('aria-expanded','true');});} // not sent: your words back, where you can send them again
+busy(false);st(t,true);say(nm+': '+t,true);};
 (y.fix?api('/api/home/answer',j!=null?{id:y.id,pick:j}:{id:y.id,text:ans}):api('/api/agents/answer',{path:y.path,answers:[{q:y.raw||y.q,a:ans}],rerun:true})).then(function(r){
 if(!r||r.error){fail((r&&r.error)||'the answer didn’t save. Try again on its block on the Workdesk.');return;}
 // a question on the card, not its answer: the agent's reply goes under it, and the card stays
 // sent either way: the box empties and its kept draft goes, else the next redraw put the words back in it (22 Oct 2026)
-var clear=function(){bdSet(y,'');box.querySelectorAll('.bfx input,input.qother').forEach(function(i){i.value='';});};
+var clear=function(){bdSet(y,'');boxes(function(i){i.value='';});};
 if(r.keep){delete BLOBBUSY[key];clear();busy(false);st(r.said||'');return;}
-if(r.talk){delete BLOBBUSY[key];clear();BLOBTALK[key]=r.talk;y.talk=r.talk;busy(false);st(r.said||'');var tk=box.querySelector('.btalk'),html=blobTalk(r.talk,nm);if(tk)tk.outerHTML=html;else{var bq=box.querySelector('.bq');if(bq&&bq.insertAdjacentHTML)bq.insertAdjacentHTML('afterend',html);}if(o.grew)o.grew();return;}
+if(r.talk){delete BLOBBUSY[key];clear();BLOBTALK[key]=r.talk;y.talk=r.talk;busy(false);st(r.said||'');var html=blobTalk(r.talk,nm);each(function(c){var tk=c.querySelector('.btalk');if(tk)tk.outerHTML=html;else{var bq=c.querySelector('.bq');if(bq&&bq.insertAdjacentHTML)bq.insertAdjacentHTML('afterend',html);}});if(o.grew)o.grew();return;}
 delete BLOBBUSY[key];BLOBSENT[key]=Date.now();clear();st(r.go?r.go:r.already?'Answered already.':'Sent.');
 if(r.go)say(nm+': '+r.go);else say(y.fix?nm+': '+(r.said||'Done.'):r.already?nm+': '+r.note:'Sent to '+(r.lane||nm)+'. '+(r.report?'It is written already: Reports, \u201c'+r.report+'\u201d. ':'')+((r.also||[]).length?'Also given to '+r.also.join(', ')+', on the same work. ':'')+(r.yours&&r.yours.length?'Still yours to do: '+r.yours.join(' '):r.rerun?'Its agent is picking it up now.':(r.note||'Saved in its ANSWERS.md.')));
 bdSet(y,'');if(o.sent)o.sent();if(box.classList)box.classList.add('gone');setTimeout(function(){if(o.done)o.done();},650);}).catch(function(e){fail(String((e&&e.message)||e));});};
-if(BLOBBUSY[key]){busy(true);st('Sending…');} // drawn again while its answer is on its way
+if(BLOBBUSY[key]){busy(true);st(blobSending(BLOBBUSY[key]));} // drawn again while its answer is on its way
 else if(blobFailed(key))st(blobFailed(key),true);
 // Dismiss: the card goes from Home, the Workdesk and its project (home.mjs dismissCard), its draft with it; Undo brings it back
 var bx=box.querySelector('.bx');if(bx)bx.addEventListener('click',function(){if(BLOBBUSY[key])return;bx.disabled=true;api('/api/home/dismiss',{key:key}).then(function(r){if(!r||r.error){bx.disabled=false;st((r&&r.error)||'It didn’t go. Try again.',true);return;}
