@@ -12,7 +12,7 @@
 import { join } from "node:path";
 import { createHash, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 import { CONFIG_DIR, readState, writeJsonAtomic } from "./core.mjs";
-import { listSecrets, peekSecret, saveSecret, renameSecret, deleteSecret, fillSite, setSite } from "./vault.mjs";
+import { listSecrets, peekSecret, saveSecret, renameSecret, deleteSecret, fillSite, setSite, setValues } from "./vault.mjs";
 
 const PIN_FILE = () => join(CONFIG_DIR, "vault-pin.json"), LOG_FILE = () => join(CONFIG_DIR, "vault-log.json");
 const UNLOCK_MS = 5 * 60000, TRIES = 5, LOCKOUT_MS = 5 * 60000, LOG_KEEP = 500, PIN_MIN = 6;
@@ -28,6 +28,8 @@ function kindOf(name) {
   if (/\bpass(?:word|code|phrase)?\b|\bpw\b/.test(n)) return "Password";
   if (/\b(?:recovery|backup)\b/.test(n) || /\bcodes\b/.test(n)) return "Recovery codes";
   if (/\bcode$/.test(n)) return "One-time code";
+  // a login or a Wi-Fi network is kept for its password ("Xero login", "Office Wi-Fi (Harbourline 5G)")
+  if (/\blog ?in\b|\bsign ?in\b|\bwi[ _-]?fi\b/.test(n)) return "Password";
   if (/\b(?:api|key|keys|token|tokens|secret)\b/.test(n.replace(/[-_]/g, " "))) return "API key or token";
   if (/\b(?:sid|account id|account-sid|client id|username|user)\b/.test(n.replace(/[-_]/g, " "))) return "Account ID";
   if (/\bpin\b/.test(n.replace(/[-_]/g, " "))) return "PIN";
@@ -83,7 +85,7 @@ const VAGUE = /^(?:token|password|pass|pw|secret|key|api ?key|code|pin|login|cre
 const FILEY = /\.(?:md|txt|json|csv|pdf|docx?|xlsx?|html?|ya?ml|env|log)\b/i;
 function issuesOf(list, { peek = peekSecret } = {}) {
   const out = {}, add = (n, x) => { (out[n] = out[n] || []).push(x); };
-  const seen = new Map();
+  const seen = new Map(), counts = new Map(list.map((s) => [s.name, s.count || 0]));
   for (const s of list) {
     const bare = String(s.name).replace(EMAIL, "").replace(/[()]/g, "").replace(/[_-]+/g, " ").trim();
     if (VAGUE.test(bare)) add(s.name, { kind: "vague", text: "Its name doesn't say what it's for. Rename it, so you and your agents can find it." });
@@ -96,7 +98,9 @@ function issuesOf(list, { peek = peekSecret } = {}) {
       if (o && o !== s.name) {
         // two services' logins with one password are both real (people reuse one): never "delete the other"
         const two = groupOf(o) !== groupOf(s.name) && groupOf(o) !== "Other" && groupOf(s.name) !== "Other";
-        const say = (other) => two ? `Same password as “${labelOf(other)}”, another site's login. Keep both; change one of them on its site when you can.` : `Same value as “${labelOf(other)}”. Keep one: delete the other.`;
+        // a set of codes isn't a password or a login: two sets with the same codes are one set saved twice
+        const codes = [s.name, o].some((n) => (counts.get(n) || 0) > 1 || kindOf(n) === "Recovery codes");
+        const say = (other) => codes ? `Same codes as “${labelOf(other)}”. Keep one: delete the other.` : two ? `Same password as “${labelOf(other)}”, another site's login. Keep both; change one of them on its site when you can.` : `Same value as “${labelOf(other)}”. Keep one: delete the other.`;
         if (!(out[s.name] || []).some((x) => x.kind === "same" && x.other === o)) add(s.name, { kind: "same", other: o, text: say(o) });
         if (!(out[o] || []).some((x) => x.kind === "same" && x.other === s.name)) add(o, { kind: "same", other: s.name, text: say(s.name) });
       } else if (!o) seen.set(h, s.name);
@@ -186,15 +190,19 @@ function addEntry({ label = "", account = "", values = [], site = "", token = ""
 }
 // Edit: its name and account, and (site given, "" to clear) the website it fills on, as 1Password and Bitwarden let you
 // edit an item's website. The site was set once and never moved, so a wrong one meant deleting the entry (26 Oct 2026).
-function renameEntry(name, { label = "", account = "", site, token = "", now = Date.now() } = {}) {
+// values (given, not empty): the password, key or codes replaced, as a changed password is edited in place there
+// too, rather than deleted and added again (UI review, 24 Nov 2026); logged as "changed", never with the value.
+function renameEntry(name, { label = "", account = "", site, values, token = "", now = Date.now() } = {}) {
   const until = held(token, now); if (!until) return LOCKED;
   // the form shows a tidied label ("GitHub recovery codes" for "github recovery codes"): saved as it was shown, that's
   // the same name, kept as it is, so an Edit that only changes the website doesn't rename what agents ask for
   const typed = nameFrom(label, account), to = typed.toLowerCase() === String(name || "").toLowerCase() || typed === nameFrom(labelOf(name), accountOf(name)) ? String(name || "") : typed; if (!to) return { error: "Give it a name." };
   if (to !== name && listSecrets().some((s) => s.name !== name && s.name.toLowerCase() === to.toLowerCase())) return { error: `There's already one called “${labelOf(to)}”.` };
   if (site !== undefined && String(site || "").trim() && !fillSite(site)) return { error: "That isn't a website. Type its address, like example.com, or leave it empty." };
+  const vals = [].concat(values === undefined ? [] : values).map((v) => String(v || "").trim()).filter(Boolean);
   const r = renameSecret(String(name || ""), to); if (r.error) return r;
   if (r.name !== name) note(r.name, "rename", now, { from: name });
+  if (vals.length) { const c = setValues(r.name, vals); if (c.error) return c; note(r.name, "change", now); }
   if (site !== undefined) {
     const was = (listSecrets().find((s) => s.name === r.name) || {}).site || "", want = String(site || "").trim() ? fillSite(site) : "";
     if (want !== was) { const m = setSite(r.name, want); if (m.error) return m; note(r.name, "site", now, want ? { site: want } : {}); }
