@@ -802,6 +802,14 @@ body.lq-light .rbackbar{background:rgba(246,248,251,.95);box-shadow:0 1px 0 rgba
 .aq label.opt.off{color:var(--faint);cursor:default}.aq .opt.off i{font-size:12px}
 .aq .qother{margin-top:7px;padding:7px 10px;font-size:13px}
 .aq .qopts{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+/* the question's talk with its agent, in its own block under the question, a thread kept to reading width so the
+   You and Agent bubbles read as one exchange, not as the page's two edges (UI review, 24 Nov 2026) */
+.aq .btalk{margin:10px 0 0;display:flex;flex-direction:column;gap:6px;max-width:640px;max-height:280px;overflow-y:auto;scrollbar-width:thin}
+.aq .btm{font-size:13.5px;line-height:1.45;padding:6px 10px;border-radius:10px;overflow-wrap:anywhere;color:var(--text);background:rgba(127,127,127,.12)}
+.aq .btm.me{align-self:flex-end;max-width:85%;background:rgba(242,165,65,.14)}
+.aq .btm.ag{align-self:flex-start;max-width:92%}
+.aq .btm b{font-weight:600;margin-right:6px;color:var(--bone)}
+.aq .qst{margin-top:8px;font-size:12.5px;line-height:1.45;color:var(--faint)}.aq .qst:empty{display:none}.aq .qst.err{color:var(--amber)}
 .aq .qopt{min-height:36px;padding:7px 16px;max-width:100%;text-align:left;white-space:normal;line-height:1.35;font-size:13px}
 .aq .qopt i{font-size:12px;opacity:.8}.aq .qopt .qrec{display:block;font-style:normal;font-size:11px;font-weight:400;opacity:.7;margin-top:1px}
 .aq .qopt:focus-visible,.aq .qsend:focus-visible{outline:2px solid currentColor;outline-offset:2px}

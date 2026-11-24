@@ -391,6 +391,14 @@ var BLOBBUSY={},BLOBSENT={},BLOBSENT_FOR=120000,BLOBFAIL={},BLOBFAIL_FOR=60000;
 var BLOBBOXES={};
 function blobSending(t){return typeof t==='string'&&t?'Sending “'+lqShort(t,80)+'”…':'Sending…';} // what you typed, out of its box, said where it went
 function blobBoxes(k,box){var a=(BLOBBOXES[k]||[]).filter(function(b){return b!==box&&b.isConnected!==false;});BLOBBOXES[k]=a.concat([box]).slice(-4);return BLOBBOXES[k];}
+// A send that failed brings the card's box (your words, back) and its status line (why) into view: they're its last
+// lines, below its scroll area on a card taller than its room, so they came back out of sight (UI review, 24 Nov 2026).
+// Only the card's own scrolling moves, never the page under it; on a computer the box takes the focus to send again.
+function blobReveal(c){setTimeout(function(){var s=c&&c.querySelector&&c.querySelector('.bst');if(!s||!s.getBoundingClientRect||c.isConnected===false)return;
+var f=c.querySelector('.bfx:not(.hidden)'),top=(f||s).getBoundingClientRect().top;
+for(var p=s.parentNode;p&&p.nodeType===1&&p!==document.body&&p!==document.documentElement;p=p.parentNode){var oy=getComputedStyle(p).overflowY;if(oy!=='auto'&&oy!=='scroll')continue;
+var r=p.getBoundingClientRect(),d=Math.min(s.getBoundingClientRect().bottom-r.bottom+8,top-r.top-4);if(d>0)p.scrollTop+=d;top=(f||s).getBoundingClientRect().top;}
+var i=f&&f.querySelector('input'),a=document.activeElement;if(i&&i.value&&!document.body.classList.contains('lq-touch')&&(!a||a===document.body||c.contains(a))&&i.focus)try{i.focus({preventScroll:true});}catch(e){}},60);}
 function blobFailed(k){var x=BLOBFAIL[k];return x&&Date.now()-x.at<BLOBFAIL_FOR?x.t:'';}
 function blobHeld(k){return !!BLOBBUSY[k]||!!blobFailed(k);}
 function blobSent(y){var t=BLOBSENT[bdKey(y)];return !!t&&Date.now()-t<BLOBSENT_FOR;}
@@ -405,7 +413,7 @@ var typed=j==null?ans:'';BLOBBUSY[key]=typed||1;if(typed){bdSet(y,'');boxes(func
 busy(true,b);st(blobSending(typed));
 var fail=function(t){delete BLOBBUSY[key];BLOBFAIL[key]={t:t,at:Date.now()};
 if(typed){bdSet(y,typed);boxes(function(i){if(!i.value)i.value=typed;});each(function(c){var f=c.querySelector('.bfx'),fr=c.querySelector('.bfree');if(f&&f.classList)f.classList.remove('hidden');if(fr)fr.setAttribute('aria-expanded','true');});} // not sent: your words back, where you can send them again
-busy(false);st(t,true);say(nm+': '+t,true);};
+busy(false);st(t,true);say(nm+': '+t,true);each(blobReveal);};
 (y.fix?api('/api/home/answer',j!=null?{id:y.id,pick:j}:{id:y.id,text:ans}):api('/api/agents/answer',{path:y.path,answers:[{q:y.raw||y.q,a:ans}],rerun:true})).then(function(r){
 if(!r||r.error){fail((r&&r.error)||'the answer didn’t save. Try again on its block on the Workdesk.');return;}
 // a question on the card, not its answer: the agent's reply goes under it, and the card stays
@@ -417,7 +425,7 @@ delete BLOBBUSY[key];BLOBSENT[key]=Date.now();clear();st(r.go?r.go:r.already?'An
 if(r.go)say(nm+': '+r.go);else say(y.fix?nm+': '+(r.said||'Done.'):r.already?nm+': '+r.note:'Sent to '+(r.lane||nm)+'. '+(r.report?'It is written already: Reports, \u201c'+r.report+'\u201d. ':'')+((r.also||[]).length?'Also given to '+r.also.join(', ')+', on the same work. ':'')+(r.yours&&r.yours.length?'Still yours to do: '+r.yours.join(' '):r.rerun?'Its agent is picking it up now.':(r.note||'Saved in its ANSWERS.md.')));
 bdSet(y,'');if(o.sent)o.sent();if(box.classList)box.classList.add('gone');setTimeout(function(){if(o.done)o.done();},650);}).catch(function(e){fail(String((e&&e.message)||e));});};
 if(BLOBBUSY[key]){busy(true);st(blobSending(BLOBBUSY[key]));} // drawn again while its answer is on its way
-else if(blobFailed(key))st(blobFailed(key),true);
+else if(blobFailed(key)){st(blobFailed(key),true);blobReveal(box);}
 // Dismiss: the card goes from Home, the Workdesk and its project (home.mjs dismissCard), its draft with it; Undo brings it back
 var bx=box.querySelector('.bx');if(bx)bx.addEventListener('click',function(){if(BLOBBUSY[key])return;bx.disabled=true;api('/api/home/dismiss',{key:key}).then(function(r){if(!r||r.error){bx.disabled=false;st((r&&r.error)||'It didn’t go. Try again.',true);return;}
 bdSet(y,'');BLOBSENT[key]=Date.now();if(o.sent)o.sent();if(box.classList)box.classList.add('gone');setTimeout(function(){if(o.done)o.done();},650);
